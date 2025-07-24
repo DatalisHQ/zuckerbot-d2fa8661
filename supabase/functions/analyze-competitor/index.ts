@@ -226,61 +226,34 @@ URL: ${competitorUrl}
       console.log('Searching for competitor ads...');
       adIntelligence = await searchCompetitorAds(competitorName, userId, supabase);
 
-      // Generate social presence analysis (simulated)
-      socialPresence = {
-        platforms: ['LinkedIn', 'Twitter', 'Facebook', 'Instagram'],
-        engagement: {
-          linkedinFollowers: Math.floor(Math.random() * 50000) + 1000,
-          twitterFollowers: Math.floor(Math.random() * 100000) + 500,
-          postFrequency: 'Daily',
-          engagementRate: `${(Math.random() * 5 + 1).toFixed(1)}%`
-        },
-        contentStrategy: [
-          'Thought leadership',
-          'Product updates',
-          'Industry insights',
-          'Customer success stories'
-        ]
-      };
+      // Only use AI-generated data if OpenAI analysis was successful
+      if (!detailedAnalysis.aiAnalysis) {
+        console.log('No AI analysis available, skipping additional data generation');
+        
+        // Set minimal fallback data structure
+        socialPresence = {
+          platforms: [],
+          engagement: {},
+          contentStrategy: [],
+          note: 'Social presence analysis requires AI assistant or additional APIs'
+        };
 
-      // Generate market position analysis
-      marketPosition = {
-        marketShare: `${(Math.random() * 15 + 2).toFixed(1)}%`,
-        positioning: 'Mid-market leader',
-        competitiveAdvantages: [
-          'Strong brand recognition',
-          'Comprehensive feature set',
-          'Enterprise-grade security',
-          'Excellent customer support'
-        ],
-        threats: [
-          'New market entrants',
-          'Changing customer preferences',
-          'Technology disruption'
-        ],
-        opportunities: [
-          'International expansion',
-          'AI integration',
-          'Mobile-first approach'
-        ]
-      };
+        marketPosition = {
+          positioning: 'Analysis pending',
+          competitiveAdvantages: [],
+          threats: [],
+          opportunities: [],
+          note: 'Market position analysis requires AI assistant'
+        };
 
-      // Generate sentiment analysis
-      sentimentAnalysis = {
-        overallSentiment: 'Positive',
-        customerSatisfaction: `${(Math.random() * 2 + 3).toFixed(1)}/5`,
-        commonComplaints: [
-          'Pricing complexity',
-          'Learning curve',
-          'Integration challenges'
-        ],
-        positiveReviews: [
-          'Great customer support',
-          'Reliable platform',
-          'Comprehensive features'
-        ],
-        reviewSources: ['G2', 'Capterra', 'TrustPilot', 'LinkedIn']
-      };
+        sentimentAnalysis = {
+          overallSentiment: 'Analysis pending',
+          commonComplaints: [],
+          positiveReviews: [],
+          reviewSources: [],
+          note: 'Sentiment analysis requires AI assistant or review APIs'
+        };
+      }
 
     } catch (analysisError) {
       console.error('Error during analysis:', analysisError);
