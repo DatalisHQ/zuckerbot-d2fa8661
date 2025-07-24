@@ -159,6 +159,136 @@ export type Database = {
           },
         ]
       }
+      monitoring_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string
+          current_state: Json | null
+          description: string | null
+          detected_changes: Json | null
+          id: string
+          is_read: boolean | null
+          monitoring_config_id: string | null
+          previous_state: Json | null
+          severity: string
+          title: string
+          user_id: string | null
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string
+          current_state?: Json | null
+          description?: string | null
+          detected_changes?: Json | null
+          id?: string
+          is_read?: boolean | null
+          monitoring_config_id?: string | null
+          previous_state?: Json | null
+          severity: string
+          title: string
+          user_id?: string | null
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string
+          current_state?: Json | null
+          description?: string | null
+          detected_changes?: Json | null
+          id?: string
+          is_read?: boolean | null
+          monitoring_config_id?: string | null
+          previous_state?: Json | null
+          severity?: string
+          title?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monitoring_alerts_monitoring_config_id_fkey"
+            columns: ["monitoring_config_id"]
+            isOneToOne: false
+            referencedRelation: "monitoring_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monitoring_config: {
+        Row: {
+          alert_threshold: Json | null
+          check_frequency_hours: number | null
+          competitor_name: string
+          competitor_url: string
+          created_at: string
+          id: string
+          is_active: boolean | null
+          monitoring_type: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          alert_threshold?: Json | null
+          check_frequency_hours?: number | null
+          competitor_name: string
+          competitor_url: string
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          monitoring_type: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          alert_threshold?: Json | null
+          check_frequency_hours?: number | null
+          competitor_name?: string
+          competitor_url?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          monitoring_type?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      monitoring_history: {
+        Row: {
+          changes_detected: Json | null
+          check_timestamp: string
+          error_message: string | null
+          id: string
+          monitoring_config_id: string | null
+          monitoring_data: Json
+          status: string
+        }
+        Insert: {
+          changes_detected?: Json | null
+          check_timestamp?: string
+          error_message?: string | null
+          id?: string
+          monitoring_config_id?: string | null
+          monitoring_data: Json
+          status: string
+        }
+        Update: {
+          changes_detected?: Json | null
+          check_timestamp?: string
+          error_message?: string | null
+          id?: string
+          monitoring_config_id?: string | null
+          monitoring_data?: Json
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monitoring_history_monitoring_config_id_fkey"
+            columns: ["monitoring_config_id"]
+            isOneToOne: false
+            referencedRelation: "monitoring_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

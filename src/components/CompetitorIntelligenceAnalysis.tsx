@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
-import { Loader2, Brain, Users, DollarSign, TrendingUp, MessageSquare, CheckCircle, AlertCircle } from "lucide-react";
+import { Loader2, Brain, Users, DollarSign, TrendingUp, MessageSquare, CheckCircle, AlertCircle, Bell } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { RealTimeMonitoring } from "./RealTimeMonitoring";
 
 interface CompetitorIntelligence {
   detailedAnalysis: {
@@ -177,13 +177,14 @@ export const CompetitorIntelligenceAnalysis = ({
 
       {intelligence && (
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="features">Features</TabsTrigger>
             <TabsTrigger value="pricing">Pricing</TabsTrigger>
             <TabsTrigger value="social">Social</TabsTrigger>
             <TabsTrigger value="position">Position</TabsTrigger>
             <TabsTrigger value="sentiment">Sentiment</TabsTrigger>
+            <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -470,6 +471,13 @@ export const CompetitorIntelligenceAnalysis = ({
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="monitoring" className="space-y-4">
+            <RealTimeMonitoring 
+              competitorName={competitorName}
+              competitorUrl={competitorUrl}
+            />
           </TabsContent>
         </Tabs>
       )}
