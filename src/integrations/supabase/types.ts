@@ -14,7 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      brand_analysis: {
+        Row: {
+          analysis_status: string | null
+          brand_name: string | null
+          brand_url: string
+          business_category: string | null
+          created_at: string
+          id: string
+          main_products: Json | null
+          niche: string | null
+          scraped_content: string | null
+          updated_at: string
+          user_id: string | null
+          value_propositions: string[] | null
+        }
+        Insert: {
+          analysis_status?: string | null
+          brand_name?: string | null
+          brand_url: string
+          business_category?: string | null
+          created_at?: string
+          id?: string
+          main_products?: Json | null
+          niche?: string | null
+          scraped_content?: string | null
+          updated_at?: string
+          user_id?: string | null
+          value_propositions?: string[] | null
+        }
+        Update: {
+          analysis_status?: string | null
+          brand_name?: string | null
+          brand_url?: string
+          business_category?: string | null
+          created_at?: string
+          id?: string
+          main_products?: Json | null
+          niche?: string | null
+          scraped_content?: string | null
+          updated_at?: string
+          user_id?: string | null
+          value_propositions?: string[] | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
