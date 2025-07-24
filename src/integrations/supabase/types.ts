@@ -100,6 +100,65 @@ export type Database = {
           },
         ]
       }
+      competitor_intelligence: {
+        Row: {
+          analysis_status: string | null
+          competitor_discovery_id: string | null
+          competitor_name: string
+          competitor_url: string
+          created_at: string
+          detailed_analysis: Json | null
+          feature_matrix: Json | null
+          id: string
+          market_position: Json | null
+          pricing_info: Json | null
+          sentiment_analysis: Json | null
+          social_presence: Json | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          analysis_status?: string | null
+          competitor_discovery_id?: string | null
+          competitor_name: string
+          competitor_url: string
+          created_at?: string
+          detailed_analysis?: Json | null
+          feature_matrix?: Json | null
+          id?: string
+          market_position?: Json | null
+          pricing_info?: Json | null
+          sentiment_analysis?: Json | null
+          social_presence?: Json | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          analysis_status?: string | null
+          competitor_discovery_id?: string | null
+          competitor_name?: string
+          competitor_url?: string
+          created_at?: string
+          detailed_analysis?: Json | null
+          feature_matrix?: Json | null
+          id?: string
+          market_position?: Json | null
+          pricing_info?: Json | null
+          sentiment_analysis?: Json | null
+          social_presence?: Json | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_intelligence_competitor_discovery_id_fkey"
+            columns: ["competitor_discovery_id"]
+            isOneToOne: false
+            referencedRelation: "competitor_discovery"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

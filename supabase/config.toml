@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.discover-competitors]
 verify_jwt = false
+
+[functions.analyze-competitor]
+verify_jwt = false

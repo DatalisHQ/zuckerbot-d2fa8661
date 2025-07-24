@@ -3,8 +3,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, Globe, TrendingUp, ExternalLink } from "lucide-react";
+import { Loader2, Search, Globe, TrendingUp, ExternalLink, Brain } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { CompetitorIntelligenceAnalysis } from "./CompetitorIntelligenceAnalysis";
 
 interface Competitor {
   name: string;
@@ -23,6 +24,8 @@ export const CompetitorDiscovery = ({ brandAnalysisId, onDiscoveryComplete }: Co
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [selectedCompetitor, setSelectedCompetitor] = useState<Competitor | null>(null);
+  const [discoveryId, setDiscoveryId] = useState<string | null>(null);
 
   const handleDiscoverCompetitors = async () => {
     setIsLoading(true);
@@ -60,6 +63,7 @@ export const CompetitorDiscovery = ({ brandAnalysisId, onDiscoveryComplete }: Co
 
       console.log('Discovery completed:', data);
       setCompetitors(data.competitors);
+      setDiscoveryId(data.discoveryId);
       onDiscoveryComplete?.(data.competitors);
       
       toast({
@@ -159,19 +163,40 @@ export const CompetitorDiscovery = ({ brandAnalysisId, onDiscoveryComplete }: Co
                   <Badge variant="secondary">
                     {competitor.category}
                   </Badge>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(competitor.website, '_blank')}
-                    className="flex items-center gap-1"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    Visit Site
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(competitor.website, '_blank')}
+                      className="flex items-center gap-1"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Visit Site
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => setSelectedCompetitor(competitor)}
+                      className="flex items-center gap-1"
+                    >
+                      <Brain className="h-3 w-3" />
+                      Deep Analysis
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {selectedCompetitor && (
+        <div className="mt-8">
+          <CompetitorIntelligenceAnalysis 
+            competitorName={selectedCompetitor.name}
+            competitorUrl={selectedCompetitor.website}
+            discoveryId={discoveryId}
+          />
         </div>
       )}
     </div>
