@@ -54,6 +54,7 @@ serve(async (req) => {
     let pricingInfo = {};
     let marketPosition = {};
     let sentimentAnalysis = {};
+    let adIntelligence = {};
 
     try {
       // Scrape competitor website for detailed analysis
@@ -177,6 +178,10 @@ serve(async (req) => {
         }
       }
 
+      // Search for competitor ads
+      console.log('Searching for competitor ads...');
+      adIntelligence = await searchCompetitorAds(competitorName, firecrawlApiKey);
+
       // Generate social presence analysis (simulated)
       socialPresence = {
         platforms: ['LinkedIn', 'Twitter', 'Facebook', 'Instagram'],
@@ -256,6 +261,23 @@ serve(async (req) => {
       throw updateError;
     }
 
+    // Store ad intelligence separately for better organization
+    if (adIntelligence && Object.keys(adIntelligence).length > 0) {
+      const { error: adUpdateError } = await supabase
+        .from('competitor_intelligence')
+        .update({
+          detailed_analysis: {
+            ...detailedAnalysis,
+            ad_intelligence: adIntelligence
+          }
+        })
+        .eq('id', intelligenceRecord.id);
+      
+      if (adUpdateError) {
+        console.error('Error updating ad intelligence:', adUpdateError);
+      }
+    }
+
     console.log('Competitor intelligence analysis completed');
 
     return new Response(
@@ -268,7 +290,8 @@ serve(async (req) => {
           featureMatrix,
           pricingInfo,
           marketPosition,
-          sentimentAnalysis
+          sentimentAnalysis,
+          adIntelligence
         }
       }),
       {
@@ -291,3 +314,150 @@ serve(async (req) => {
     );
   }
 });
+
+// Function to search for competitor ads across platforms
+async function searchCompetitorAds(competitorName: string, firecrawlApiKey: string | undefined) {
+  if (!firecrawlApiKey) {
+    console.log('No Firecrawl API key found, skipping ad search');
+    return {
+      meta_ads: [],
+      tiktok_ads: [],
+      search_performed: false,
+      message: 'Firecrawl API key required for ad intelligence'
+    };
+  }
+
+  console.log('Starting ad intelligence search for:', competitorName);
+  
+  const adIntelligence = {
+    meta_ads: [],
+    tiktok_ads: [],
+    search_performed: true,
+    last_updated: new Date().toISOString(),
+    competitor_name: competitorName
+  };
+
+  try {
+    // Search Meta Ad Library
+    console.log('Searching Meta Ad Library...');
+    const metaAds = await searchMetaAdLibrary(competitorName, firecrawlApiKey);
+    adIntelligence.meta_ads = metaAds;
+
+    // Search TikTok (limited - would need official API for full access)
+    console.log('Searching TikTok ads...');
+    const tiktokAds = await searchTikTokAds(competitorName, firecrawlApiKey);
+    adIntelligence.tiktok_ads = tiktokAds;
+
+    console.log('Ad intelligence search completed');
+    return adIntelligence;
+  } catch (error) {
+    console.error('Error in ad intelligence search:', error);
+    return {
+      ...adIntelligence,
+      error: error.message,
+      search_performed: false
+    };
+  }
+}
+
+// Search Meta Ad Library using Firecrawl
+async function searchMetaAdLibrary(competitorName: string, firecrawlApiKey: string) {
+  try {
+    const firecrawlApp = new FirecrawlApp({ apiKey: firecrawlApiKey });
+    
+    // Facebook Ad Library URL
+    const adLibraryUrl = `https://www.facebook.com/ads/library/?active_status=all&ad_type=political_and_issue_ads&country=ALL&media_type=all&q=${encodeURIComponent(competitorName)}`;
+    
+    console.log('Scraping Meta Ad Library:', adLibraryUrl);
+    
+    const scrapeResult = await firecrawlApp.scrapeUrl(adLibraryUrl, {
+      formats: ['markdown', 'html'],
+      includeTags: ['img', 'video', 'h1', 'h2', 'h3', 'p', 'div', 'span'],
+      excludeTags: ['script', 'style'],
+      waitFor: 3000,
+      screenshot: true
+    });
+
+    if (scrapeResult.success && scrapeResult.data) {
+      console.log('Meta Ad Library scraping successful');
+      
+      // Extract ad information from the scraped content
+      const content = scrapeResult.data.markdown || '';
+      const screenshot = scrapeResult.data.screenshot;
+      
+      return {
+        platform: 'Meta/Facebook',
+        ads_found: content.includes(competitorName),
+        raw_content: content.slice(0, 2000), // Limit content size
+        screenshot_url: screenshot,
+        search_url: adLibraryUrl,
+        scraped_at: new Date().toISOString(),
+        summary: content.includes(competitorName) 
+          ? `Found potential ads for ${competitorName} on Meta platforms` 
+          : `No active ads found for ${competitorName} on Meta platforms`
+      };
+    } else {
+      return {
+        platform: 'Meta/Facebook',
+        ads_found: false,
+        error: 'Failed to scrape Meta Ad Library',
+        search_url: adLibraryUrl
+      };
+    }
+  } catch (error) {
+    console.error('Error searching Meta Ad Library:', error);
+    return {
+      platform: 'Meta/Facebook',
+      ads_found: false,
+      error: error.message
+    };
+  }
+}
+
+// Search TikTok ads (limited public access)
+async function searchTikTokAds(competitorName: string, firecrawlApiKey: string) {
+  try {
+    const firecrawlApp = new FirecrawlApp({ apiKey: firecrawlApiKey });
+    
+    // TikTok search URL (limited public visibility)
+    const tiktokSearchUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(competitorName + ' ad')}&t=1708975766`;
+    
+    console.log('Searching TikTok for ads:', tiktokSearchUrl);
+    
+    const scrapeResult = await firecrawlApp.scrapeUrl(tiktokSearchUrl, {
+      formats: ['markdown'],
+      includeTags: ['div', 'span', 'p', 'h1', 'h2', 'h3'],
+      excludeTags: ['script', 'style'],
+      waitFor: 3000
+    });
+
+    if (scrapeResult.success && scrapeResult.data) {
+      const content = scrapeResult.data.markdown || '';
+      
+      return {
+        platform: 'TikTok',
+        ads_found: content.toLowerCase().includes('sponsored') || content.toLowerCase().includes('ad'),
+        raw_content: content.slice(0, 1000),
+        search_url: tiktokSearchUrl,
+        scraped_at: new Date().toISOString(),
+        note: 'TikTok ad detection is limited due to platform restrictions. Consider using TikTok Ads API for comprehensive data.',
+        summary: 'TikTok search completed - limited ad visibility due to platform restrictions'
+      };
+    } else {
+      return {
+        platform: 'TikTok',
+        ads_found: false,
+        error: 'Failed to search TikTok',
+        note: 'TikTok has limited public ad visibility'
+      };
+    }
+  } catch (error) {
+    console.error('Error searching TikTok:', error);
+    return {
+      platform: 'TikTok',
+      ads_found: false,
+      error: error.message,
+      note: 'Consider using official TikTok Ads API for better access'
+    };
+  }
+}

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Brain, Users, DollarSign, TrendingUp, MessageSquare, CheckCircle, AlertCircle, Bell } from "lucide-react";
+import { Loader2, Brain, Users, DollarSign, TrendingUp, MessageSquare, CheckCircle, AlertCircle, Bell, Image, Video, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { RealTimeMonitoring } from "./RealTimeMonitoring";
 import { AnalysisProgress, ANALYSIS_STEPS } from "./analysis/AnalysisProgress";
@@ -19,6 +19,13 @@ interface CompetitorIntelligence {
     weaknesses: string[];
     uniqueSellingPoints: string[];
     marketFocus: string;
+    ad_intelligence?: {
+      meta_ads: any;
+      tiktok_ads: any;
+      search_performed: boolean;
+      last_updated: string;
+      competitor_name: string;
+    };
   };
   socialPresence: {
     platforms: string[];
@@ -231,8 +238,9 @@ export const CompetitorIntelligenceAnalysis = ({
 
       {intelligence && (
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="ads">Ad Intelligence</TabsTrigger>
             <TabsTrigger value="features">Features</TabsTrigger>
             <TabsTrigger value="pricing">Pricing</TabsTrigger>
             <TabsTrigger value="social">Social</TabsTrigger>
@@ -297,6 +305,157 @@ export const CompetitorIntelligenceAnalysis = ({
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="ads" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Image className="h-4 w-4" />
+                  Ad Intelligence
+                </CardTitle>
+                <CardDescription>
+                  Current advertising campaigns on Meta and TikTok platforms
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {intelligence.detailedAnalysis?.ad_intelligence ? (
+                  <div className="space-y-6">
+                    {/* Meta Ads Section */}
+                    <div>
+                      <h4 className="font-medium mb-3 flex items-center gap-2">
+                        <div className="w-4 h-4 bg-blue-600 rounded-full"></div>
+                        Meta (Facebook/Instagram) Ads
+                      </h4>
+                      
+                      {intelligence.detailedAnalysis.ad_intelligence.meta_ads ? (
+                        <div className="border rounded-lg p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Badge variant={intelligence.detailedAnalysis.ad_intelligence.meta_ads.ads_found ? "default" : "secondary"}>
+                              {intelligence.detailedAnalysis.ad_intelligence.meta_ads.ads_found ? "Ads Found" : "No Ads Found"}
+                            </Badge>
+                            {intelligence.detailedAnalysis.ad_intelligence.meta_ads.search_url && (
+                              <Button size="sm" variant="outline" asChild>
+                                <a 
+                                  href={intelligence.detailedAnalysis.ad_intelligence.meta_ads.search_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  View in Ad Library
+                                </a>
+                              </Button>
+                            )}
+                          </div>
+                          
+                          <p className="text-sm text-muted-foreground">
+                            {intelligence.detailedAnalysis.ad_intelligence.meta_ads.summary}
+                          </p>
+                          
+                          {intelligence.detailedAnalysis.ad_intelligence.meta_ads.screenshot_url && (
+                            <div className="mt-3">
+                              <p className="text-xs font-medium mb-2">Ad Library Screenshot:</p>
+                              <img 
+                                src={intelligence.detailedAnalysis.ad_intelligence.meta_ads.screenshot_url} 
+                                alt="Meta Ad Library Screenshot"
+                                className="border rounded max-w-full h-auto"
+                              />
+                            </div>
+                          )}
+                          
+                          <div className="text-xs text-muted-foreground">
+                            Last checked: {new Date(intelligence.detailedAnalysis.ad_intelligence.meta_ads.scraped_at || '').toLocaleString()}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="border rounded-lg p-4 text-center text-muted-foreground">
+                          <Image className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p>Meta ad data not available</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* TikTok Ads Section */}
+                    <div>
+                      <h4 className="font-medium mb-3 flex items-center gap-2">
+                        <div className="w-4 h-4 bg-black rounded-full"></div>
+                        TikTok Ads
+                      </h4>
+                      
+                      {intelligence.detailedAnalysis.ad_intelligence.tiktok_ads ? (
+                        <div className="border rounded-lg p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Badge variant={intelligence.detailedAnalysis.ad_intelligence.tiktok_ads.ads_found ? "default" : "secondary"}>
+                              {intelligence.detailedAnalysis.ad_intelligence.tiktok_ads.ads_found ? "Content Found" : "No Ads Found"}
+                            </Badge>
+                            {intelligence.detailedAnalysis.ad_intelligence.tiktok_ads.search_url && (
+                              <Button size="sm" variant="outline" asChild>
+                                <a 
+                                  href={intelligence.detailedAnalysis.ad_intelligence.tiktok_ads.search_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  View on TikTok
+                                </a>
+                              </Button>
+                            )}
+                          </div>
+                          
+                          <p className="text-sm text-muted-foreground">
+                            {intelligence.detailedAnalysis.ad_intelligence.tiktok_ads.summary}
+                          </p>
+                          
+                          {intelligence.detailedAnalysis.ad_intelligence.tiktok_ads.note && (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                              <p className="text-xs text-yellow-800">
+                                📝 {intelligence.detailedAnalysis.ad_intelligence.tiktok_ads.note}
+                              </p>
+                            </div>
+                          )}
+                          
+                          <div className="text-xs text-muted-foreground">
+                            Last checked: {new Date(intelligence.detailedAnalysis.ad_intelligence.tiktok_ads.scraped_at || '').toLocaleString()}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="border rounded-lg p-4 text-center text-muted-foreground">
+                          <Video className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p>TikTok ad data not available</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Search Summary */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h5 className="font-medium mb-2">Ad Intelligence Summary</h5>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">Search Performed</p>
+                          <Badge variant={intelligence.detailedAnalysis.ad_intelligence.search_performed ? "default" : "destructive"}>
+                            {intelligence.detailedAnalysis.ad_intelligence.search_performed ? "Yes" : "No"}
+                          </Badge>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Last Updated</p>
+                          <p className="font-medium">
+                            {new Date(intelligence.detailedAnalysis.ad_intelligence.last_updated).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Image className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No ad intelligence data available</p>
+                    <p className="text-sm">Run competitor analysis to gather advertising insights</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="features" className="space-y-4">
