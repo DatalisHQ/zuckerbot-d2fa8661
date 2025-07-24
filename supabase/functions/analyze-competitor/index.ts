@@ -1,7 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { launch } from "https://deno.land/x/puppeteer@16.2.0/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,66 +56,59 @@ serve(async (req) => {
     let adIntelligence = {};
 
     try {
-      // Scrape competitor website using Puppeteer
-      console.log('Scraping competitor website with Puppeteer...');
+      // Scrape competitor website using simple fetch
+      console.log('Scraping competitor website...');
+      
+      let websiteContent = '';
       
       try {
-        const browser = await launch({
-          args: ['--no-sandbox', '--disable-setuid-sandbox'],
-          headless: true
+        const response = await fetch(competitorUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
         });
         
-        const page = await browser.newPage();
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         
-        // Set user agent to avoid bot detection
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+        const html = await response.text();
+        console.log(`Fetched HTML length: ${html.length} characters`);
         
-        // Navigate to competitor website
-        await page.goto(competitorUrl, { 
-          waitUntil: 'networkidle2',
-          timeout: 30000 
-        });
+        // Simple HTML parsing to extract text content
+        // Remove script and style tags
+        let cleanedHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+        cleanedHtml = cleanedHtml.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
         
-        // Extract text content from the page
-        const content = await page.evaluate(() => {
-          // Remove script and style elements
-          const scripts = document.querySelectorAll('script, style');
-          scripts.forEach(el => el.remove());
-          
-          // Get text content from key elements
-          const title = document.title;
-          const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-            .map(el => el.textContent?.trim()).filter(text => text);
-          const paragraphs = Array.from(document.querySelectorAll('p'))
-            .map(el => el.textContent?.trim()).filter(text => text);
-          const nav = Array.from(document.querySelectorAll('nav a'))
-            .map(el => el.textContent?.trim()).filter(text => text);
-          
-          return {
-            title,
-            headings: headings.slice(0, 20), // Limit to avoid too much data
-            paragraphs: paragraphs.slice(0, 30),
-            navigation: nav.slice(0, 15),
-            fullText: document.body.textContent?.trim() || ''
-          };
-        });
+        // Extract title
+        const titleMatch = cleanedHtml.match(/<title[^>]*>([^<]+)</i);
+        const title = titleMatch ? titleMatch[1].trim() : '';
         
-        await browser.close();
+        // Extract headings
+        const headingMatches = cleanedHtml.match(/<h[1-6][^>]*>([^<]+)/gi) || [];
+        const headings = headingMatches.map(match => 
+          match.replace(/<[^>]*>/g, '').trim()
+        ).filter(text => text).slice(0, 15);
         
-        const websiteContent = `
-Title: ${content.title}
+        // Extract paragraph content
+        const paragraphMatches = cleanedHtml.match(/<p[^>]*>([^<]+)/gi) || [];
+        const paragraphs = paragraphMatches.map(match => 
+          match.replace(/<[^>]*>/g, '').trim()
+        ).filter(text => text && text.length > 20).slice(0, 20);
+        
+        websiteContent = `
+Title: ${title}
 
 Headings:
-${content.headings.join('\n')}
-
-Navigation:
-${content.navigation.join(', ')}
+${headings.join('\n')}
 
 Content:
-${content.paragraphs.join('\n\n')}
+${paragraphs.join('\n\n')}
+
+URL: ${competitorUrl}
 `.trim();
 
-        console.log(`Scraped ${websiteContent.length} characters from competitor website`);
+        console.log(`Scraped content length: ${websiteContent.length} characters`);
         
         // Use the Competitive Intelligence Assistant for analysis
         const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -211,14 +203,15 @@ ${content.paragraphs.join('\n\n')}
             } else {
               console.log('AI Assistant call failed, using fallback analysis');
             }
-          } catch (assistantError) {
+        } catch (assistantError) {
             console.error('Error calling AI Assistant:', assistantError);
             console.log('Falling back to basic analysis');
           }
         }
-      } catch (puppeteerError) {
-        console.error('Error with Puppeteer scraping:', puppeteerError);
-        console.log('Proceeding with basic analysis without website content');
+      } catch (fetchError) {
+        console.error('Error with website scraping:', fetchError);
+        console.log('Proceeding with basic analysis using URL only');
+        websiteContent = `Website URL: ${competitorUrl}\nDomain: ${new URL(competitorUrl).hostname}`;
       }
 
       // Search for competitor ads (simplified without Firecrawl)
@@ -358,35 +351,144 @@ ${content.paragraphs.join('\n\n')}
   }
 });
 
-// Function to search for competitor ads across platforms
+// Function to search for competitor ads using Facebook Ad Library API
 async function searchCompetitorAds(competitorName: string) {
-  console.log('Starting ad intelligence search for:', competitorName);
+  console.log('Starting Facebook Ad Library search for:', competitorName);
   
-  const adIntelligence = {
-    meta_ads: [],
-    tiktok_ads: [],
-    search_performed: false,
-    last_updated: new Date().toISOString(),
-    competitor_name: competitorName,
-    message: 'Ad intelligence disabled - awaiting Facebook API integration'
-  };
+  const facebookAccessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
+  const facebookAppId = Deno.env.get('FACEBOOK_APP_ID');
+  
+  if (!facebookAccessToken || !facebookAppId) {
+    console.log('Facebook credentials not available, returning placeholder data');
+    return {
+      meta_ads: [{
+        platform: 'Meta/Facebook',
+        ads_found: false,
+        message: 'Facebook API credentials not configured',
+        note: 'Add FACEBOOK_ACCESS_TOKEN and FACEBOOK_APP_ID to enable real ad data'
+      }],
+      tiktok_ads: [{
+        platform: 'TikTok',
+        ads_found: false,
+        message: 'TikTok API integration pending',
+        note: 'Limited public ad visibility available'
+      }],
+      search_performed: false,
+      last_updated: new Date().toISOString(),
+      competitor_name: competitorName
+    };
+  }
 
-  // For now, return placeholder data until Facebook integration is ready
-  return {
-    ...adIntelligence,
-    meta_ads: [{
-      platform: 'Meta/Facebook',
-      ads_found: false,
-      message: 'Facebook API integration pending',
-      note: 'Will be enabled once Facebook credentials are provided'
-    }],
-    tiktok_ads: [{
-      platform: 'TikTok',
-      ads_found: false,
-      message: 'TikTok API integration pending',
-      note: 'Limited public ad visibility available'
-    }]
-  };
+  try {
+    // Search for ads using Facebook Ad Library API
+    const searchQuery = encodeURIComponent(competitorName);
+    const apiUrl = `https://graph.facebook.com/v18.0/ads_archive?search_terms=${searchQuery}&ad_reached_countries=["ALL"]&ad_active_status=["ACTIVE","INACTIVE"]&limit=50&access_token=${facebookAccessToken}`;
+    
+    console.log('Calling Facebook Ad Library API...');
+    const response = await fetch(apiUrl);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Facebook API error:', response.status, errorText);
+      throw new Error(`Facebook API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log(`Found ${data.data?.length || 0} ads for ${competitorName}`);
+    
+    const processedAds = data.data?.map((ad: any) => ({
+      id: ad.id,
+      page_name: ad.page_name,
+      page_id: ad.page_id,
+      ad_creative_body: ad.ad_creative_body,
+      ad_creative_link_caption: ad.ad_creative_link_caption,
+      ad_creative_link_description: ad.ad_creative_link_description,
+      ad_creative_link_title: ad.ad_creative_link_title,
+      ad_delivery_start_time: ad.ad_delivery_start_time,
+      ad_delivery_stop_time: ad.ad_delivery_stop_time,
+      currency: ad.currency,
+      funding_entity: ad.funding_entity,
+      impressions: ad.impressions,
+      languages: ad.languages,
+      publisher_platforms: ad.publisher_platforms,
+      spend: ad.spend,
+      ad_snapshot_url: ad.ad_snapshot_url
+    })) || [];
+
+    // Analyze ad patterns
+    const activeAds = processedAds.filter(ad => !ad.ad_delivery_stop_time);
+    const platforms = [...new Set(processedAds.flatMap(ad => ad.publisher_platforms || []))];
+    const totalSpend = processedAds.reduce((sum, ad) => {
+      const spend = ad.spend?.toLowerCase();
+      if (spend && spend !== 'no data') {
+        // Extract numeric value from spend range (e.g., "$1,000-$1,499" -> 1250)
+        const match = spend.match(/[\d,]+/g);
+        if (match) {
+          const values = match.map(v => parseInt(v.replace(/,/g, '')));
+          return sum + (values.length > 1 ? (values[0] + values[1]) / 2 : values[0]);
+        }
+      }
+      return sum;
+    }, 0);
+
+    return {
+      meta_ads: [{
+        platform: 'Meta/Facebook',
+        ads_found: true,
+        total_ads: processedAds.length,
+        active_ads: activeAds.length,
+        platforms_used: platforms,
+        estimated_total_spend: totalSpend > 0 ? `$${totalSpend.toLocaleString()}` : 'Data not available',
+        recent_ads: processedAds.slice(0, 5).map(ad => ({
+          creative_body: ad.ad_creative_body?.substring(0, 200) + (ad.ad_creative_body?.length > 200 ? '...' : ''),
+          link_title: ad.ad_creative_link_title,
+          delivery_start: ad.ad_delivery_start_time,
+          delivery_stop: ad.ad_delivery_stop_time,
+          platforms: ad.publisher_platforms,
+          spend: ad.spend,
+          page_name: ad.page_name
+        })),
+        insights: {
+          most_used_platforms: platforms.slice(0, 3),
+          campaign_frequency: activeAds.length > 5 ? 'High' : activeAds.length > 2 ? 'Medium' : 'Low',
+          ad_formats: ['Image', 'Video', 'Carousel'], // Would need more detailed analysis
+          targeting_regions: [...new Set(processedAds.flatMap(ad => ad.languages || []))].slice(0, 5)
+        }
+      }],
+      tiktok_ads: [{
+        platform: 'TikTok',
+        ads_found: false,
+        message: 'TikTok Ad Library integration not yet available',
+        note: 'TikTok ad data requires separate API integration'
+      }],
+      search_performed: true,
+      last_updated: new Date().toISOString(),
+      competitor_name: competitorName,
+      facebook_api_status: 'success'
+    };
+
+  } catch (error) {
+    console.error('Error fetching Facebook ads:', error);
+    return {
+      meta_ads: [{
+        platform: 'Meta/Facebook',
+        ads_found: false,
+        error: error.message,
+        message: 'Failed to fetch ads from Facebook Ad Library',
+        note: 'Check API credentials and permissions'
+      }],
+      tiktok_ads: [{
+        platform: 'TikTok',
+        ads_found: false,
+        message: 'TikTok API integration pending',
+        note: 'Limited public ad visibility available'
+      }],
+      search_performed: false,
+      last_updated: new Date().toISOString(),
+      competitor_name: competitorName,
+      facebook_api_status: 'error'
+    };
+  }
 }
 
 // Placeholder functions for future Facebook API integration
