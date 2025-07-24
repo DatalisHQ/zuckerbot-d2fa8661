@@ -117,6 +117,7 @@ URL: ${competitorUrl}
           
           try {
             // Call our specialized competitive intelligence assistant using supabase client
+            console.log('Calling competitive intelligence assistant...');
             const assistantResponse = await supabase.functions.invoke('competitive-intelligence-assistant', {
               body: {
                 action: 'analyze_competitor',
@@ -124,17 +125,24 @@ URL: ${competitorUrl}
                   competitorName,
                   competitorUrl,
                   websiteContent,
-                  adIntelligence: adIntelligence
+                  adIntelligence: {} // We'll get this after ad search
                 },
                 analysisType: 'full',
                 userId
               }
             });
 
-            if (!assistantResponse.error) {
+            console.log('Assistant response status:', assistantResponse.error ? 'error' : 'success');
+            if (assistantResponse.error) {
+              console.error('Assistant error details:', assistantResponse.error);
+            }
+
+            if (!assistantResponse.error && assistantResponse.data) {
               const assistantResult = assistantResponse.data;
+              console.log('Assistant result received:', !!assistantResult.success);
               
               if (assistantResult.success && assistantResult.analysis) {
+                console.log('Processing AI analysis results...');
                 const analysis = assistantResult.analysis;
                 
                 // Map assistant analysis to our database structure
@@ -382,7 +390,7 @@ async function searchCompetitorAds(competitorName: string) {
   try {
     // Search for ads using Facebook Ad Library API
     const searchQuery = encodeURIComponent(competitorName);
-    const apiUrl = `https://graph.facebook.com/v18.0/ads_archive?search_terms=${searchQuery}&ad_reached_countries=["ALL"]&ad_active_status=["ACTIVE","INACTIVE"]&limit=50&access_token=${facebookAccessToken}`;
+    const apiUrl = `https://graph.facebook.com/v18.0/ads_archive?search_terms=${searchQuery}&ad_reached_countries=ALL&ad_active_status=ALL&limit=50&access_token=${facebookAccessToken}`;
     
     console.log('Calling Facebook Ad Library API...');
     const response = await fetch(apiUrl);
