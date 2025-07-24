@@ -124,14 +124,9 @@ ${content.paragraphs.join('\n\n')}
           console.log('Analyzing competitor with AI Assistant...');
           
           try {
-            // Call our specialized competitive intelligence assistant
-            const assistantResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/competitive-intelligence-assistant`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
+            // Call our specialized competitive intelligence assistant using supabase client
+            const assistantResponse = await supabase.functions.invoke('competitive-intelligence-assistant', {
+              body: {
                 action: 'analyze_competitor',
                 competitorData: {
                   competitorName,
@@ -141,11 +136,11 @@ ${content.paragraphs.join('\n\n')}
                 },
                 analysisType: 'full',
                 userId
-              })
+              }
             });
 
-            if (assistantResponse.ok) {
-              const assistantResult = await assistantResponse.json();
+            if (!assistantResponse.error) {
+              const assistantResult = assistantResponse.data;
               
               if (assistantResult.success && assistantResult.analysis) {
                 const analysis = assistantResult.analysis;
