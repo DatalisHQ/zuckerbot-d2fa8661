@@ -1,7 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { launch } from "https://deno.land/x/puppeteer@16.2.0/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,72 +44,63 @@ serve(async (req) => {
 
     console.log('Created brand record:', brandRecord.id);
 
-    // Scrape the website using Puppeteer
+    // Scrape the website using simple fetch
     console.log('Starting website scrape...');
     let scrapedContent = '';
     
     try {
-      const browser = await launch({
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        headless: true
+      const response = await fetch(brandUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
       });
       
-      const page = await browser.newPage();
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       
-      // Set user agent to avoid bot detection
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+      const html = await response.text();
+      console.log(`Fetched HTML length: ${html.length} characters`);
       
-      // Navigate to website
-      await page.goto(brandUrl, { 
-        waitUntil: 'networkidle2',
-        timeout: 30000 
-      });
+      // Simple HTML parsing to extract text content
+      // Remove script and style tags
+      let cleanedHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+      cleanedHtml = cleanedHtml.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
       
-      // Extract text content from the page
-      const content = await page.evaluate(() => {
-        // Remove script and style elements
-        const scripts = document.querySelectorAll('script, style');
-        scripts.forEach(el => el.remove());
-        
-        // Get text content from key elements
-        const title = document.title;
-        const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-          .map(el => el.textContent?.trim()).filter(text => text);
-        const paragraphs = Array.from(document.querySelectorAll('p'))
-          .map(el => el.textContent?.trim()).filter(text => text);
-        const nav = Array.from(document.querySelectorAll('nav a'))
-          .map(el => el.textContent?.trim()).filter(text => text);
-        
-        return {
-          title,
-          headings: headings.slice(0, 20), // Limit to avoid too much data
-          paragraphs: paragraphs.slice(0, 30),
-          navigation: nav.slice(0, 15),
-          fullText: document.body.textContent?.trim() || ''
-        };
-      });
+      // Extract title
+      const titleMatch = cleanedHtml.match(/<title[^>]*>([^<]+)</i);
+      const title = titleMatch ? titleMatch[1].trim() : '';
       
-      await browser.close();
+      // Extract headings
+      const headingMatches = cleanedHtml.match(/<h[1-6][^>]*>([^<]+)/gi) || [];
+      const headings = headingMatches.map(match => 
+        match.replace(/<[^>]*>/g, '').trim()
+      ).filter(text => text).slice(0, 15);
+      
+      // Extract paragraph content
+      const paragraphMatches = cleanedHtml.match(/<p[^>]*>([^<]+)/gi) || [];
+      const paragraphs = paragraphMatches.map(match => 
+        match.replace(/<[^>]*>/g, '').trim()
+      ).filter(text => text && text.length > 20).slice(0, 20);
       
       scrapedContent = `
-Title: ${content.title}
+Title: ${title}
 
 Headings:
-${content.headings.join('\n')}
-
-Navigation:
-${content.navigation.join(', ')}
+${headings.join('\n')}
 
 Content:
-${content.paragraphs.join('\n\n')}
+${paragraphs.join('\n\n')}
+
+URL: ${brandUrl}
 `.trim();
 
       console.log(`Scraped content length: ${scrapedContent.length} characters`);
       
-    } catch (puppeteerError) {
-      console.error('Error with Puppeteer scraping:', puppeteerError);
-      console.log('Proceeding with basic analysis without website content');
-      scrapedContent = `Website URL: ${brandUrl}`;
+    } catch (fetchError) {
+      console.error('Error with website scraping:', fetchError);
+      console.log('Proceeding with basic analysis using URL only');
+      scrapedContent = `Website URL: ${brandUrl}\nDomain: ${new URL(brandUrl).hostname}`;
     }
 
     // Analyze with OpenAI
