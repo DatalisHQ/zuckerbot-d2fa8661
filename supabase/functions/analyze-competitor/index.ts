@@ -1,7 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import FirecrawlApp from 'https://esm.sh/@mendable/firecrawl-js@1.7.0';
+import { launch } from "https://deno.land/x/puppeteer@16.2.0/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,131 +57,178 @@ serve(async (req) => {
     let adIntelligence = {};
 
     try {
-      // Scrape competitor website for detailed analysis
-      const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
-      if (firecrawlApiKey) {
-        console.log('Scraping competitor website...');
-        const firecrawlApp = new FirecrawlApp({ apiKey: firecrawlApiKey });
-        
-        const scrapeResult = await firecrawlApp.scrapeUrl(competitorUrl, {
-          formats: ['markdown'],
-          includeTags: ['h1', 'h2', 'h3', 'p', 'div', 'span', 'nav', 'footer'],
-          excludeTags: ['script', 'style'],
+      // Scrape competitor website using Puppeteer
+      console.log('Scraping competitor website with Puppeteer...');
+      
+      try {
+        const browser = await launch({
+          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+          headless: true
         });
-
-        if (scrapeResult.success) {
-          const content = scrapeResult.data?.markdown || '';
-          console.log(`Scraped ${content.length} characters from competitor website`);
+        
+        const page = await browser.newPage();
+        
+        // Set user agent to avoid bot detection
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+        
+        // Navigate to competitor website
+        await page.goto(competitorUrl, { 
+          waitUntil: 'networkidle2',
+          timeout: 30000 
+        });
+        
+        // Extract text content from the page
+        const content = await page.evaluate(() => {
+          // Remove script and style elements
+          const scripts = document.querySelectorAll('script, style');
+          scripts.forEach(el => el.remove());
           
-          // Use the Competitive Intelligence Assistant for analysis
-          const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-          if (openaiApiKey) {
-            console.log('Analyzing competitor with AI Assistant...');
-            
-            try {
-              // Call our specialized competitive intelligence assistant
-              const assistantResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/competitive-intelligence-assistant`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-                  'Content-Type': 'application/json',
+          // Get text content from key elements
+          const title = document.title;
+          const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+            .map(el => el.textContent?.trim()).filter(text => text);
+          const paragraphs = Array.from(document.querySelectorAll('p'))
+            .map(el => el.textContent?.trim()).filter(text => text);
+          const nav = Array.from(document.querySelectorAll('nav a'))
+            .map(el => el.textContent?.trim()).filter(text => text);
+          
+          return {
+            title,
+            headings: headings.slice(0, 20), // Limit to avoid too much data
+            paragraphs: paragraphs.slice(0, 30),
+            navigation: nav.slice(0, 15),
+            fullText: document.body.textContent?.trim() || ''
+          };
+        });
+        
+        await browser.close();
+        
+        const websiteContent = `
+Title: ${content.title}
+
+Headings:
+${content.headings.join('\n')}
+
+Navigation:
+${content.navigation.join(', ')}
+
+Content:
+${content.paragraphs.join('\n\n')}
+`.trim();
+
+        console.log(`Scraped ${websiteContent.length} characters from competitor website`);
+        
+        // Use the Competitive Intelligence Assistant for analysis
+        const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+        if (openaiApiKey) {
+          console.log('Analyzing competitor with AI Assistant...');
+          
+          try {
+            // Call our specialized competitive intelligence assistant
+            const assistantResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/competitive-intelligence-assistant`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                action: 'analyze_competitor',
+                competitorData: {
+                  competitorName,
+                  competitorUrl,
+                  websiteContent,
+                  adIntelligence: adIntelligence
                 },
-                body: JSON.stringify({
-                  action: 'analyze_competitor',
-                  competitorData: {
-                    competitorName,
-                    competitorUrl,
-                    websiteContent: content,
-                    adIntelligence: adIntelligence
-                  },
-                  analysisType: 'full',
-                  userId
-                })
-              });
+                analysisType: 'full',
+                userId
+              })
+            });
 
-              if (assistantResponse.ok) {
-                const assistantResult = await assistantResponse.json();
+            if (assistantResponse.ok) {
+              const assistantResult = await assistantResponse.json();
+              
+              if (assistantResult.success && assistantResult.analysis) {
+                const analysis = assistantResult.analysis;
                 
-                if (assistantResult.success && assistantResult.analysis) {
-                  const analysis = assistantResult.analysis;
-                  
-                  // Map assistant analysis to our database structure
-                  if (analysis.competitivePositioning) {
-                    detailedAnalysis = {
-                      businessModel: analysis.competitivePositioning.marketPosition || 'Unknown',
-                      targetAudience: analysis.competitivePositioning.targetAudienceOverlap || 'Unknown',
-                      keyStrengths: analysis.competitivePositioning.competitiveAdvantages || [],
-                      weaknesses: analysis.competitivePositioning.vulnerabilities || [],
-                      uniqueSellingPoints: analysis.competitivePositioning.differentiationFactors || [],
-                      marketFocus: analysis.executiveSummary?.primaryOpportunity || 'Unknown',
-                      ad_intelligence: adIntelligence,
-                      aiAnalysis: analysis // Store the full AI analysis
-                    };
-                  }
-
-                  if (analysis.featureAnalysis) {
-                    featureMatrix = {
-                      coreFeatures: analysis.featureAnalysis.coreFeatures || [],
-                      advancedFeatures: analysis.featureAnalysis.uniqueFeatures || [],
-                      integrations: [],
-                      platforms: [],
-                      apiAccess: analysis.featureAnalysis.technicalCapabilities || 'Unknown',
-                      customization: analysis.featureAnalysis.userExperience || 'Unknown'
-                    };
-                  }
-
-                  if (analysis.pricingAnalysis) {
-                    pricingInfo = {
-                      pricingModel: analysis.pricingAnalysis.pricingModel || 'Unknown',
-                      plans: analysis.pricingAnalysis.pricePoints?.map((price: string) => ({
-                        name: 'Plan',
-                        price: price,
-                        features: []
-                      })) || [],
-                      freeTrial: false,
-                      moneyBackGuarantee: false,
-                      enterprise: analysis.pricingAnalysis.pricingStrategy?.includes('premium') || false
-                    };
-                  }
-
-                  // Enhanced market position with AI insights
-                  marketPosition = {
-                    marketShare: `${(Math.random() * 15 + 2).toFixed(1)}%`,
-                    positioning: analysis.competitivePositioning?.marketPosition || 'Unknown',
-                    competitiveAdvantages: analysis.competitivePositioning?.competitiveAdvantages || [],
-                    threats: analysis.competitivePositioning?.vulnerabilities || [],
-                    opportunities: analysis.strategicRecommendations?.filter((r: any) => r.priority === 'High').map((r: any) => r.recommendation) || [],
-                    aiInsights: analysis.executiveSummary || {}
+                // Map assistant analysis to our database structure
+                if (analysis.competitivePositioning) {
+                  detailedAnalysis = {
+                    businessModel: analysis.competitivePositioning.marketPosition || 'Unknown',
+                    targetAudience: analysis.competitivePositioning.targetAudienceOverlap || 'Unknown',
+                    keyStrengths: analysis.competitivePositioning.competitiveAdvantages || [],
+                    weaknesses: analysis.competitivePositioning.vulnerabilities || [],
+                    uniqueSellingPoints: analysis.competitivePositioning.differentiationFactors || [],
+                    marketFocus: analysis.executiveSummary?.primaryOpportunity || 'Unknown',
+                    ad_intelligence: adIntelligence,
+                    aiAnalysis: analysis // Store the full AI analysis
                   };
-
-                  // Enhanced sentiment analysis
-                  sentimentAnalysis = {
-                    overallSentiment: 'Positive',
-                    customerSatisfaction: `${(Math.random() * 2 + 3).toFixed(1)}/5`,
-                    commonComplaints: analysis.competitivePositioning?.vulnerabilities || [],
-                    positiveReviews: analysis.competitivePositioning?.competitiveAdvantages || [],
-                    reviewSources: ['AI Analysis', 'Website Content', 'Ad Intelligence'],
-                    aiConfidence: analysis.executiveSummary?.confidenceScore || 'Unknown'
-                  };
-
-                  console.log('AI Assistant analysis completed successfully');
-                } else {
-                  console.log('AI Assistant returned no analysis, using fallback');
                 }
+
+                if (analysis.featureAnalysis) {
+                  featureMatrix = {
+                    coreFeatures: analysis.featureAnalysis.coreFeatures || [],
+                    advancedFeatures: analysis.featureAnalysis.uniqueFeatures || [],
+                    integrations: [],
+                    platforms: [],
+                    apiAccess: analysis.featureAnalysis.technicalCapabilities || 'Unknown',
+                    customization: analysis.featureAnalysis.userExperience || 'Unknown'
+                  };
+                }
+
+                if (analysis.pricingAnalysis) {
+                  pricingInfo = {
+                    pricingModel: analysis.pricingAnalysis.pricingModel || 'Unknown',
+                    plans: analysis.pricingAnalysis.pricePoints?.map((price: string) => ({
+                      name: 'Plan',
+                      price: price,
+                      features: []
+                    })) || [],
+                    freeTrial: false,
+                    moneyBackGuarantee: false,
+                    enterprise: analysis.pricingAnalysis.pricingStrategy?.includes('premium') || false
+                  };
+                }
+
+                // Enhanced market position with AI insights
+                marketPosition = {
+                  marketShare: `${(Math.random() * 15 + 2).toFixed(1)}%`,
+                  positioning: analysis.competitivePositioning?.marketPosition || 'Unknown',
+                  competitiveAdvantages: analysis.competitivePositioning?.competitiveAdvantages || [],
+                  threats: analysis.competitivePositioning?.vulnerabilities || [],
+                  opportunities: analysis.strategicRecommendations?.filter((r: any) => r.priority === 'High').map((r: any) => r.recommendation) || [],
+                  aiInsights: analysis.executiveSummary || {}
+                };
+
+                // Enhanced sentiment analysis
+                sentimentAnalysis = {
+                  overallSentiment: 'Positive',
+                  customerSatisfaction: `${(Math.random() * 2 + 3).toFixed(1)}/5`,
+                  commonComplaints: analysis.competitivePositioning?.vulnerabilities || [],
+                  positiveReviews: analysis.competitivePositioning?.competitiveAdvantages || [],
+                  reviewSources: ['AI Analysis', 'Website Content', 'Ad Intelligence'],
+                  aiConfidence: analysis.executiveSummary?.confidenceScore || 'Unknown'
+                };
+
+                console.log('AI Assistant analysis completed successfully');
               } else {
-                console.log('AI Assistant call failed, using fallback analysis');
+                console.log('AI Assistant returned no analysis, using fallback');
               }
-            } catch (assistantError) {
-              console.error('Error calling AI Assistant:', assistantError);
-              console.log('Falling back to basic analysis');
+            } else {
+              console.log('AI Assistant call failed, using fallback analysis');
             }
+          } catch (assistantError) {
+            console.error('Error calling AI Assistant:', assistantError);
+            console.log('Falling back to basic analysis');
           }
         }
+      } catch (puppeteerError) {
+        console.error('Error with Puppeteer scraping:', puppeteerError);
+        console.log('Proceeding with basic analysis without website content');
       }
 
-      // Search for competitor ads
+      // Search for competitor ads (simplified without Firecrawl)
       console.log('Searching for competitor ads...');
-      adIntelligence = await searchCompetitorAds(competitorName, firecrawlApiKey);
+      adIntelligence = await searchCompetitorAds(competitorName);
 
       // Generate social presence analysis (simulated)
       socialPresence = {
@@ -317,148 +364,35 @@ serve(async (req) => {
 });
 
 // Function to search for competitor ads across platforms
-async function searchCompetitorAds(competitorName: string, firecrawlApiKey: string | undefined) {
-  if (!firecrawlApiKey) {
-    console.log('No Firecrawl API key found, skipping ad search');
-    return {
-      meta_ads: [],
-      tiktok_ads: [],
-      search_performed: false,
-      message: 'Firecrawl API key required for ad intelligence'
-    };
-  }
-
+async function searchCompetitorAds(competitorName: string) {
   console.log('Starting ad intelligence search for:', competitorName);
   
   const adIntelligence = {
     meta_ads: [],
     tiktok_ads: [],
-    search_performed: true,
+    search_performed: false,
     last_updated: new Date().toISOString(),
-    competitor_name: competitorName
+    competitor_name: competitorName,
+    message: 'Ad intelligence disabled - awaiting Facebook API integration'
   };
 
-  try {
-    // Search Meta Ad Library
-    console.log('Searching Meta Ad Library...');
-    const metaAds = await searchMetaAdLibrary(competitorName, firecrawlApiKey);
-    adIntelligence.meta_ads = metaAds;
-
-    // Search TikTok (limited - would need official API for full access)
-    console.log('Searching TikTok ads...');
-    const tiktokAds = await searchTikTokAds(competitorName, firecrawlApiKey);
-    adIntelligence.tiktok_ads = tiktokAds;
-
-    console.log('Ad intelligence search completed');
-    return adIntelligence;
-  } catch (error) {
-    console.error('Error in ad intelligence search:', error);
-    return {
-      ...adIntelligence,
-      error: error.message,
-      search_performed: false
-    };
-  }
-}
-
-// Search Meta Ad Library using Firecrawl
-async function searchMetaAdLibrary(competitorName: string, firecrawlApiKey: string) {
-  try {
-    const firecrawlApp = new FirecrawlApp({ apiKey: firecrawlApiKey });
-    
-    // Facebook Ad Library URL
-    const adLibraryUrl = `https://www.facebook.com/ads/library/?active_status=all&ad_type=political_and_issue_ads&country=ALL&media_type=all&q=${encodeURIComponent(competitorName)}`;
-    
-    console.log('Scraping Meta Ad Library:', adLibraryUrl);
-    
-    const scrapeResult = await firecrawlApp.scrapeUrl(adLibraryUrl, {
-      formats: ['markdown', 'html'],
-      includeTags: ['img', 'video', 'h1', 'h2', 'h3', 'p', 'div', 'span'],
-      excludeTags: ['script', 'style'],
-      waitFor: 3000,
-      screenshot: true
-    });
-
-    if (scrapeResult.success && scrapeResult.data) {
-      console.log('Meta Ad Library scraping successful');
-      
-      // Extract ad information from the scraped content
-      const content = scrapeResult.data.markdown || '';
-      const screenshot = scrapeResult.data.screenshot;
-      
-      return {
-        platform: 'Meta/Facebook',
-        ads_found: content.includes(competitorName),
-        raw_content: content.slice(0, 2000), // Limit content size
-        screenshot_url: screenshot,
-        search_url: adLibraryUrl,
-        scraped_at: new Date().toISOString(),
-        summary: content.includes(competitorName) 
-          ? `Found potential ads for ${competitorName} on Meta platforms` 
-          : `No active ads found for ${competitorName} on Meta platforms`
-      };
-    } else {
-      return {
-        platform: 'Meta/Facebook',
-        ads_found: false,
-        error: 'Failed to scrape Meta Ad Library',
-        search_url: adLibraryUrl
-      };
-    }
-  } catch (error) {
-    console.error('Error searching Meta Ad Library:', error);
-    return {
+  // For now, return placeholder data until Facebook integration is ready
+  return {
+    ...adIntelligence,
+    meta_ads: [{
       platform: 'Meta/Facebook',
       ads_found: false,
-      error: error.message
-    };
-  }
-}
-
-// Search TikTok ads (limited public access)
-async function searchTikTokAds(competitorName: string, firecrawlApiKey: string) {
-  try {
-    const firecrawlApp = new FirecrawlApp({ apiKey: firecrawlApiKey });
-    
-    // TikTok search URL (limited public visibility)
-    const tiktokSearchUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(competitorName + ' ad')}&t=1708975766`;
-    
-    console.log('Searching TikTok for ads:', tiktokSearchUrl);
-    
-    const scrapeResult = await firecrawlApp.scrapeUrl(tiktokSearchUrl, {
-      formats: ['markdown'],
-      includeTags: ['div', 'span', 'p', 'h1', 'h2', 'h3'],
-      excludeTags: ['script', 'style'],
-      waitFor: 3000
-    });
-
-    if (scrapeResult.success && scrapeResult.data) {
-      const content = scrapeResult.data.markdown || '';
-      
-      return {
-        platform: 'TikTok',
-        ads_found: content.toLowerCase().includes('sponsored') || content.toLowerCase().includes('ad'),
-        raw_content: content.slice(0, 1000),
-        search_url: tiktokSearchUrl,
-        scraped_at: new Date().toISOString(),
-        note: 'TikTok ad detection is limited due to platform restrictions. Consider using TikTok Ads API for comprehensive data.',
-        summary: 'TikTok search completed - limited ad visibility due to platform restrictions'
-      };
-    } else {
-      return {
-        platform: 'TikTok',
-        ads_found: false,
-        error: 'Failed to search TikTok',
-        note: 'TikTok has limited public ad visibility'
-      };
-    }
-  } catch (error) {
-    console.error('Error searching TikTok:', error);
-    return {
+      message: 'Facebook API integration pending',
+      note: 'Will be enabled once Facebook credentials are provided'
+    }],
+    tiktok_ads: [{
       platform: 'TikTok',
       ads_found: false,
-      error: error.message,
-      note: 'Consider using official TikTok Ads API for better access'
-    };
-  }
+      message: 'TikTok API integration pending',
+      note: 'Limited public ad visibility available'
+    }]
+  };
 }
+
+// Placeholder functions for future Facebook API integration
+// These will be replaced when Facebook credentials are added
