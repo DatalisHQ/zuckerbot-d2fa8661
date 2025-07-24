@@ -1,1 +1,4 @@
 project_id = "wrjqevcpxkfvfudbmdhp"
+
+[functions.analyze-brand]
+verify_jwt = false
