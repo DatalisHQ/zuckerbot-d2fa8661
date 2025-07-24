@@ -7,6 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Globe, TrendingUp, Target, Package, Lightbulb } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { CompetitorDiscovery } from "./CompetitorDiscovery";
+import { AnalysisProgress, ANALYSIS_STEPS } from "./analysis/AnalysisProgress";
+import { ThinkingIndicator } from "./analysis/ThinkingIndicator";
+import { useAnalysisProgress } from "./analysis/useAnalysisProgress";
 
 interface BrandAnalysis {
   brandName: string;
@@ -22,11 +25,16 @@ export const BrandAnalysisForm = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<BrandAnalysis | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
+  
+  const progressTracker = useAnalysisProgress({ 
+    steps: ANALYSIS_STEPS.BRAND_ANALYSIS 
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setAnalysis(null);
+    progressTracker.reset();
     
     try {
       // Get current user
@@ -42,6 +50,25 @@ export const BrandAnalysisForm = () => {
 
       console.log('Starting brand analysis for:', url);
       
+      // Step 1: Website Scraping
+      progressTracker.startStep('website-scrape', 'Connecting to website and extracting content...');
+      
+      // Simulate step progress for demo (in real implementation, you'd get these from the backend)
+      setTimeout(() => {
+        progressTracker.completeStep('website-scrape', 3);
+        progressTracker.startStep('content-analysis', 'AI is analyzing website content and structure...');
+      }, 2000);
+      
+      setTimeout(() => {
+        progressTracker.completeStep('content-analysis', 4);
+        progressTracker.startStep('brand-extraction', 'Extracting brand identity and value propositions...');
+      }, 5000);
+      
+      setTimeout(() => {
+        progressTracker.completeStep('brand-extraction', 3);
+        progressTracker.startStep('categorization', 'Determining market category and competitive positioning...');
+      }, 8000);
+
       const { data, error } = await supabase.functions.invoke('analyze-brand', {
         body: {
           brandUrl: url,
@@ -51,12 +78,18 @@ export const BrandAnalysisForm = () => {
 
       if (error) {
         console.error('Error calling analyze-brand function:', error);
+        progressTracker.errorStep(progressTracker.getCurrentStep()?.id || 'categorization', 'Analysis failed - please try again');
         throw error;
       }
 
       if (!data.success) {
+        progressTracker.errorStep(progressTracker.getCurrentStep()?.id || 'categorization', data.error || 'Analysis failed');
         throw new Error(data.error || 'Analysis failed');
       }
+
+      // Complete final step
+      progressTracker.completeStep('categorization', 2);
+      progressTracker.updateThinkingMessage('Analysis complete!');
 
       console.log('Analysis completed:', data.analysis);
       setAnalysis(data.analysis);
@@ -117,6 +150,23 @@ export const BrandAnalysisForm = () => {
           </form>
         </CardContent>
       </Card>
+
+      {/* Progress Tracking */}
+      {isLoading && (
+        <div className="space-y-4">
+          <AnalysisProgress 
+            steps={progressTracker.steps}
+            currentStep={progressTracker.currentStepId || undefined}
+            progress={progressTracker.progress}
+            thinkingMessage={progressTracker.thinkingMessage}
+          />
+          <ThinkingIndicator 
+            isActive={isLoading}
+            message={progressTracker.thinkingMessage}
+            stage="analyzing"
+          />
+        </div>
+      )}
 
       {analysis && (
         <div className="grid gap-6 md:grid-cols-2">

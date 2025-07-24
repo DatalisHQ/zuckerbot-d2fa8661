@@ -7,6 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Brain, Users, DollarSign, TrendingUp, MessageSquare, CheckCircle, AlertCircle, Bell } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { RealTimeMonitoring } from "./RealTimeMonitoring";
+import { AnalysisProgress, ANALYSIS_STEPS } from "./analysis/AnalysisProgress";
+import { ThinkingIndicator } from "./analysis/ThinkingIndicator";
+import { useAnalysisProgress } from "./analysis/useAnalysisProgress";
 
 interface CompetitorIntelligence {
   detailedAnalysis: {
@@ -76,10 +79,15 @@ export const CompetitorIntelligenceAnalysis = ({
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [intelligence, setIntelligence] = useState<CompetitorIntelligence | null>(null);
+  
+  const progressTracker = useAnalysisProgress({ 
+    steps: ANALYSIS_STEPS.COMPETITOR_INTELLIGENCE 
+  });
 
   const handleAnalyzeCompetitor = async () => {
     setIsLoading(true);
     setIntelligence(null);
+    progressTracker.reset();
     
     try {
       // Get current user
@@ -95,6 +103,29 @@ export const CompetitorIntelligenceAnalysis = ({
 
       console.log('Starting competitor intelligence analysis for:', competitorName);
       
+      // Step 1: Website Analysis
+      progressTracker.startStep('website-analysis', 'Deep diving into competitor website architecture...');
+      
+      setTimeout(() => {
+        progressTracker.completeStep('website-analysis', 5);
+        progressTracker.startStep('feature-extraction', 'Analyzing product features and capabilities...');
+      }, 4000);
+      
+      setTimeout(() => {
+        progressTracker.completeStep('feature-extraction', 6);
+        progressTracker.startStep('pricing-analysis', 'Extracting pricing models and strategies...');
+      }, 8000);
+      
+      setTimeout(() => {
+        progressTracker.completeStep('pricing-analysis', 4);
+        progressTracker.startStep('social-analysis', 'Evaluating social media presence and engagement...');
+      }, 12000);
+      
+      setTimeout(() => {
+        progressTracker.completeStep('social-analysis', 3);
+        progressTracker.startStep('sentiment-analysis', 'Analyzing customer sentiment and reviews...');
+      }, 15000);
+
       const { data, error } = await supabase.functions.invoke('analyze-competitor', {
         body: {
           competitorName,
@@ -106,12 +137,18 @@ export const CompetitorIntelligenceAnalysis = ({
 
       if (error) {
         console.error('Error calling analyze-competitor function:', error);
+        progressTracker.errorStep(progressTracker.getCurrentStep()?.id || 'sentiment-analysis', 'Analysis failed - please try again');
         throw error;
       }
 
       if (!data.success) {
+        progressTracker.errorStep(progressTracker.getCurrentStep()?.id || 'sentiment-analysis', data.error || 'Analysis failed');
         throw new Error(data.error || 'Competitor analysis failed');
       }
+
+      // Complete final step
+      progressTracker.completeStep('sentiment-analysis', 4);
+      progressTracker.updateThinkingMessage('Intelligence analysis complete!');
 
       console.log('Analysis completed:', data.analysis);
       setIntelligence(data.analysis);
@@ -174,6 +211,23 @@ export const CompetitorIntelligenceAnalysis = ({
           </Button>
         </CardContent>
       </Card>
+
+      {/* Progress Tracking */}
+      {isLoading && (
+        <div className="space-y-4">
+          <AnalysisProgress 
+            steps={progressTracker.steps}
+            currentStep={progressTracker.currentStepId || undefined}
+            progress={progressTracker.progress}
+            thinkingMessage={progressTracker.thinkingMessage}
+          />
+          <ThinkingIndicator 
+            isActive={isLoading}
+            message={progressTracker.thinkingMessage}
+            stage="thinking"
+          />
+        </div>
+      )}
 
       {intelligence && (
         <Tabs defaultValue="overview" className="w-full">

@@ -6,6 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, Globe, TrendingUp, ExternalLink, Brain } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { CompetitorIntelligenceAnalysis } from "./CompetitorIntelligenceAnalysis";
+import { AnalysisProgress, ANALYSIS_STEPS } from "./analysis/AnalysisProgress";
+import { ThinkingIndicator } from "./analysis/ThinkingIndicator";
+import { useAnalysisProgress } from "./analysis/useAnalysisProgress";
 
 interface Competitor {
   name: string;
@@ -26,10 +29,15 @@ export const CompetitorDiscovery = ({ brandAnalysisId, onDiscoveryComplete }: Co
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [selectedCompetitor, setSelectedCompetitor] = useState<Competitor | null>(null);
   const [discoveryId, setDiscoveryId] = useState<string | null>(null);
+  
+  const progressTracker = useAnalysisProgress({ 
+    steps: ANALYSIS_STEPS.COMPETITOR_DISCOVERY 
+  });
 
   const handleDiscoverCompetitors = async () => {
     setIsLoading(true);
     setCompetitors([]);
+    progressTracker.reset();
     
     try {
       // Get current user
@@ -45,6 +53,24 @@ export const CompetitorDiscovery = ({ brandAnalysisId, onDiscoveryComplete }: Co
 
       console.log('Starting competitor discovery for brand analysis:', brandAnalysisId);
       
+      // Step 1: Market Research
+      progressTracker.startStep('market-research', 'Researching market landscape and similar businesses...');
+      
+      setTimeout(() => {
+        progressTracker.completeStep('market-research', 4);
+        progressTracker.startStep('competitor-identification', 'AI is identifying potential competitors...');
+      }, 3000);
+      
+      setTimeout(() => {
+        progressTracker.completeStep('competitor-identification', 5);
+        progressTracker.startStep('similarity-scoring', 'Calculating competitive similarity scores...');
+      }, 6000);
+      
+      setTimeout(() => {
+        progressTracker.completeStep('similarity-scoring', 3);
+        progressTracker.startStep('competitor-ranking', 'Ranking competitors by threat level...');
+      }, 9000);
+
       const { data, error } = await supabase.functions.invoke('discover-competitors', {
         body: {
           brandAnalysisId,
@@ -54,12 +80,18 @@ export const CompetitorDiscovery = ({ brandAnalysisId, onDiscoveryComplete }: Co
 
       if (error) {
         console.error('Error calling discover-competitors function:', error);
+        progressTracker.errorStep(progressTracker.getCurrentStep()?.id || 'competitor-ranking', 'Discovery failed - please try again');
         throw error;
       }
 
       if (!data.success) {
+        progressTracker.errorStep(progressTracker.getCurrentStep()?.id || 'competitor-ranking', data.error || 'Discovery failed');
         throw new Error(data.error || 'Competitor discovery failed');
       }
+
+      // Complete final step
+      progressTracker.completeStep('competitor-ranking', 2);
+      progressTracker.updateThinkingMessage('Discovery complete!');
 
       console.log('Discovery completed:', data);
       setCompetitors(data.competitors);
@@ -129,6 +161,23 @@ export const CompetitorDiscovery = ({ brandAnalysisId, onDiscoveryComplete }: Co
           </Button>
         </CardContent>
       </Card>
+
+      {/* Progress Tracking */}
+      {isLoading && (
+        <div className="space-y-4">
+          <AnalysisProgress 
+            steps={progressTracker.steps}
+            currentStep={progressTracker.currentStepId || undefined}
+            progress={progressTracker.progress}
+            thinkingMessage={progressTracker.thinkingMessage}
+          />
+          <ThinkingIndicator 
+            isActive={isLoading}
+            message={progressTracker.thinkingMessage}
+            stage="processing"
+          />
+        </div>
+      )}
 
       {competitors.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2">
