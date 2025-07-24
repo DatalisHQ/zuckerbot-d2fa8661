@@ -2,3 +2,6 @@ project_id = "wrjqevcpxkfvfudbmdhp"
 
 [functions.analyze-brand]
 verify_jwt = false
+
+[functions.discover-competitors]
+verify_jwt = false

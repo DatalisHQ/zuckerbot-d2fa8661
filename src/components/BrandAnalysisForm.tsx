@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Globe, TrendingUp, Target, Package, Lightbulb } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { CompetitorDiscovery } from "./CompetitorDiscovery";
 
 interface BrandAnalysis {
   brandName: string;
@@ -20,6 +21,7 @@ export const BrandAnalysisForm = () => {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<BrandAnalysis | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +60,7 @@ export const BrandAnalysisForm = () => {
 
       console.log('Analysis completed:', data.analysis);
       setAnalysis(data.analysis);
+      setAnalysisId(data.analysisId);
       
       toast({
         title: "Analysis Complete",
@@ -184,6 +187,12 @@ export const BrandAnalysisForm = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {analysisId && (
+        <div className="mt-8">
+          <CompetitorDiscovery brandAnalysisId={analysisId} />
         </div>
       )}
     </div>

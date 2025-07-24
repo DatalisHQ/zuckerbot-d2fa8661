@@ -59,6 +59,47 @@ export type Database = {
         }
         Relationships: []
       }
+      competitor_discovery: {
+        Row: {
+          brand_analysis_id: string | null
+          created_at: string
+          discovered_competitors: Json | null
+          discovery_status: string | null
+          id: string
+          search_query: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          brand_analysis_id?: string | null
+          created_at?: string
+          discovered_competitors?: Json | null
+          discovery_status?: string | null
+          id?: string
+          search_query: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          brand_analysis_id?: string | null
+          created_at?: string
+          discovered_competitors?: Json | null
+          discovery_status?: string | null
+          id?: string
+          search_query?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_discovery_brand_analysis_id_fkey"
+            columns: ["brand_analysis_id"]
+            isOneToOne: false
+            referencedRelation: "brand_analysis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
