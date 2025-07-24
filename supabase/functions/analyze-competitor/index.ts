@@ -224,7 +224,7 @@ URL: ${competitorUrl}
 
       // Search for competitor ads (simplified without Firecrawl)
       console.log('Searching for competitor ads...');
-      adIntelligence = await searchCompetitorAds(competitorName);
+      adIntelligence = await searchCompetitorAds(competitorName, userId, supabase);
 
       // Generate social presence analysis (simulated)
       socialPresence = {
@@ -360,11 +360,24 @@ URL: ${competitorUrl}
 });
 
 // Function to search for competitor ads using Facebook Ad Library API
-async function searchCompetitorAds(competitorName: string) {
+async function searchCompetitorAds(competitorName: string, userId?: string, supabaseClient?: any) {
   console.log('Starting Facebook Ad Library search for:', competitorName);
   
-  const facebookAccessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
-  const facebookAppId = Deno.env.get('FACEBOOK_APP_ID');
+  let facebookAccessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
+  let facebookAppId = Deno.env.get('FACEBOOK_APP_ID');
+  
+  // Try to get user's Facebook token from their session if available
+  if (userId && supabaseClient) {
+    try {
+      const { data: userData } = await supabaseClient.auth.admin.getUserById(userId);
+      if (userData?.user?.app_metadata?.provider === 'facebook' && userData?.user?.user_metadata?.provider_token) {
+        facebookAccessToken = userData.user.user_metadata.provider_token;
+        console.log('Using user Facebook access token for personalized ad data');
+      }
+    } catch (error) {
+      console.log('Could not retrieve user Facebook token, using app token:', error);
+    }
+  }
   
   if (!facebookAccessToken || !facebookAppId) {
     console.log('Facebook credentials not available, returning placeholder data');
