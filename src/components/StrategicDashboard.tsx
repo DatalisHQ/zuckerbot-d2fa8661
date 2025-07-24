@@ -46,6 +46,17 @@ interface StrategicInsight {
   is_implemented: boolean;
 }
 
+interface CompetitiveReport {
+  id: string;
+  report_name: string;
+  report_type: string;
+  status: string;
+  created_at: string;
+  executive_summary: string;
+  competitor_count: number;
+  key_findings: string[];
+}
+
 interface RecentActivity {
   type: 'alert' | 'insight';
   title: string;
@@ -66,6 +77,7 @@ export const StrategicDashboard = () => {
     criticalInsights: 0
   });
   const [insights, setInsights] = useState<StrategicInsight[]>([]);
+  const [reports, setReports] = useState<CompetitiveReport[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [generatingInsights, setGeneratingInsights] = useState(false);
 
@@ -91,6 +103,7 @@ export const StrategicDashboard = () => {
       if (data.success) {
         setMetrics(data.data.metrics);
         setInsights(data.data.insights);
+        setReports(data.data.reports || []);
         setRecentActivity(data.data.recentActivity);
       }
     } catch (error) {
@@ -461,66 +474,104 @@ export const StrategicDashboard = () => {
         <TabsContent value="reports" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Generate Reports</CardTitle>
-              <CardDescription>Create comprehensive competitive analysis reports</CardDescription>
+              <CardTitle>Competitive Reports</CardTitle>
+              <CardDescription>View and generate competitive analysis reports</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Button 
-                  onClick={() => createReport('swot')} 
-                  variant="outline"
-                  className="p-6 h-auto flex flex-col items-start gap-2"
-                >
-                  <Target className="h-6 w-6" />
-                  <div className="text-left">
-                    <div className="font-medium">SWOT Analysis</div>
-                    <div className="text-sm text-muted-foreground">
-                      Strengths, weaknesses, opportunities, and threats analysis
+            <CardContent className="space-y-6">
+              {/* Generate New Reports */}
+              <div>
+                <h4 className="font-medium mb-3">Generate New Report</h4>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Button 
+                    onClick={() => createReport('competitive_analysis')} 
+                    variant="outline"
+                    className="p-4 h-auto flex flex-col items-start gap-2"
+                  >
+                    <Users className="h-5 w-5" />
+                    <div className="text-left">
+                      <div className="font-medium">Competitive Analysis</div>
+                      <div className="text-xs text-muted-foreground">
+                        Detailed competitor comparison
+                      </div>
                     </div>
-                  </div>
-                </Button>
+                  </Button>
 
-                <Button 
-                  onClick={() => createReport('competitive_analysis')} 
-                  variant="outline"
-                  className="p-6 h-auto flex flex-col items-start gap-2"
-                >
-                  <Users className="h-6 w-6" />
-                  <div className="text-left">
-                    <div className="font-medium">Competitive Analysis</div>
-                    <div className="text-sm text-muted-foreground">
-                      Detailed competitor comparison and positioning
+                  <Button 
+                    onClick={() => createReport('market_position')} 
+                    variant="outline"
+                    className="p-4 h-auto flex flex-col items-start gap-2"
+                  >
+                    <TrendingUp className="h-5 w-5" />
+                    <div className="text-left">
+                      <div className="font-medium">Market Position</div>
+                      <div className="text-xs text-muted-foreground">
+                        Market positioning analysis
+                      </div>
                     </div>
-                  </div>
-                </Button>
+                  </Button>
 
-                <Button 
-                  onClick={() => createReport('market_position')} 
-                  variant="outline"
-                  className="p-6 h-auto flex flex-col items-start gap-2"
-                >
-                  <TrendingUp className="h-6 w-6" />
-                  <div className="text-left">
-                    <div className="font-medium">Market Position</div>
-                    <div className="text-sm text-muted-foreground">
-                      Market positioning and strategic recommendations
+                  <Button 
+                    onClick={() => createReport('strategic_overview')} 
+                    variant="outline"
+                    className="p-4 h-auto flex flex-col items-start gap-2"
+                  >
+                    <BarChart3 className="h-5 w-5" />
+                    <div className="text-left">
+                      <div className="font-medium">Strategic Overview</div>
+                      <div className="text-xs text-muted-foreground">
+                        Comprehensive analysis
+                      </div>
                     </div>
-                  </div>
-                </Button>
+                  </Button>
+                </div>
+              </div>
 
-                <Button 
-                  onClick={() => createReport('strategic_overview')} 
-                  variant="outline"
-                  className="p-6 h-auto flex flex-col items-start gap-2"
-                >
-                  <BarChart3 className="h-6 w-6" />
-                  <div className="text-left">
-                    <div className="font-medium">Strategic Overview</div>
-                    <div className="text-sm text-muted-foreground">
-                      Comprehensive strategic analysis and insights
-                    </div>
+              {/* Existing Reports */}
+              <div>
+                <h4 className="font-medium mb-3">Generated Reports</h4>
+                {reports.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground border rounded-lg">
+                    <Download className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No reports generated yet</p>
+                    <p className="text-sm">Generate your first competitive analysis report above</p>
                   </div>
-                </Button>
+                ) : (
+                  <div className="space-y-3">
+                    {reports.map((report) => (
+                      <div key={report.id} className="border rounded-lg p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <h5 className="font-medium">{report.report_name}</h5>
+                              <Badge variant="outline" className="text-xs">
+                                {report.report_type.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                            
+                            <p className="text-sm text-muted-foreground">
+                              {report.executive_summary}
+                            </p>
+                            
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span>Created: {new Date(report.created_at).toLocaleDateString()}</span>
+                              <span>Competitors: {report.competitor_count}</span>
+                              <span>Findings: {report.key_findings?.length || 0}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <Badge variant={report.status === 'completed' ? 'default' : 'secondary'}>
+                              {report.status}
+                            </Badge>
+                            <Button size="sm" variant="ghost">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
