@@ -1,4 +1,6 @@
 import { BrandAnalysisForm } from "@/components/BrandAnalysisForm";
+import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 
 const Index = () => {
   return (
@@ -11,6 +13,13 @@ const Index = () => {
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Analyze brands, track competitors, and gain strategic insights to dominate your market
           </p>
+          <div className="flex gap-4 justify-center">
+            <Link to="/dashboard">
+              <Button variant="outline">
+                View Dashboard
+              </Button>
+            </Link>
+          </div>
         </div>
         
         <BrandAnalysisForm />

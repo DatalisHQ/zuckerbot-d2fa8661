@@ -59,6 +59,51 @@ export type Database = {
         }
         Relationships: []
       }
+      competitive_reports: {
+        Row: {
+          competitor_count: number | null
+          created_at: string
+          executive_summary: string | null
+          generated_data: Json
+          id: string
+          key_findings: Json | null
+          recommendations: Json | null
+          report_name: string
+          report_type: string
+          status: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          competitor_count?: number | null
+          created_at?: string
+          executive_summary?: string | null
+          generated_data: Json
+          id?: string
+          key_findings?: Json | null
+          recommendations?: Json | null
+          report_name: string
+          report_type: string
+          status?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          competitor_count?: number | null
+          created_at?: string
+          executive_summary?: string | null
+          generated_data?: Json
+          id?: string
+          key_findings?: Json | null
+          recommendations?: Json | null
+          report_name?: string
+          report_type?: string
+          status?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       competitor_discovery: {
         Row: {
           brand_analysis_id: string | null
@@ -158,6 +203,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      dashboard_metrics: {
+        Row: {
+          calculation_date: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          metric_name: string
+          metric_type: string
+          metric_value: number | null
+          time_period: string
+          user_id: string | null
+        }
+        Insert: {
+          calculation_date?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          metric_name: string
+          metric_type: string
+          metric_value?: number | null
+          time_period: string
+          user_id?: string | null
+        }
+        Update: {
+          calculation_date?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          metric_name?: string
+          metric_type?: string
+          metric_value?: number | null
+          time_period?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       monitoring_alerts: {
         Row: {
@@ -285,6 +366,71 @@ export type Database = {
             columns: ["monitoring_config_id"]
             isOneToOne: false
             referencedRelation: "monitoring_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      strategic_insights: {
+        Row: {
+          action_items: Json | null
+          brand_analysis_id: string | null
+          category: string | null
+          created_at: string
+          description: string
+          effort_score: number | null
+          id: string
+          impact_score: number | null
+          insight_type: string
+          is_implemented: boolean | null
+          priority: string
+          supporting_data: Json | null
+          timeframe: string | null
+          title: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          action_items?: Json | null
+          brand_analysis_id?: string | null
+          category?: string | null
+          created_at?: string
+          description: string
+          effort_score?: number | null
+          id?: string
+          impact_score?: number | null
+          insight_type: string
+          is_implemented?: boolean | null
+          priority: string
+          supporting_data?: Json | null
+          timeframe?: string | null
+          title: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          action_items?: Json | null
+          brand_analysis_id?: string | null
+          category?: string | null
+          created_at?: string
+          description?: string
+          effort_score?: number | null
+          id?: string
+          impact_score?: number | null
+          insight_type?: string
+          is_implemented?: boolean | null
+          priority?: string
+          supporting_data?: Json | null
+          timeframe?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "strategic_insights_brand_analysis_id_fkey"
+            columns: ["brand_analysis_id"]
+            isOneToOne: false
+            referencedRelation: "brand_analysis"
             referencedColumns: ["id"]
           },
         ]

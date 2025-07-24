@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.realtime-monitoring]
 verify_jwt = false
+
+[functions.strategic-dashboard]
+verify_jwt = false
