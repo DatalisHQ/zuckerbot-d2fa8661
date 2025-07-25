@@ -289,40 +289,144 @@ const Index = () => {
             </div>
           </div>
           
-          {/* CTA Section - Moved from hero */}
-          <div className="text-center py-16">
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-              {!user ? (
-                <>
-                  <Link to="/auth">
-                    <Button size="lg" className="btn-primary h-14 px-8 text-lg">
-                      <MessageCircle className="w-5 h-5 mr-2" />
-                      Start Chatting - Sign Up Free
-                    </Button>
-                  </Link>
-                  <Link to="/pricing">
-                    <Button variant="outline" size="lg" className="h-14 px-8 text-lg border-border/50">
-                      <Sparkles className="w-5 h-5 mr-2" />
-                      View Pricing Plans
-                    </Button>
-                  </Link>
-                </>
-              ) : (
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <Link to="/zuckerbot">
-                    <Button size="lg" className="btn-primary h-14 px-8 text-lg">
-                      <MessageCircle className="w-5 h-5 mr-2" />
-                      Open ZuckerBot Chat
-                    </Button>
-                  </Link>
-                  <Link to="/pricing">
-                    <Button size="lg" variant="outline" className="h-14 px-8 text-lg border-border/50">
-                      <Sparkles className="w-5 h-5 mr-2" />
-                      Upgrade to Pro
-                    </Button>
+          {/* FAQ Section */}
+          <div className="py-20 border-t border-border/50">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-bold mb-4">Frequently Asked Questions</h2>
+              <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+                Everything you need to know about ZuckerBot
+              </p>
+            </div>
+            
+            <div className="max-w-3xl mx-auto">
+              <div className="space-y-4">
+                <div className="modern-card">
+                  <details className="group">
+                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg">
+                      What is ZuckerBot?
+                      <span className="transform group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div className="px-6 pb-6 text-muted-foreground">
+                      ZuckerBot is an AI-powered assistant specifically designed to help you create, optimize, and manage Meta (Facebook/Instagram) advertising campaigns. It provides expert guidance on ad copy, targeting, budget optimization, and campaign strategy.
+                    </div>
+                  </details>
+                </div>
+
+                <div className="modern-card">
+                  <details className="group">
+                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg">
+                      How does the conversation limit work?
+                      <span className="transform group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div className="px-6 pb-6 text-muted-foreground">
+                      Each plan has a monthly conversation limit. A conversation includes both your message and ZuckerBot's response. Free users get 5 conversations per month, Pro users get 100, and Agency users have unlimited conversations.
+                    </div>
+                  </details>
+                </div>
+
+                <div className="modern-card">
+                  <details className="group">
+                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg">
+                      What types of Meta ads can ZuckerBot help with?
+                      <span className="transform group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div className="px-6 pb-6 text-muted-foreground">
+                      ZuckerBot can assist with all types of Meta advertising including Facebook and Instagram ads, Stories, Reels, video ads, carousel ads, lead generation campaigns, and more.
+                    </div>
+                  </details>
+                </div>
+
+                <div className="modern-card">
+                  <details className="group">
+                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg">
+                      Is my data secure?
+                      <span className="transform group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div className="px-6 pb-6 text-muted-foreground">
+                      Absolutely. We use enterprise-grade security measures to protect your data. All communications are encrypted, and we never share your advertising data with third parties.
+                    </div>
+                  </details>
+                </div>
+
+                <div className="modern-card">
+                  <details className="group">
+                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg">
+                      Can I upgrade or downgrade my plan anytime?
+                      <span className="transform group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div className="px-6 pb-6 text-muted-foreground">
+                      Yes! You can upgrade or downgrade your subscription at any time through your account dashboard. Changes will be prorated and take effect at your next billing cycle.
+                    </div>
+                  </details>
+                </div>
+
+                <div className="text-center mt-8">
+                  <Link to="/faq" className="text-primary hover:underline">
+                    View All FAQs →
                   </Link>
                 </div>
-              )}
+              </div>
+            </div>
+          </div>
+
+          {/* Enhanced CTA Section */}
+          <div className="py-20 bg-gradient-to-br from-primary/5 via-background to-primary/5 border-t border-border/50">
+            <div className="text-center space-y-8">
+              <div className="space-y-4">
+                <h2 className="text-4xl font-bold">Ready to Transform Your Facebook Ads?</h2>
+                <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+                  Join thousands of marketers who are already using ZuckerBot to optimize their Meta advertising campaigns.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                {!user ? (
+                  <>
+                    <Link to="/auth">
+                      <Button size="lg" className="btn-primary h-16 px-10 text-xl shadow-2xl hover:shadow-primary/25 transition-all duration-300">
+                        <MessageCircle className="w-6 h-6 mr-3" />
+                        Start Free - Chat with ZuckerBot Now
+                      </Button>
+                    </Link>
+                    <Link to="/pricing">
+                      <Button variant="outline" size="lg" className="h-16 px-10 text-xl border-2 border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all duration-300">
+                        <Sparkles className="w-6 h-6 mr-3" />
+                        View Pricing Plans
+                      </Button>
+                    </Link>
+                  </>
+                ) : (
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <Link to="/zuckerbot">
+                      <Button size="lg" className="btn-primary h-16 px-10 text-xl shadow-2xl hover:shadow-primary/25 transition-all duration-300">
+                        <MessageCircle className="w-6 h-6 mr-3" />
+                        Continue Your Conversation
+                      </Button>
+                    </Link>
+                    <Link to="/pricing">
+                      <Button size="lg" variant="outline" className="h-16 px-10 text-xl border-2 border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all duration-300">
+                        <Sparkles className="w-6 h-6 mr-3" />
+                        Upgrade to Pro
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto pt-12 text-center">
+                <div className="space-y-2">
+                  <div className="text-3xl font-bold text-primary">5K+</div>
+                  <div className="text-sm text-muted-foreground">Active Users</div>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-3xl font-bold text-primary">$2M+</div>
+                  <div className="text-sm text-muted-foreground">Ad Spend Optimized</div>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-3xl font-bold text-primary">40%</div>
+                  <div className="text-sm text-muted-foreground">Average ROAS Improvement</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
