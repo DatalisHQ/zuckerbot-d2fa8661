@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from '@supabase/supabase-js';
-import { LogOut, User as UserIcon, Bot, MessageCircle, Sparkles, Zap, Target, Code, Facebook } from "lucide-react";
+import { LogOut, User as UserIcon, Bot, MessageCircle, Sparkles, Zap, Target, Code, Facebook, Send } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 const Index = () => {
@@ -11,6 +12,8 @@ const Index = () => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [demoInput, setDemoInput] = useState("");
+  const [demoMessage, setDemoMessage] = useState("");
 
   useEffect(() => {
     // Set up auth state listener
@@ -31,6 +34,22 @@ const Index = () => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const handleDemoSubmit = () => {
+    if (!demoInput.trim()) return;
+    
+    // Show the user's message
+    setDemoMessage(demoInput);
+    setDemoInput("");
+    
+    // After a short delay, scroll to sign up button
+    setTimeout(() => {
+      const signUpButton = document.querySelector('[href="/auth"]');
+      if (signUpButton) {
+        signUpButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 1500);
+  };
 
   const handleSignOut = async () => {
     try {
@@ -237,30 +256,57 @@ const Index = () => {
                   <div className="bg-muted/50 rounded-lg p-4 max-w-xs">
                     <p className="text-sm">Hey! I'm ZuckerBot, your Facebook ads AI assistant. What can I help you with today?</p>
                   </div>
-                  <div className="bg-muted/30 rounded-lg p-4 max-w-xs ml-auto text-right">
-                    <p className="text-sm">Help me improve my ad copy for better CTR</p>
-                  </div>
-                  <div className="bg-muted/50 rounded-lg p-4 max-w-md">
-                    <p className="text-sm">Perfect! I'd love to help optimize your ad copy. Can you share your current ad copy and tell me about your target audience?</p>
-                  </div>
+                  {demoMessage && (
+                    <div className="bg-primary/10 rounded-lg p-4 max-w-xs ml-auto text-right border border-primary/20">
+                      <p className="text-sm">{demoMessage}</p>
+                    </div>
+                  )}
+                  {demoMessage && (
+                    <div className="bg-muted/50 rounded-lg p-4 max-w-md">
+                      <p className="text-sm">I'd love to help you with that! To get personalized assistance and access my full capabilities, please sign up for free.</p>
+                    </div>
+                  )}
                 </div>
                 
-                <div className="text-center">
-                  {user ? (
-                    <Link to="/zuckerbot">
-                      <Button className="btn-primary">
-                        <MessageCircle className="w-4 h-4 mr-2" />
-                        Continue This Conversation
-                      </Button>
-                    </Link>
-                  ) : (
-                    <Link to="/auth">
-                      <Button className="btn-primary">
-                        <MessageCircle className="w-4 h-4 mr-2" />
-                        Sign Up to Start Chatting
-                      </Button>
-                    </Link>
-                  )}
+                <div className="space-y-4">
+                  <div className="flex space-x-2">
+                    <Input
+                      placeholder="Ask ZuckerBot anything about Facebook ads..."
+                      value={demoInput}
+                      onChange={(e) => setDemoInput(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          handleDemoSubmit();
+                        }
+                      }}
+                      className="flex-1"
+                    />
+                    <Button 
+                      onClick={handleDemoSubmit}
+                      disabled={!demoInput.trim()}
+                      size="icon"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  
+                  <div className="text-center">
+                    {user ? (
+                      <Link to="/zuckerbot">
+                        <Button className="btn-primary">
+                          <MessageCircle className="w-4 h-4 mr-2" />
+                          Continue This Conversation
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Link to="/auth">
+                        <Button className="btn-primary">
+                          <MessageCircle className="w-4 h-4 mr-2" />
+                          Sign Up to Start Chatting
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
