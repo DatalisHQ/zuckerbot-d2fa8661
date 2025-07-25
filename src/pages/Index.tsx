@@ -198,8 +198,98 @@ const Index = () => {
                 </div>
               )}
             </div>
+            
+            {/* Interactive ZuckerBot Demo - Main CTA */}
+            <div className="animate-fade-in-up mb-16" style={{ animationDelay: '0.3s' }}>
+              <div className="max-w-4xl mx-auto">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold mb-4">Try ZuckerBot Now</h2>
+                  <p className="text-muted-foreground text-lg">
+                    Ask a question and see how ZuckerBot can help with your Facebook ads
+                  </p>
+                </div>
+                
+                <div className="modern-card max-w-2xl mx-auto p-8">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center">
+                      <Bot className="w-5 h-5 text-primary-foreground" />
+                    </div>
+                    <div>
+                      <div className="font-semibold">ZuckerBot</div>
+                      <div className="text-sm text-muted-foreground">Online now</div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4 mb-6">
+                    <div className="bg-muted/50 rounded-lg p-4 max-w-xs">
+                      <p className="text-sm">Hey! I'm ZuckerBot, your Facebook ads AI assistant. What can I help you with today?</p>
+                    </div>
+                    {demoMessage && (
+                      <div className="bg-primary/10 rounded-lg p-4 max-w-xs ml-auto text-right border border-primary/20">
+                        <p className="text-sm">{demoMessage}</p>
+                      </div>
+                    )}
+                    {demoMessage && (
+                      <div className="bg-muted/50 rounded-lg p-4 max-w-md">
+                        <p className="text-sm">I'd love to help you with that! To get personalized assistance and access my full capabilities, please sign up for free.</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="flex space-x-2">
+                      <Input
+                        placeholder="Ask ZuckerBot anything about Facebook ads..."
+                        value={demoInput}
+                        onChange={(e) => setDemoInput(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            handleDemoSubmit();
+                          }
+                        }}
+                        className="flex-1"
+                      />
+                      <Button 
+                        onClick={handleDemoSubmit}
+                        disabled={!demoInput.trim()}
+                        size="icon"
+                      >
+                        <Send className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    
+                    <div className="text-center">
+                      {user ? (
+                        <Link to="/zuckerbot">
+                          <Button className="btn-primary">
+                            <MessageCircle className="w-4 h-4 mr-2" />
+                            Continue This Conversation
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Link to="/auth">
+                          <Button className="btn-primary">
+                            <MessageCircle className="w-4 h-4 mr-2" />
+                            Sign Up to Start Chatting
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="grid md:grid-cols-3 gap-8 mb-16 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+          
+          {/* Features Section */}
+          <div className="container mx-auto px-4 pb-20">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-bold mb-4">Everything you need to optimize your Facebook ads</h2>
+              <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+                From strategy to execution, ZuckerBot provides comprehensive Facebook advertising assistance
+              </p>
+            </div>
+          <div className="grid md:grid-cols-3 gap-8 mb-16 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
             <div className="modern-card text-center group">
               <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-4 glow-sm group-hover:glow-primary transition-all duration-300">
                 <MessageCircle className="w-6 h-6 text-primary-foreground" />
@@ -230,86 +320,6 @@ const Index = () => {
               </p>
             </div>
           </div>
-
-          {/* Chat Preview */}
-          <div className="animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
-            <div className="max-w-4xl mx-auto">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold mb-4">Start Your First Conversation</h2>
-                <p className="text-muted-foreground text-lg">
-                  Join thousands of marketers getting better Facebook ad results with ZuckerBot
-                </p>
-              </div>
-              
-              <div className="modern-card max-w-2xl mx-auto p-8">
-                <div className="flex items-center space-x-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center">
-                    <Bot className="w-5 h-5 text-primary-foreground" />
-                  </div>
-                  <div>
-                    <div className="font-semibold">ZuckerBot</div>
-                    <div className="text-sm text-muted-foreground">Online now</div>
-                  </div>
-                </div>
-                
-                <div className="space-y-4 mb-6">
-                  <div className="bg-muted/50 rounded-lg p-4 max-w-xs">
-                    <p className="text-sm">Hey! I'm ZuckerBot, your Facebook ads AI assistant. What can I help you with today?</p>
-                  </div>
-                  {demoMessage && (
-                    <div className="bg-primary/10 rounded-lg p-4 max-w-xs ml-auto text-right border border-primary/20">
-                      <p className="text-sm">{demoMessage}</p>
-                    </div>
-                  )}
-                  {demoMessage && (
-                    <div className="bg-muted/50 rounded-lg p-4 max-w-md">
-                      <p className="text-sm">I'd love to help you with that! To get personalized assistance and access my full capabilities, please sign up for free.</p>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="flex space-x-2">
-                    <Input
-                      placeholder="Ask ZuckerBot anything about Facebook ads..."
-                      value={demoInput}
-                      onChange={(e) => setDemoInput(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          handleDemoSubmit();
-                        }
-                      }}
-                      className="flex-1"
-                    />
-                    <Button 
-                      onClick={handleDemoSubmit}
-                      disabled={!demoInput.trim()}
-                      size="icon"
-                    >
-                      <Send className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  
-                  <div className="text-center">
-                    {user ? (
-                      <Link to="/zuckerbot">
-                        <Button className="btn-primary">
-                          <MessageCircle className="w-4 h-4 mr-2" />
-                          Continue This Conversation
-                        </Button>
-                      </Link>
-                    ) : (
-                      <Link to="/auth">
-                        <Button className="btn-primary">
-                          <MessageCircle className="w-4 h-4 mr-2" />
-                          Sign Up to Start Chatting
-                        </Button>
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
