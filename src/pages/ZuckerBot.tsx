@@ -17,31 +17,32 @@ interface Message {
   content: string;
   timestamp: Date;
   isTyping?: boolean;
+  prompts?: string[];
 }
 
 const PREDEFINED_PROMPTS = [
   {
     icon: Plus,
     title: "Create Campaign",
-    prompt: "Help me create a new Meta advertising campaign. I'll provide details about my product/service and target audience.",
+    prompt: "Help me create a new Meta advertising campaign",
     color: "from-green-500 to-emerald-600"
   },
   {
     icon: Edit,
-    title: "Update Campaign", 
-    prompt: "I need help optimizing an existing Meta ads campaign. Let me share the current performance data and areas I want to improve.",
+    title: "Write Ad Copy", 
+    prompt: "I need help writing compelling ad copy for my campaign",
     color: "from-blue-500 to-cyan-600"
   },
   {
     icon: TrendingUp,
-    title: "Analyze Performance",
-    prompt: "Analyze my Meta ads performance data and provide recommendations for improvement and optimization.",
+    title: "Optimize Performance",
+    prompt: "Help me analyze and optimize my Meta ads performance",
     color: "from-purple-500 to-violet-600"
   },
   {
-    icon: Zap,
-    title: "Write Ad Copy",
-    prompt: "Create compelling ad copy for my Meta advertising campaign. I'll provide product details and target audience information.",
+    icon: Target,
+    title: "Targeting Strategy",
+    prompt: "I want to improve my audience targeting strategy",
     color: "from-yellow-500 to-amber-600"
   },
 ];
@@ -169,11 +170,29 @@ const ZuckerBot = () => {
       // Remove typing message and add real response
       setMessages(prev => {
         const filtered = prev.filter(msg => !msg.isTyping);
+        
+        // Parse response for prompts
+        let responseContent = data.response;
+        let prompts: string[] = [];
+        
+        // Look for PROMPTS section in response
+        if (responseContent.includes("PROMPTS:")) {
+          const parts = responseContent.split("PROMPTS:");
+          responseContent = parts[0].trim();
+          if (parts[1]) {
+            prompts = parts[1]
+              .split("\n")
+              .map(p => p.replace(/^[-•*]\s*/, "").trim())
+              .filter(p => p.length > 0);
+          }
+        }
+        
         return [...filtered, {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content: data.response,
+          content: responseContent,
           timestamp: new Date(),
+          prompts,
         }];
       });
     } catch (error) {
@@ -294,12 +313,34 @@ const ZuckerBot = () => {
                              message.content
                            )}
                          </p>
-                        <span className="text-xs opacity-70 mt-2 block">
-                          {message.timestamp.toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
+                         
+                         {/* Interactive Prompts */}
+                         {message.role === "assistant" && message.prompts && message.prompts.length > 0 && (
+                           <div className="mt-4 space-y-2">
+                             <p className="text-xs font-medium text-muted-foreground mb-2">Quick replies:</p>
+                             <div className="flex flex-wrap gap-2">
+                               {message.prompts.map((prompt, index) => (
+                                 <Button
+                                   key={index}
+                                   variant="outline"
+                                   size="sm"
+                                   className="h-auto px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground transition-colors"
+                                   onClick={() => handlePredefinedPrompt(prompt)}
+                                   disabled={isLoading}
+                                 >
+                                   {prompt}
+                                 </Button>
+                               ))}
+                             </div>
+                           </div>
+                         )}
+                         
+                         <span className="text-xs opacity-70 mt-2 block">
+                           {message.timestamp.toLocaleTimeString([], {
+                             hour: "2-digit",
+                             minute: "2-digit",
+                           })}
+                         </span>
                       </div>
                     </div>
                   </div>

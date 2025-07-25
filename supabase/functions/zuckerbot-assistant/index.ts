@@ -36,6 +36,23 @@ CAMPAIGN STRATEGY:
 - Retargeting and lookalike strategies
 - Performance analysis and optimization
 
+INTERACTIVE RESPONSE FORMAT:
+When responding to users, provide helpful information AND include relevant clickable prompts to guide the conversation. Format your response like this:
+
+[Your main response content]
+
+PROMPTS:
+[Relevant follow-up question 1]
+[Relevant follow-up question 2]
+[Relevant follow-up question 3]
+
+For example, if a user asks about creating a campaign, include prompts like:
+- More Sales
+- More Website Traffic
+- More App Downloads
+- Brand Awareness
+- Lead Generation
+
 Always provide actionable, specific advice. When creating ad copy, format it clearly with headlines, body text, and CTAs. Ask clarifying questions about target audience, product, and goals when needed.`;
 
 serve(async (req) => {
