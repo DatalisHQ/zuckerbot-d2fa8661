@@ -1,0 +1,56 @@
+/* Option 2: Neon Cyber Theme */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Cyber/Tech color palette */
+    --background: 240 3% 7%;           /* Almost black */
+    --foreground: 142 71% 85%;         /* Neon green text */
+    
+    --card: 240 3% 7%;
+    --card-foreground: 142 71% 85%;
+    
+    --popover: 240 3% 7%;
+    --popover-foreground: 142 71% 85%;
+    
+    --primary: 142 71% 45%;            /* Electric green */
+    --primary-foreground: 240 3% 7%;
+    
+    --secondary: 285 85% 60%;          /* Neon purple */
+    --secondary-foreground: 240 3% 7%;
+    
+    --muted: 240 3% 15%;
+    --muted-foreground: 142 20% 60%;
+    
+    --accent: 285 85% 60%;
+    --accent-foreground: 240 3% 7%;
+    
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --border: 142 30% 20%;
+    --input: 142 30% 20%;
+    --ring: 142 71% 45%;
+    
+    --radius: 0.5rem;
+    
+    /* Cyber gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(142 71% 45%) 0%, hsl(285 85% 60%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(240 3% 7%) 0%, hsl(240 3% 15%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(142 71% 45% / 0.1) 0%, hsl(285 85% 60% / 0.05) 100%);
+    
+    /* Neon glow effects */
+    --glow-primary: 0 0 40px hsl(142 71% 45% / 0.5);
+    --glow-secondary: 0 0 20px hsl(285 85% 60% / 0.4);
+  }
+  
+  .zuckerbot-brand {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-shadow: 0 0 10px hsl(142 71% 45% / 0.5);
+  }
+}

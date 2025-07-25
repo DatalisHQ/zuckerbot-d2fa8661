@@ -1,0 +1,77 @@
+/* Option 3: Warm Sunset Theme */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Warm sunset color palette */
+    --background: 16 20% 9%;           /* Deep warm dark */
+    --foreground: 30 100% 95%;
+    
+    --card: 16 20% 9%;
+    --card-foreground: 30 100% 95%;
+    
+    --popover: 16 20% 9%;
+    --popover-foreground: 30 100% 95%;
+    
+    --primary: 14 100% 57%;            /* Warm orange */
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 340 82% 52%;          /* Deep pink/red */
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 16 15% 18%;
+    --muted-foreground: 30 20% 70%;
+    
+    --accent: 340 82% 52%;
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --border: 16 15% 18%;
+    --input: 16 15% 18%;
+    --ring: 14 100% 57%;
+    
+    --radius: 0.875rem;
+    
+    /* Sunset gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(14 100% 57%) 0%, hsl(340 82% 52%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(16 20% 9%) 0%, hsl(16 15% 18%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(14 100% 57% / 0.1) 0%, hsl(340 82% 52% / 0.05) 100%);
+    
+    /* Warm glow effects */
+    --glow-primary: 0 0 40px hsl(14 100% 57% / 0.4);
+    --glow-secondary: 0 0 20px hsl(340 82% 52% / 0.3);
+  }
+
+  .light {
+    --background: 30 100% 98%;
+    --foreground: 16 20% 9%;
+    
+    --card: 30 100% 98%;
+    --card-foreground: 16 20% 9%;
+    
+    --popover: 30 100% 98%;
+    --popover-foreground: 16 20% 9%;
+    
+    --primary: 14 100% 57%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 340 82% 52%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 30 20% 95%;
+    --muted-foreground: 16 15% 45%;
+    
+    --border: 30 20% 88%;
+    --input: 30 20% 88%;
+  }
+  
+  .zuckerbot-brand {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+}

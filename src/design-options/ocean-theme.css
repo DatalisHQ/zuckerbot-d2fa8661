@@ -1,0 +1,81 @@
+/* Option 4: Deep Ocean Theme */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Deep ocean color palette */
+    --background: 200 50% 3%;          /* Deep ocean blue */
+    --foreground: 180 100% 95%;
+    
+    --card: 200 50% 3%;
+    --card-foreground: 180 100% 95%;
+    
+    --popover: 200 50% 3%;
+    --popover-foreground: 180 100% 95%;
+    
+    --primary: 195 100% 50%;           /* Bright cyan */
+    --primary-foreground: 200 50% 3%;
+    
+    --secondary: 270 80% 60%;          /* Electric blue */
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 200 30% 12%;
+    --muted-foreground: 180 30% 65%;
+    
+    --accent: 270 80% 60%;
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --border: 200 30% 12%;
+    --input: 200 30% 12%;
+    --ring: 195 100% 50%;
+    
+    --radius: 1rem;
+    
+    /* Ocean gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(195 100% 50%) 0%, hsl(270 80% 60%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(200 50% 3%) 0%, hsl(200 30% 12%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(195 100% 50% / 0.1) 0%, hsl(270 80% 60% / 0.05) 100%);
+    
+    /* Ocean glow effects */
+    --glow-primary: 0 0 40px hsl(195 100% 50% / 0.5);
+    --glow-secondary: 0 0 20px hsl(270 80% 60% / 0.4);
+  }
+
+  .light {
+    --background: 180 100% 98%;
+    --foreground: 200 50% 3%;
+    
+    --card: 180 100% 98%;
+    --card-foreground: 200 50% 3%;
+    
+    --popover: 180 100% 98%;
+    --popover-foreground: 200 50% 3%;
+    
+    --primary: 195 100% 50%;
+    --primary-foreground: 200 50% 3%;
+    
+    --secondary: 270 80% 60%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 180 20% 95%;
+    --muted-foreground: 200 20% 45%;
+    
+    --border: 180 20% 88%;
+    --input: 180 20% 88%;
+  }
+  
+  .zuckerbot-brand {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    background: linear-gradient(135deg, hsl(195 100% 50%) 0%, hsl(270 80% 60%) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}

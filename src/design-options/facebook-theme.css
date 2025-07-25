@@ -1,0 +1,81 @@
+/* Option 1: Facebook Blue & Orange Theme */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Facebook-inspired color palette */
+    --background: 217 32% 17%;        /* Deep facebook blue-gray */
+    --foreground: 0 0% 98%;
+    
+    --card: 217 32% 17%;
+    --card-foreground: 0 0% 98%;
+    
+    --popover: 217 32% 17%;
+    --popover-foreground: 0 0% 98%;
+    
+    --primary: 221 83% 53%;            /* Facebook blue */
+    --primary-foreground: 0 0% 98%;
+    
+    --secondary: 25 95% 53%;           /* Vibrant orange */
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 217 20% 25%;
+    --muted-foreground: 217 10% 65%;
+    
+    --accent: 25 95% 53%;
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --border: 217 20% 25%;
+    --input: 217 20% 25%;
+    --ring: 221 83% 53%;
+    
+    --radius: 0.75rem;
+    
+    /* Custom gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(221 83% 53%) 0%, hsl(25 95% 53%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(217 32% 17%) 0%, hsl(217 20% 25%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(221 83% 53% / 0.1) 0%, hsl(25 95% 53% / 0.05) 100%);
+    
+    /* Glow effects */
+    --glow-primary: 0 0 40px hsl(221 83% 53% / 0.4);
+    --glow-secondary: 0 0 20px hsl(25 95% 53% / 0.3);
+  }
+
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 217 32% 17%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 217 32% 17%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 217 32% 17%;
+    
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 98%;
+    
+    --secondary: 25 95% 53%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 217 5% 95%;
+    --muted-foreground: 217 10% 45%;
+    
+    --accent: 25 95% 53%;
+    --accent-foreground: 0 0% 100%;
+    
+    --border: 217 5% 90%;
+    --input: 217 5% 90%;
+    --ring: 221 83% 53%;
+  }
+  
+  .zuckerbot-brand {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+}
