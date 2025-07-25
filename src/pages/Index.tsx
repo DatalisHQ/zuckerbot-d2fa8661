@@ -153,7 +153,7 @@ const Index = () => {
                   <Link to="/auth">
                     <Button size="lg" className="btn-primary h-14 px-8 text-lg">
                       <Target className="w-5 h-5 mr-2" />
-                      Spy on My Competition - FREE
+                      Start Free Analysis - Sign Up
                     </Button>
                   </Link>
                   <Button variant="outline" size="lg" className="h-14 px-8 text-lg border-border/50">
@@ -162,17 +162,23 @@ const Index = () => {
                   </Button>
                 </>
               ) : (
-                <Link to="/dashboard">
-                  <Button size="lg" className="btn-primary h-14 px-8 text-lg">
-                    <Target className="w-5 h-5 mr-2" />
-                    Start Competitor Analysis
-                  </Button>
-                </Link>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Link to="/dashboard">
+                    <Button size="lg" className="btn-primary h-14 px-8 text-lg">
+                      <Target className="w-5 h-5 mr-2" />
+                      Competitor Analysis
+                    </Button>
+                  </Link>
+                  <Link to="/zuckerbot">
+                    <Button size="lg" variant="outline" className="h-14 px-8 text-lg border-border/50">
+                      <Bot className="w-5 h-5 mr-2" />
+                      ZuckerBot AI Assistant
+                    </Button>
+                  </Link>
+                </div>
               )}
             </div>
           </div>
-
-          {/* Features Grid */}
           <div className="grid md:grid-cols-3 gap-8 mb-16 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
             <div className="modern-card text-center group">
               <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-4 glow-sm group-hover:glow-primary transition-all duration-300">

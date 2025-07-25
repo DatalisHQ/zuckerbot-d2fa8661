@@ -28,6 +28,8 @@ const Auth = () => {
           .eq('user_id', session.user.id)
           .single();
 
+        console.log('User profile:', profile); // Debug log
+
         if (profile?.onboarding_completed) {
           navigate("/zuckerbot");
         } else {

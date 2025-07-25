@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Globe, TrendingUp, Target, Package, Lightbulb } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, Globe, TrendingUp, Target, Package, Lightbulb, UserPlus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Link } from "react-router-dom";
 import { CompetitorDiscovery } from "./CompetitorDiscovery";
 import { AnalysisProgress, ANALYSIS_STEPS } from "./analysis/AnalysisProgress";
 import { ThinkingIndicator } from "./analysis/ThinkingIndicator";
@@ -25,6 +27,7 @@ export const BrandAnalysisForm = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<BrandAnalysis | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
   
   const progressTracker = useAnalysisProgress({ 
     steps: ANALYSIS_STEPS.BRAND_ANALYSIS 
@@ -40,11 +43,8 @@ export const BrandAnalysisForm = () => {
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        toast({
-          title: "Authentication Required",
-          description: "Please sign in to analyze brands",
-          variant: "destructive",
-        });
+        setIsLoading(false);
+        setShowAuthDialog(true);
         return;
       }
 
@@ -245,6 +245,42 @@ export const BrandAnalysisForm = () => {
           <CompetitorDiscovery brandAnalysisId={analysisId} />
         </div>
       )}
+
+      {/* Authentication Dialog */}
+      <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Create Free Account
+            </DialogTitle>
+            <DialogDescription>
+              Sign up for free to analyze {url ? `${new URL(url).hostname}` : 'this website'} and get detailed competitor insights.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="text-sm text-muted-foreground">
+              ✓ Unlimited competitor analysis<br />
+              ✓ AI-powered ZuckerBot assistant<br />
+              ✓ Real-time monitoring & alerts<br />
+              ✓ Strategic insights & recommendations
+            </div>
+            <div className="flex gap-2">
+              <Link to="/auth" className="flex-1">
+                <Button className="w-full">
+                  Create Free Account
+                </Button>
+              </Link>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowAuthDialog(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

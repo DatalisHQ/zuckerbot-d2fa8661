@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Send, Bot, User, Sparkles, Plus, Edit, TrendingUp, Target, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
+import { useNavigate } from "react-router-dom";
 import { TypingText } from "@/components/TypingText";
 
 interface Message {
@@ -52,22 +53,34 @@ const ZuckerBot = () => {
   const [businessContext, setBusinessContext] = useState<any>(null);
   const [isLoadingContext, setIsLoadingContext] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
     const loadUserAndBusiness = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) return;
+        if (!session?.user) {
+          navigate("/auth");
+          return;
+        }
 
         setUser(session.user);
 
-        // Load user profile and business context
+        // Load user profile and check onboarding status
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
           .eq('user_id', session.user.id)
           .single();
+
+        console.log('ZuckerBot - User profile:', profile); // Debug log
+
+        // If user hasn't completed onboarding, redirect
+        if (!profile?.onboarding_completed) {
+          navigate("/onboarding");
+          return;
+        }
 
         const { data: brandAnalysis } = await supabase
           .from('brand_analysis')
