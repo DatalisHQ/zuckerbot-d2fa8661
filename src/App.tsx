@@ -55,8 +55,8 @@ function App() {
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={!user ? <Index /> : <Navigate to="/zuckerbot" />} />
-            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/zuckerbot" />} />
+            <Route path="/" element={!user ? <Index /> : <Navigate to="/dashboard" />} />
+            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/dashboard" />} />
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
             <Route path="/zuckerbot" element={user ? <ZuckerBot /> : <Navigate to="/auth" />} />
             <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
