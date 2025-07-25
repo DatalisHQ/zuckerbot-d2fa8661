@@ -1,14 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { CompetitorAnalysisDashboard } from "@/components/CompetitorAnalysisDashboard";
-import { FacebookAdsPerformance } from "@/components/FacebookAdsPerformance";
-import { StrategicDashboard } from "@/components/StrategicDashboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Target, BarChart3, TrendingUp, Bot, LogOut, Brain, Eye, FileText, Zap } from "lucide-react";
+import { Target, BarChart3, TrendingUp, Bot, Search, Brain, Eye, FileText } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { Navbar } from "@/components/Navbar";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -41,24 +38,6 @@ const Dashboard = () => {
     checkUser();
   }, [navigate]);
 
-  const handleSignOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      
-      toast({
-        title: "Signed out successfully",
-        description: "You have been logged out of your account.",
-      });
-      navigate("/");
-    } catch (error: any) {
-      toast({
-        title: "Error signing out",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
 
   if (isLoading) {
     return (
@@ -69,132 +48,87 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
-      {/* Header */}
-      <div className="border-b border-border/50 bg-card/50 backdrop-blur">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
-                <Zap className="w-4 h-4 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Dashboard</h1>
-                <p className="text-sm text-muted-foreground">
-                  Welcome back, {profile?.business_name || user?.email}
-                </p>
-              </div>
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <main className="container mx-auto px-4 py-8">
+        <div className="space-y-8">
+          {/* Welcome Section */}
+          <section>
+            <h2 className="text-3xl font-bold mb-2">
+              Welcome back, {profile?.display_name || user?.email || "User"}!
+            </h2>
+            <p className="text-muted-foreground text-lg">
+              Your competitive intelligence command center
+            </p>
+          </section>
+
+          {/* Quick Actions */}
+          <section>
+            <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/competitor-analysis")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Search className="h-5 w-5" />
+                    Competitor Analysis
+                  </CardTitle>
+                  <CardDescription>
+                    Analyze competitor strategies and positioning
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">Start Analysis</Button>
+                </CardContent>
+              </Card>
+
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/ad-performance")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <BarChart3 className="h-5 w-5" />
+                    Ad Performance
+                  </CardTitle>
+                  <CardDescription>
+                    Monitor your advertising campaigns
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">View Performance</Button>
+                </CardContent>
+              </Card>
+
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/strategic-insights")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <TrendingUp className="h-5 w-5" />
+                    Strategic Insights
+                  </CardTitle>
+                  <CardDescription>
+                    AI-powered market intelligence
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">View Insights</Button>
+                </CardContent>
+              </Card>
+
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/zuckerbot")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Brain className="h-5 w-5" />
+                    ZuckerBot AI
+                  </CardTitle>
+                  <CardDescription>
+                    Chat with your AI assistant
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">Start Chat</Button>
+                </CardContent>
+              </Card>
             </div>
-            <div className="flex items-center space-x-2">
-              <Button 
-                onClick={() => navigate("/zuckerbot")}
-                variant="outline"
-                className="flex items-center space-x-2"
-              >
-                <Bot className="w-4 h-4" />
-                <span>ZuckerBot AI</span>
-              </Button>
-              <Button 
-                onClick={handleSignOut}
-                variant="ghost"
-                size="sm"
-              >
-                <LogOut className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
+          </section>
         </div>
-      </div>
-
-      <div className="container mx-auto px-4 py-8">
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer group" onClick={() => navigate("/dashboard")}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
-                  <Target className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">Competitor Analysis</CardTitle>
-                  <CardDescription className="text-sm">Run competitor analysis</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer group" onClick={() => navigate("/dashboard")}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
-                  <Eye className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">Ad Intelligence</CardTitle>
-                  <CardDescription className="text-sm">View ad library & insights</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer group" onClick={() => navigate("/dashboard")}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
-                  <FileText className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">Market Intelligence</CardTitle>
-                  <CardDescription className="text-sm">Generate market reports</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer group" onClick={() => navigate("/zuckerbot")}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
-                  <Bot className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">ZuckerBot AI</CardTitle>
-                  <CardDescription className="text-sm">Chat with your AI assistant</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-        </div>
-
-        <Tabs defaultValue="competitor-analysis" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-8">
-            <TabsTrigger value="competitor-analysis" className="flex items-center gap-2">
-              <Target className="w-4 h-4" />
-              Competitor Analysis
-            </TabsTrigger>
-            <TabsTrigger value="ad-performance" className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Ad Performance
-            </TabsTrigger>
-            <TabsTrigger value="strategic-insights" className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
-              Strategic Insights
-            </TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="competitor-analysis">
-            <CompetitorAnalysisDashboard />
-          </TabsContent>
-          
-          <TabsContent value="ad-performance">
-            <FacebookAdsPerformance />
-          </TabsContent>
-          
-          <TabsContent value="strategic-insights">
-            <StrategicDashboard />
-          </TabsContent>
-        </Tabs>
-      </div>
+      </main>
     </div>
   );
 };
