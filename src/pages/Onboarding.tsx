@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Bot, Sparkles, Facebook, Globe, Building, Target } from "lucide-react";
+import { Loader2, Bot, Sparkles, Facebook, Globe, Building, Target, LogOut } from "lucide-react";
 
 const Onboarding = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -186,6 +186,20 @@ const Onboarding = () => {
     setCurrentStep(2);
   };
 
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate("/auth");
+    } catch (error) {
+      console.error("Sign out error:", error);
+      toast({
+        title: "Sign Out Error",
+        description: "There was an error signing out. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Check for Facebook connection status on component mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -253,6 +267,19 @@ const Onboarding = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/30 flex items-center justify-center p-4">
+      {/* Sign Out Button */}
+      <div className="absolute top-4 right-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleSignOut}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <LogOut className="h-4 w-4 mr-2" />
+          Sign Out
+        </Button>
+      </div>
+      
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
