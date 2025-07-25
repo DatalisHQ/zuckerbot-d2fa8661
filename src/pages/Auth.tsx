@@ -21,18 +21,27 @@ const Auth = () => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
+        console.log("Auth: Found existing session for user:", session.user.id);
+        
         // Check if user completed onboarding
-        const { data: profile } = await supabase
+        const { data: profile, error } = await supabase
           .from('profiles')
-          .select('onboarding_completed')
+          .select('onboarding_completed, business_name')
           .eq('user_id', session.user.id)
           .single();
 
-        console.log('User profile:', profile); // Debug log
+        console.log('Auth: User profile check:', { profile, error });
+
+        if (error) {
+          console.error('Auth: Error fetching profile:', error);
+          return;
+        }
 
         if (profile?.onboarding_completed) {
+          console.log("Auth: User completed onboarding, redirecting to ZuckerBot");
           navigate("/zuckerbot");
         } else {
+          console.log("Auth: User needs onboarding, redirecting to onboarding");
           navigate("/onboarding");
         }
       }
@@ -85,16 +94,31 @@ const Auth = () => {
 
       if (error) throw error;
 
+      console.log("Sign in successful, checking onboarding status");
+
       // Check if user completed onboarding
-      const { data: profile } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found after sign in");
+
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('onboarding_completed')
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+        .select('onboarding_completed, business_name')
+        .eq('user_id', user.id)
         .single();
 
+      console.log("Sign in: Profile check result:", { profile, profileError });
+
+      if (profileError) {
+        console.error("Sign in: Error fetching profile:", profileError);
+        navigate("/onboarding");
+        return;
+      }
+
       if (profile?.onboarding_completed) {
+        console.log("Sign in: User completed onboarding, going to ZuckerBot");
         navigate("/zuckerbot");
       } else {
+        console.log("Sign in: User needs onboarding");
         navigate("/onboarding");
       }
     } catch (error: any) {

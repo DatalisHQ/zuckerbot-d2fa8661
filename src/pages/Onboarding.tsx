@@ -69,12 +69,12 @@ const Onboarding = () => {
         .eq('user_id', session.user.id)
         .single();
 
+      console.log("Existing profile before update:", existingProfile);
+
       if (checkError) {
         console.error("Error checking existing profile:", checkError);
         throw new Error("Profile not found. Please sign out and sign back in.");
       }
-
-      console.log("Existing profile before update:", existingProfile);
 
       // Update profile with business info and mark onboarding as completed
       const { data: updatedProfile, error: profileError } = await supabase
@@ -87,27 +87,33 @@ const Onboarding = () => {
         .select()
         .single();
 
+      console.log("Profile update result:", { updatedProfile, profileError });
+
       if (profileError) {
         console.error("Profile update error:", profileError);
         throw new Error(`Failed to update profile: ${profileError.message}`);
       }
 
+      if (!updatedProfile) {
+        throw new Error("Profile update returned no data");
+      }
+
       console.log("Profile updated successfully:", updatedProfile);
 
-      // Verify the update immediately
-      if (!updatedProfile || !updatedProfile.onboarding_completed) {
+      // Verify the update worked
+      if (!updatedProfile.onboarding_completed) {
         throw new Error("Onboarding completion flag was not set properly");
       }
 
-      // Create brand analysis
+      // Create brand analysis entry for future use
       const { data: brandData, error: brandError } = await supabase
         .from('brand_analysis')
         .insert({
           user_id: session.user.id,
           brand_name: businessName,
           brand_url: businessUrl,
-          business_category: targetAudience,
-          niche: businessDescription,
+          business_category: targetAudience || 'General',
+          niche: businessDescription || '',
           main_products: products ? [products] : null,
           analysis_status: 'pending'
         })
@@ -116,35 +122,21 @@ const Onboarding = () => {
 
       if (brandError) {
         console.error("Brand analysis creation error:", brandError);
-        throw new Error(`Failed to create brand analysis: ${brandError.message}`);
+        // Don't throw here - this is not critical for onboarding
+        console.log("Continuing without brand analysis entry");
+      } else {
+        console.log("Brand analysis created successfully:", brandData);
       }
-
-      console.log("Brand analysis created successfully:", brandData);
 
       // Simulate analysis time
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Final verification before redirect
-      const { data: finalVerify, error: verifyError } = await supabase
-        .from('profiles')
-        .select('onboarding_completed, business_name')
-        .eq('user_id', session.user.id)
-        .single();
-
-      if (verifyError || !finalVerify?.onboarding_completed) {
-        console.error("Final verification failed:", verifyError, finalVerify);
-        throw new Error("Profile update verification failed. Please try again.");
-      }
-
-      console.log("Final verification successful - navigating to ZuckerBot:", finalVerify);
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       toast({
         title: "Welcome aboard!",
         description: `Your ZuckerBot assistant has learned about ${businessName} and is ready to help.`,
       });
 
-      // Don't call setIsAnalyzing(false) or setIsLoading(false) here to prevent state reset
-      // Navigate immediately after successful verification
+      console.log("Onboarding completed successfully - navigating to ZuckerBot");
       navigate("/zuckerbot");
       
     } catch (error: any) {
