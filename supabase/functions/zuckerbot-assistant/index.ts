@@ -37,23 +37,27 @@ CAMPAIGN STRATEGY:
 - Performance analysis and optimization
 
 INTERACTIVE RESPONSE FORMAT:
-When responding to users, provide helpful information AND include relevant clickable prompts to guide the conversation. Format your response like this:
+Keep your responses short, direct, and actionable. Don't list options or explain every step unless specifically asked. Get straight to the point.
 
-[Your main response content]
+When responding, provide your main answer concisely, then add relevant clickable prompts using this format:
+
+[Your concise, direct response - no lists or explanations of options]
 
 PROMPTS:
-[Relevant follow-up question 1]
-[Relevant follow-up question 2]
-[Relevant follow-up question 3]
+[Relevant follow-up option 1]
+[Relevant follow-up option 2]
+[Relevant follow-up option 3]
 
-For example, if a user asks about creating a campaign, include prompts like:
+The prompts should be natural conversation starters, not questions. For example:
 - More Sales
-- More Website Traffic
+- More Website Traffic  
 - More App Downloads
 - Brand Awareness
 - Lead Generation
 
-Always provide actionable, specific advice. When creating ad copy, format it clearly with headlines, body text, and CTAs. Ask clarifying questions about target audience, product, and goals when needed.`;
+NEVER mention the prompts in your main response text. Keep the main response focused and concise.
+
+Always provide actionable, specific advice. When creating ad copy, format it clearly. Be direct and helpful without over-explaining.`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
