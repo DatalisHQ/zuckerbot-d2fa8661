@@ -4,16 +4,51 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Send, Bot, User, Sparkles } from "lucide-react";
+import { Send, Bot, User, Sparkles, Plus, Edit, TrendingUp, Target, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
+import { TypingText } from "@/components/TypingText";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  isTyping?: boolean;
 }
+
+const PREDEFINED_PROMPTS = [
+  {
+    icon: Plus,
+    title: "Create a Campaign",
+    prompt: "Help me create a new Meta advertising campaign. I'll provide details about my product/service and target audience.",
+    color: "from-green-500 to-emerald-600"
+  },
+  {
+    icon: Edit,
+    title: "Update Campaign",
+    prompt: "I need help optimizing an existing Meta ads campaign. Let me share the current performance data and areas I want to improve.",
+    color: "from-blue-500 to-cyan-600"
+  },
+  {
+    icon: TrendingUp,
+    title: "Analyze Performance",
+    prompt: "Analyze my Meta ads performance data and provide recommendations for improvement and optimization.",
+    color: "from-purple-500 to-violet-600"
+  },
+  {
+    icon: Target,
+    title: "Audience Targeting",
+    prompt: "Help me improve my audience targeting strategy. I want to reach the right customers more effectively.",
+    color: "from-orange-500 to-red-600"
+  },
+  {
+    icon: Zap,
+    title: "Write Ad Copy",
+    prompt: "Create compelling ad copy for my Meta advertising campaign. I'll provide product details and target audience information.",
+    color: "from-yellow-500 to-amber-600"
+  },
+];
 
 const ZuckerBot = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -35,13 +70,14 @@ const ZuckerBot = () => {
     }
   }, [messages]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+  const sendMessage = async (messageText?: string) => {
+    const messageToSend = messageText || input;
+    if (!messageToSend.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: input,
+      content: messageToSend,
       timestamp: new Date(),
     };
 
@@ -49,26 +85,39 @@ const ZuckerBot = () => {
     setInput("");
     setIsLoading(true);
 
+    // Add typing message immediately
+    const typingMessage: Message = {
+      id: "typing-" + Date.now(),
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+      isTyping: true,
+    };
+    setMessages(prev => [...prev, typingMessage]);
+
     try {
       const { data, error } = await supabase.functions.invoke("zuckerbot-assistant", {
         body: {
-          message: input,
-          conversation_history: messages.slice(-10), // Last 10 messages for context
+          message: messageToSend,
+          conversation_history: messages.slice(-10),
         },
       });
 
       if (error) throw error;
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.response,
-        timestamp: new Date(),
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
+      // Remove typing message and add real response
+      setMessages(prev => {
+        const filtered = prev.filter(msg => !msg.isTyping);
+        return [...filtered, {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: data.response,
+          timestamp: new Date(),
+        }];
+      });
     } catch (error) {
       console.error("Error sending message:", error);
+      setMessages(prev => prev.filter(msg => !msg.isTyping));
       toast({
         title: "Error",
         description: "Failed to send message. Please try again.",
@@ -77,6 +126,10 @@ const ZuckerBot = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePredefinedPrompt = (prompt: string) => {
+    sendMessage(prompt);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -103,6 +156,33 @@ const ZuckerBot = () => {
             Your AI-powered Meta advertising assistant
           </p>
         </div>
+
+        
+        {/* Predefined Prompts */}
+        {messages.length === 1 && (
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-center mb-4">Quick Actions</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {PREDEFINED_PROMPTS.map((prompt, index) => {
+                const IconComponent = prompt.icon;
+                return (
+                  <Button
+                    key={index}
+                    variant="outline"
+                    className="h-auto p-4 flex flex-col items-start space-y-2 hover:shadow-md transition-all duration-200 border-border/50 hover:border-primary/30"
+                    onClick={() => handlePredefinedPrompt(prompt.prompt)}
+                    disabled={isLoading}
+                  >
+                    <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${prompt.color} flex items-center justify-center mb-2`}>
+                      <IconComponent className="h-4 w-4 text-white" />
+                    </div>
+                    <span className="font-medium text-sm text-left">{prompt.title}</span>
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <Card className="h-[70vh] flex flex-col shadow-lg border-0 bg-card/50 backdrop-blur">
           <CardHeader className="border-b bg-card/80 backdrop-blur">
@@ -143,9 +223,13 @@ const ZuckerBot = () => {
                             : "bg-muted/50 text-foreground border"
                         }`}
                       >
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                          {message.content}
-                        </p>
+                         <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                           {message.role === "assistant" && !message.isTyping ? (
+                             <TypingText text={message.content} speed={30} />
+                           ) : (
+                             message.content
+                           )}
+                         </p>
                         <span className="text-xs opacity-70 mt-2 block">
                           {message.timestamp.toLocaleTimeString([], {
                             hour: "2-digit",
@@ -190,7 +274,7 @@ const ZuckerBot = () => {
                 className="flex-1 border-0 bg-muted/50 focus-visible:ring-1"
               />
               <Button
-                onClick={sendMessage}
+                onClick={() => sendMessage()}
                 disabled={!input.trim() || isLoading}
                 size="icon"
                 className="shrink-0"
