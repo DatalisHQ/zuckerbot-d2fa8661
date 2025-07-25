@@ -152,6 +152,13 @@ const ZuckerBot = () => {
         </div>
 
         
+        {/* Chat Header */}
+        <div className="border-b bg-card/80 backdrop-blur p-4 rounded-t-lg mb-6">
+          <h2 className="text-center text-lg font-medium">
+            Chat with ZuckerBot
+          </h2>
+        </div>
+
         {/* Predefined Prompts */}
         {messages.length === 1 && (
           <div className="mb-6">
@@ -179,11 +186,6 @@ const ZuckerBot = () => {
         )}
 
         <Card className="h-[70vh] flex flex-col shadow-lg border-0 bg-card/50 backdrop-blur">
-          <CardHeader className="border-b bg-card/80 backdrop-blur">
-            <CardTitle className="text-center text-lg font-medium">
-              Chat with ZuckerBot
-            </CardTitle>
-          </CardHeader>
           
           <CardContent className="flex-1 p-0">
             <ScrollArea className="h-full p-6" ref={scrollAreaRef}>
