@@ -138,10 +138,10 @@ const Auth = () => {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
             <div className="bg-primary/10 p-3 rounded-full mr-3">
-              <Bot className="h-8 w-8 text-primary" />
+              <span className="text-xl font-bold text-primary zuckerbot-brand">Z</span>
             </div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-              ZuckerBot
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent zuckerbot-brand">
+              ZuckerBot.ai
             </h1>
             <Sparkles className="h-6 w-6 text-primary ml-2" />
           </div>
