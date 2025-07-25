@@ -62,6 +62,20 @@ const Onboarding = () => {
 
       console.log("Starting business setup for user:", session.user.id);
 
+      // First, verify the user exists in profiles table
+      const { data: existingProfile, error: checkError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .single();
+
+      if (checkError) {
+        console.error("Error checking existing profile:", checkError);
+        throw new Error("Profile not found. Please sign out and sign back in.");
+      }
+
+      console.log("Existing profile before update:", existingProfile);
+
       // Update profile with business info and mark onboarding as completed
       const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
@@ -75,10 +89,15 @@ const Onboarding = () => {
 
       if (profileError) {
         console.error("Profile update error:", profileError);
-        throw profileError;
+        throw new Error(`Failed to update profile: ${profileError.message}`);
       }
 
       console.log("Profile updated successfully:", updatedProfile);
+
+      // Verify the update immediately
+      if (!updatedProfile || !updatedProfile.onboarding_completed) {
+        throw new Error("Onboarding completion flag was not set properly");
+      }
 
       // Create brand analysis
       const { data: brandData, error: brandError } = await supabase
@@ -97,7 +116,7 @@ const Onboarding = () => {
 
       if (brandError) {
         console.error("Brand analysis creation error:", brandError);
-        throw brandError;
+        throw new Error(`Failed to create brand analysis: ${brandError.message}`);
       }
 
       console.log("Brand analysis created successfully:", brandData);
@@ -105,30 +124,37 @@ const Onboarding = () => {
       // Simulate analysis time
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // Verify the update worked
-      const { data: verifyProfile } = await supabase
+      // Final verification before redirect
+      const { data: finalVerify, error: verifyError } = await supabase
         .from('profiles')
-        .select('onboarding_completed')
+        .select('onboarding_completed, business_name')
         .eq('user_id', session.user.id)
         .single();
 
-      console.log("Verification - onboarding_completed:", verifyProfile?.onboarding_completed);
+      if (verifyError || !finalVerify?.onboarding_completed) {
+        console.error("Final verification failed:", verifyError, finalVerify);
+        throw new Error("Profile update verification failed. Please try again.");
+      }
+
+      console.log("Final verification successful - navigating to ZuckerBot:", finalVerify);
 
       toast({
         title: "Welcome aboard!",
         description: `Your ZuckerBot assistant has learned about ${businessName} and is ready to help.`,
       });
 
+      // Don't call setIsAnalyzing(false) or setIsLoading(false) here to prevent state reset
+      // Navigate immediately after successful verification
       navigate("/zuckerbot");
+      
     } catch (error: any) {
       console.error("Onboarding error:", error);
       toast({
-        title: "Error",
-        description: error.message,
+        title: "Setup Error",
+        description: error.message || "There was an error setting up your business profile. Please try again.",
         variant: "destructive",
       });
       setIsAnalyzing(false);
-    } finally {
       setIsLoading(false);
     }
   };
