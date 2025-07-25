@@ -151,18 +151,67 @@ const Onboarding = () => {
     }
   };
 
-  const connectFacebook = () => {
-    // For now, skip Facebook and go directly to business setup
-    toast({
-      title: "Skipping Facebook",
-      description: "You can connect Facebook later. Let's set up your business first.",
-    });
-    setCurrentStep(2);
+  const connectFacebook = async () => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'facebook',
+        options: {
+          scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
+          redirectTo: `${window.location.origin}/onboarding?step=2&facebook=connected`
+        }
+      });
+
+      if (error) {
+        console.error('Facebook OAuth error:', error);
+        toast({
+          title: "Facebook Connection Failed",
+          description: error.message || "Could not connect to Facebook. Please try again or skip for now.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error('Facebook connection error:', error);
+      toast({
+        title: "Facebook Connection Error",
+        description: "There was an error connecting to Facebook. You can skip this step for now.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const skipFacebook = () => {
     setCurrentStep(2);
   };
+
+  // Check for Facebook connection status on component mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const step = urlParams.get('step');
+    const facebookConnected = urlParams.get('facebook');
+    
+    if (step === '2' && facebookConnected === 'connected') {
+      setCurrentStep(2);
+      toast({
+        title: "Facebook Connected!",
+        description: "Your Facebook Business account has been connected successfully.",
+      });
+      
+      // Update profile with Facebook connection status
+      const updateFacebookStatus = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await supabase
+            .from('profiles')
+            .update({ facebook_connected: true })
+            .eq('user_id', session.user.id);
+        }
+      };
+      updateFacebookStatus();
+    }
+  }, [toast]);
 
   if (isAnalyzing) {
     return (
@@ -235,7 +284,8 @@ const Onboarding = () => {
                   <p className="text-muted-foreground mb-6">
                     Connect your Facebook Business Manager to pull insights, past campaigns, and audience data
                   </p>
-                  <Button onClick={connectFacebook} className="w-full" size="lg">
+                  <Button onClick={connectFacebook} className="w-full" size="lg" disabled={isLoading}>
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     <Facebook className="mr-2 h-4 w-4" />
                     Connect Facebook Business Account
                   </Button>
