@@ -176,7 +176,7 @@ const Index = () => {
               <div className="modern-card max-w-2xl mx-auto p-8">
                 <div className="flex items-center space-x-3 mb-6">
                   <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center">
-                    <Bot className="w-5 h-5 text-primary-foreground" />
+                    <span className="text-lg font-bold text-primary-foreground zuckerbot-brand">Z</span>
                   </div>
                   <div>
                     <div className="font-semibold">ZuckerBot</div>
