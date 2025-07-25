@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Send, Bot, User, Sparkles, Plus, Edit, TrendingUp, Target, Zap } from "lucide-react";
+import { Send, Bot, User, Sparkles, Plus, Edit, TrendingUp, Target, Zap, Upload, Image } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -45,6 +45,12 @@ const PREDEFINED_PROMPTS = [
     prompt: "I want to improve my audience targeting strategy",
     color: "from-yellow-500 to-amber-600"
   },
+  {
+    icon: Image,
+    title: "Upload Creative",
+    prompt: "I want to upload an image for my ad creative",
+    color: "from-indigo-500 to-violet-600"
+  },
 ];
 
 const ZuckerBot = () => {
@@ -54,7 +60,9 @@ const ZuckerBot = () => {
   const [user, setUser] = useState<any>(null);
   const [businessContext, setBusinessContext] = useState<any>(null);
   const [isLoadingContext, setIsLoadingContext] = useState(true);
+  const [uploadedImages, setUploadedImages] = useState<File[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -219,7 +227,26 @@ const ZuckerBot = () => {
   };
 
   const handlePredefinedPrompt = (prompt: string) => {
-    sendMessage(prompt);
+    if (prompt.includes("upload an image")) {
+      fileInputRef.current?.click();
+    } else {
+      sendMessage(prompt);
+    }
+  };
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const newImages = Array.from(files);
+      setUploadedImages(prev => [...prev, ...newImages]);
+      
+      const imageNames = newImages.map(file => file.name).join(", ");
+      sendMessage(`I've uploaded these images for my ad creative: ${imageNames}. Now help me create ad copy that works with these visuals.`);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setUploadedImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -380,6 +407,14 @@ const ZuckerBot = () => {
 
           <div className="border-t bg-card/80 backdrop-blur p-4">
             <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                className="shrink-0"
+              >
+                <Upload className="h-4 w-4" />
+              </Button>
               <Input
                 placeholder="Ask ZuckerBot about ad copy, campaigns, or strategy..."
                 value={input}
@@ -397,6 +432,14 @@ const ZuckerBot = () => {
                 <Send className="h-4 w-4" />
               </Button>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageUpload}
+              className="hidden"
+            />
           </div>
         </Card>
       </div>
