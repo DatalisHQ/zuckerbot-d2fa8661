@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { BrandAnalysisForm } from "@/components/BrandAnalysisForm";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from '@supabase/supabase-js';
-import { LogOut, User as UserIcon, Zap, Target, Brain, Shield, BarChart3, Bell, Eye, Bot } from "lucide-react";
+import { LogOut, User as UserIcon, Bot, MessageCircle, Sparkles, Zap, Target, Code, Facebook } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 const Index = () => {
@@ -76,9 +75,9 @@ const Index = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center glow-sm">
-                  <Zap className="w-4 h-4 text-primary-foreground" />
+                  <Bot className="w-4 h-4 text-primary-foreground" />
                 </div>
-                <span className="text-xl font-bold gradient-text">CompetitorPulse</span>
+                <span className="text-xl font-bold gradient-text">ZuckerBot</span>
               </div>
               
               <div className="flex items-center space-x-4">
@@ -86,14 +85,14 @@ const Index = () => {
                   <>
                      <Link to="/zuckerbot">
                        <Button variant="ghost" className="text-foreground hover:text-primary">
-                         <Bot className="w-4 h-4 mr-2" />
-                         ZuckerBot AI
+                         <MessageCircle className="w-4 h-4 mr-2" />
+                         Open Chat
                        </Button>
                      </Link>
-                     <Link to="/dashboard">
+                     <Link to="/pricing">
                        <Button variant="ghost" className="text-foreground hover:text-primary">
-                         <BarChart3 className="w-4 h-4 mr-2" />
-                         Dashboard
+                         <Sparkles className="w-4 h-4 mr-2" />
+                         Upgrade
                        </Button>
                      </Link>
                     <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-muted/50">
@@ -132,19 +131,19 @@ const Index = () => {
         <div className="container mx-auto px-4 py-20">
           <div className="text-center space-y-8 mb-16 animate-fade-in-up">
             <div className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-muted/50 border border-border/50">
-              <Shield className="w-4 h-4 text-primary" />
-              <span className="text-sm text-muted-foreground">Trusted by 10,000+ businesses</span>
+              <Facebook className="w-4 h-4 text-primary" />
+              <span className="text-sm text-muted-foreground">AI-powered Facebook advertising assistant</span>
             </div>
             
             <h1 className="text-5xl md:text-7xl font-bold leading-tight">
-              <span className="gradient-text">Spy on Your</span>
+              <span className="gradient-text">ZuckerBot</span>
               <br />
-              <span className="text-foreground">Competition</span>
+              <span className="text-foreground">AI Assistant</span>
             </h1>
             
             <p className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-              Discover what your competitors are doing, analyze their strategies, and uncover hidden opportunities. 
-              Get instant insights from their websites, ads, and market positioning - completely free.
+              Vibe Coding for Facebook Ads. Get instant AI-powered advice for your Facebook advertising campaigns, 
+              ad copy optimization, and targeting strategies. Chat with our AI to level up your Meta advertising game.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
@@ -152,27 +151,29 @@ const Index = () => {
                 <>
                   <Link to="/auth">
                     <Button size="lg" className="btn-primary h-14 px-8 text-lg">
-                      <Target className="w-5 h-5 mr-2" />
-                      Start Free Analysis - Sign Up
+                      <MessageCircle className="w-5 h-5 mr-2" />
+                      Start Chatting - Sign Up Free
                     </Button>
                   </Link>
-                  <Button variant="outline" size="lg" className="h-14 px-8 text-lg border-border/50">
-                    <Eye className="w-5 h-5 mr-2" />
-                    See How It Works
-                  </Button>
+                  <Link to="/pricing">
+                    <Button variant="outline" size="lg" className="h-14 px-8 text-lg border-border/50">
+                      <Sparkles className="w-5 h-5 mr-2" />
+                      View Pricing Plans
+                    </Button>
+                  </Link>
                 </>
               ) : (
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <Link to="/dashboard">
+                  <Link to="/zuckerbot">
                     <Button size="lg" className="btn-primary h-14 px-8 text-lg">
-                      <Target className="w-5 h-5 mr-2" />
-                      Competitor Analysis
+                      <MessageCircle className="w-5 h-5 mr-2" />
+                      Open ZuckerBot Chat
                     </Button>
                   </Link>
-                  <Link to="/zuckerbot">
+                  <Link to="/pricing">
                     <Button size="lg" variant="outline" className="h-14 px-8 text-lg border-border/50">
-                      <Bot className="w-5 h-5 mr-2" />
-                      ZuckerBot AI Assistant
+                      <Sparkles className="w-5 h-5 mr-2" />
+                      Upgrade to Pro
                     </Button>
                   </Link>
                 </div>
@@ -182,45 +183,86 @@ const Index = () => {
           <div className="grid md:grid-cols-3 gap-8 mb-16 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
             <div className="modern-card text-center group">
               <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-4 glow-sm group-hover:glow-primary transition-all duration-300">
+                <MessageCircle className="w-6 h-6 text-primary-foreground" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">AI Chat Assistant</h3>
+              <p className="text-muted-foreground">
+                Chat with ZuckerBot to get instant advice on your Facebook ad campaigns and strategy.
+              </p>
+            </div>
+            
+            <div className="modern-card text-center group">
+              <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-4 glow-sm group-hover:glow-primary transition-all duration-300">
+                <Code className="w-6 h-6 text-primary-foreground" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Ad Copy Generation</h3>
+              <p className="text-muted-foreground">
+                Generate high-converting ad copy and creative ideas tailored to your brand and audience.
+              </p>
+            </div>
+            
+            <div className="modern-card text-center group">
+              <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-4 glow-sm group-hover:glow-primary transition-all duration-300">
                 <Target className="w-6 h-6 text-primary-foreground" />
               </div>
-              <h3 className="text-xl font-semibold mb-2">Brand Analysis</h3>
+              <h3 className="text-xl font-semibold mb-2">Targeting Optimization</h3>
               <p className="text-muted-foreground">
-                Deep AI analysis of competitor websites, positioning, products, and value propositions.
-              </p>
-            </div>
-            
-            <div className="modern-card text-center group">
-              <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-4 glow-sm group-hover:glow-primary transition-all duration-300">
-                <Brain className="w-6 h-6 text-primary-foreground" />
-              </div>
-              <h3 className="text-xl font-semibold mb-2">Competitor Intelligence</h3>
-              <p className="text-muted-foreground">
-                Comprehensive competitor discovery and detailed analysis of features, pricing, and market position.
-              </p>
-            </div>
-            
-            <div className="modern-card text-center group">
-              <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-4 glow-sm group-hover:glow-primary transition-all duration-300">
-                <Bell className="w-6 h-6 text-primary-foreground" />
-              </div>
-              <h3 className="text-xl font-semibold mb-2">Real-time Monitoring</h3>
-              <p className="text-muted-foreground">
-                Automated monitoring of competitor changes with instant alerts and strategic insights.
+                Get expert advice on audience targeting, campaign structure, and performance optimization.
               </p>
             </div>
           </div>
 
-          {/* Free Competitor Analysis Tool */}
+          {/* Chat Preview */}
           <div className="animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
             <div className="max-w-4xl mx-auto">
               <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold mb-4">Try Our Free Competitor Analysis Tool</h2>
+                <h2 className="text-3xl font-bold mb-4">Start Your First Conversation</h2>
                 <p className="text-muted-foreground text-lg">
-                  Enter any competitor's website and get instant insights - no signup required for the first analysis
+                  Join thousands of marketers getting better Facebook ad results with ZuckerBot
                 </p>
               </div>
-              <BrandAnalysisForm />
+              
+              <div className="modern-card max-w-2xl mx-auto p-8">
+                <div className="flex items-center space-x-3 mb-6">
+                  <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center">
+                    <Bot className="w-5 h-5 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <div className="font-semibold">ZuckerBot</div>
+                    <div className="text-sm text-muted-foreground">Online now</div>
+                  </div>
+                </div>
+                
+                <div className="space-y-4 mb-6">
+                  <div className="bg-muted/50 rounded-lg p-4 max-w-xs">
+                    <p className="text-sm">Hey! I'm ZuckerBot, your Facebook ads AI assistant. What can I help you with today?</p>
+                  </div>
+                  <div className="bg-muted/30 rounded-lg p-4 max-w-xs ml-auto text-right">
+                    <p className="text-sm">Help me improve my ad copy for better CTR</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-4 max-w-md">
+                    <p className="text-sm">Perfect! I'd love to help optimize your ad copy. Can you share your current ad copy and tell me about your target audience?</p>
+                  </div>
+                </div>
+                
+                <div className="text-center">
+                  {user ? (
+                    <Link to="/zuckerbot">
+                      <Button className="btn-primary">
+                        <MessageCircle className="w-4 h-4 mr-2" />
+                        Continue This Conversation
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Link to="/auth">
+                      <Button className="btn-primary">
+                        <MessageCircle className="w-4 h-4 mr-2" />
+                        Sign Up to Start Chatting
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
