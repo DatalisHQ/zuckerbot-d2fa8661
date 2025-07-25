@@ -370,6 +370,48 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          business_name: string | null
+          created_at: string
+          email: string | null
+          facebook_access_token: string | null
+          facebook_business_id: string | null
+          facebook_connected: boolean | null
+          full_name: string | null
+          id: string
+          onboarding_completed: boolean | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_name?: string | null
+          created_at?: string
+          email?: string | null
+          facebook_access_token?: string | null
+          facebook_business_id?: string | null
+          facebook_connected?: boolean | null
+          full_name?: string | null
+          id?: string
+          onboarding_completed?: boolean | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_name?: string | null
+          created_at?: string
+          email?: string | null
+          facebook_access_token?: string | null
+          facebook_business_id?: string | null
+          facebook_connected?: boolean | null
+          full_name?: string | null
+          id?: string
+          onboarding_completed?: boolean | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       strategic_insights: {
         Row: {
           action_items: Json | null
@@ -434,6 +476,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      zuckerbot_conversations: {
+        Row: {
+          business_context: Json | null
+          conversation_title: string | null
+          created_at: string
+          id: string
+          messages: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_context?: Json | null
+          conversation_title?: string | null
+          created_at?: string
+          id?: string
+          messages?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_context?: Json | null
+          conversation_title?: string | null
+          created_at?: string
+          id?: string
+          messages?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {

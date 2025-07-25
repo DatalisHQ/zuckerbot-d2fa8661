@@ -44,18 +44,40 @@ serve(async (req) => {
   }
 
   try {
-    const { message, conversation_history } = await req.json();
+    const { message, conversation_history, business_context } = await req.json();
 
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAIApiKey) {
       throw new Error('OpenAI API key not configured');
     }
 
+    // Build enhanced system message with business context
+    let systemMessage = META_ADS_CONTEXT;
+    
+    if (business_context?.profile || business_context?.brandAnalysis) {
+      const profile = business_context.profile;
+      const brand = business_context.brandAnalysis;
+      
+      systemMessage += `\n\nBUSINESS CONTEXT:
+You are specifically helping ${profile?.business_name || brand?.brand_name || 'this business'}.
+
+Business Details:
+- Business Name: ${profile?.business_name || brand?.brand_name || 'Not specified'}
+- Website: ${brand?.brand_url || 'Not specified'}
+- Industry/Category: ${brand?.business_category || 'Not specified'}
+- Business Description: ${brand?.niche || 'Not specified'}
+- Target Audience: ${brand?.business_category || 'Not specified'}
+- Main Products/Services: ${brand?.main_products ? JSON.stringify(brand.main_products) : 'Not specified'}
+- Value Propositions: ${brand?.value_propositions ? JSON.stringify(brand.value_propositions) : 'Not specified'}
+
+Always reference this business information when providing advice, creating ad copy, or suggesting strategies. Make your responses specific to their business, industry, and target audience.`;
+    }
+
     // Build conversation history for context
     const messages = [
       {
         role: 'system',
-        content: META_ADS_CONTEXT
+        content: systemMessage
       },
       // Include recent conversation history
       ...conversation_history.slice(-8).map((msg: any) => ({

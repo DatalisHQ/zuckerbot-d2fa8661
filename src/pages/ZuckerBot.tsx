@@ -45,18 +45,67 @@ const PREDEFINED_PROMPTS = [
 ];
 
 const ZuckerBot = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: "👋 Hey there! I'm ZuckerBot, your Meta ads AI assistant. I can help you create winning ad copy, analyze your competition, and build campaigns that convert. What would you like to work on today?",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [businessContext, setBusinessContext] = useState<any>(null);
+  const [isLoadingContext, setIsLoadingContext] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const loadUserAndBusiness = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+
+        setUser(session.user);
+
+        // Load user profile and business context
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .single();
+
+        const { data: brandAnalysis } = await supabase
+          .from('brand_analysis')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        setBusinessContext({ profile, brandAnalysis });
+
+        // Set personalized welcome message
+        const businessName = profile?.business_name || brandAnalysis?.brand_name || "your business";
+        setMessages([
+          {
+            id: "welcome",
+            role: "assistant",
+            content: `👋 Hey there! I'm ZuckerBot, your personalized Meta ads assistant for ${businessName}. I've analyzed your business and I'm ready to help you create winning campaigns, write compelling ad copy, and optimize your advertising strategy. What would you like to work on today?`,
+            timestamp: new Date(),
+          },
+        ]);
+      } catch (error) {
+        console.error("Error loading user context:", error);
+        setMessages([
+          {
+            id: "welcome",
+            role: "assistant",
+            content: "👋 Hey there! I'm ZuckerBot, your Meta ads AI assistant. I can help you create winning ad copy, analyze your competition, and build campaigns that convert. What would you like to work on today?",
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setIsLoadingContext(false);
+      }
+    };
+
+    loadUserAndBusiness();
+  }, []);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -94,6 +143,7 @@ const ZuckerBot = () => {
         body: {
           message: messageToSend,
           conversation_history: messages.slice(-10),
+          business_context: businessContext,
         },
       });
 
