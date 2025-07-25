@@ -105,10 +105,7 @@ const Index = () => {
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center glow-sm">
-                  <Bot className="w-4 h-4 text-primary-foreground" />
-                </div>
-                <span className="text-xl font-bold gradient-text zuckerbot-brand">ZuckerBot</span>
+                <span className="text-xl font-bold gradient-text zuckerbot-brand">ZuckerBot.ai</span>
               </div>
               
               <div className="flex items-center space-x-4">
