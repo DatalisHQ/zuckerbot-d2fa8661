@@ -20,13 +20,13 @@ interface Message {
 const PREDEFINED_PROMPTS = [
   {
     icon: Plus,
-    title: "Create a Campaign",
+    title: "Create Campaign",
     prompt: "Help me create a new Meta advertising campaign. I'll provide details about my product/service and target audience.",
     color: "from-green-500 to-emerald-600"
   },
   {
     icon: Edit,
-    title: "Update Campaign",
+    title: "Update Campaign", 
     prompt: "I need help optimizing an existing Meta ads campaign. Let me share the current performance data and areas I want to improve.",
     color: "from-blue-500 to-cyan-600"
   },
@@ -35,12 +35,6 @@ const PREDEFINED_PROMPTS = [
     title: "Analyze Performance",
     prompt: "Analyze my Meta ads performance data and provide recommendations for improvement and optimization.",
     color: "from-purple-500 to-violet-600"
-  },
-  {
-    icon: Target,
-    title: "Audience Targeting",
-    prompt: "Help me improve my audience targeting strategy. I want to reach the right customers more effectively.",
-    color: "from-orange-500 to-red-600"
   },
   {
     icon: Zap,
@@ -161,22 +155,22 @@ const ZuckerBot = () => {
         {/* Predefined Prompts */}
         {messages.length === 1 && (
           <div className="mb-6">
-            <h2 className="text-xl font-semibold text-center mb-4">Quick Actions</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="flex flex-wrap justify-center gap-2">
               {PREDEFINED_PROMPTS.map((prompt, index) => {
                 const IconComponent = prompt.icon;
                 return (
                   <Button
                     key={index}
                     variant="outline"
-                    className="h-auto p-4 flex flex-col items-start space-y-2 hover:shadow-md transition-all duration-200 border-border/50 hover:border-primary/30"
+                    size="sm"
+                    className="h-auto px-3 py-2 flex items-center space-x-2 hover:shadow-md transition-all duration-200 border-border/50 hover:border-primary/30"
                     onClick={() => handlePredefinedPrompt(prompt.prompt)}
                     disabled={isLoading}
                   >
-                    <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${prompt.color} flex items-center justify-center mb-2`}>
-                      <IconComponent className="h-4 w-4 text-white" />
+                    <div className={`w-5 h-5 rounded bg-gradient-to-r ${prompt.color} flex items-center justify-center`}>
+                      <IconComponent className="h-3 w-3 text-white" />
                     </div>
-                    <span className="font-medium text-sm text-left">{prompt.title}</span>
+                    <span className="font-medium text-sm">{prompt.title}</span>
                   </Button>
                 );
               })}
