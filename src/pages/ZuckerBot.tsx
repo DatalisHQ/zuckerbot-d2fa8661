@@ -78,9 +78,12 @@ const ZuckerBot = () => {
 
         // If user hasn't completed onboarding, redirect
         if (!profile?.onboarding_completed) {
+          console.log('ZuckerBot - Onboarding not completed, redirecting to onboarding');
           navigate("/onboarding");
           return;
         }
+
+        console.log('ZuckerBot - Onboarding completed, loading business context');
 
         const { data: brandAnalysis } = await supabase
           .from('brand_analysis')

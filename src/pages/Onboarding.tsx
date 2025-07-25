@@ -60,19 +60,28 @@ const Onboarding = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("No user session");
 
+      console.log("Starting business setup for user:", session.user.id);
+
       // Update profile with business info and mark onboarding as completed
-      const { error: profileError } = await supabase
+      const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
         .update({
           business_name: businessName,
           onboarding_completed: true
         })
-        .eq('user_id', session.user.id);
+        .eq('user_id', session.user.id)
+        .select()
+        .single();
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error("Profile update error:", profileError);
+        throw profileError;
+      }
+
+      console.log("Profile updated successfully:", updatedProfile);
 
       // Create brand analysis
-      const { error: brandError } = await supabase
+      const { data: brandData, error: brandError } = await supabase
         .from('brand_analysis')
         .insert({
           user_id: session.user.id,
@@ -82,12 +91,28 @@ const Onboarding = () => {
           niche: businessDescription,
           main_products: products ? [products] : null,
           analysis_status: 'pending'
-        });
+        })
+        .select()
+        .single();
 
-      if (brandError) throw brandError;
+      if (brandError) {
+        console.error("Brand analysis creation error:", brandError);
+        throw brandError;
+      }
+
+      console.log("Brand analysis created successfully:", brandData);
 
       // Simulate analysis time
       await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Verify the update worked
+      const { data: verifyProfile } = await supabase
+        .from('profiles')
+        .select('onboarding_completed')
+        .eq('user_id', session.user.id)
+        .single();
+
+      console.log("Verification - onboarding_completed:", verifyProfile?.onboarding_completed);
 
       toast({
         title: "Welcome aboard!",
