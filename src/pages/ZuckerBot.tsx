@@ -97,13 +97,12 @@ const ZuckerBot = () => {
 
         setBusinessContext({ profile, brandAnalysis });
 
-        // Set personalized welcome message
-        const businessName = profile?.business_name || brandAnalysis?.brand_name || "your business";
+        // Set welcome message
         setMessages([
           {
             id: "welcome",
             role: "assistant",
-            content: `👋 Hey there! I'm ZuckerBot, your personalized Meta ads assistant for ${businessName}. I've analyzed your business and I'm ready to help you create winning campaigns, write compelling ad copy, and optimize your advertising strategy. What would you like to work on today?`,
+            content: "What do you want to do?",
             timestamp: new Date(),
           },
         ]);
@@ -113,7 +112,7 @@ const ZuckerBot = () => {
           {
             id: "welcome",
             role: "assistant",
-            content: "👋 Hey there! I'm ZuckerBot, your Meta ads AI assistant. I can help you create winning ad copy, analyze your competition, and build campaigns that convert. What would you like to work on today?",
+            content: "What do you want to do?",
             timestamp: new Date(),
           },
         ]);
