@@ -6,7 +6,7 @@ interface TypingTextProps {
   onComplete?: () => void;
 }
 
-export const TypingText = ({ text, speed = 50, onComplete }: TypingTextProps) => {
+export const TypingText = ({ text, speed = 33, onComplete }: TypingTextProps) => {
   const [displayedText, setDisplayedText] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
 
