@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from '@supabase/supabase-js';
-import { LogOut, User as UserIcon, Zap, Target, Brain, Shield, BarChart3, Bell, Eye } from "lucide-react";
+import { LogOut, User as UserIcon, Zap, Target, Brain, Shield, BarChart3, Bell, Eye, Bot } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 const Index = () => {
@@ -84,12 +84,18 @@ const Index = () => {
               <div className="flex items-center space-x-4">
                 {user ? (
                   <>
-                    <Link to="/dashboard">
-                      <Button variant="ghost" className="text-foreground hover:text-primary">
-                        <BarChart3 className="w-4 h-4 mr-2" />
-                        Dashboard
-                      </Button>
-                    </Link>
+                     <Link to="/zuckerbot">
+                       <Button variant="ghost" className="text-foreground hover:text-primary">
+                         <Bot className="w-4 h-4 mr-2" />
+                         ZuckerBot AI
+                       </Button>
+                     </Link>
+                     <Link to="/dashboard">
+                       <Button variant="ghost" className="text-foreground hover:text-primary">
+                         <BarChart3 className="w-4 h-4 mr-2" />
+                         Dashboard
+                       </Button>
+                     </Link>
                     <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-muted/50">
                       <UserIcon className="w-4 h-4 text-muted-foreground" />
                       <span className="text-sm text-foreground">{user.email}</span>
