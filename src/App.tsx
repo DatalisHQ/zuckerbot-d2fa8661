@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import ZuckerBot from "./pages/ZuckerBot";
+import AdPerformance from "./pages/AdPerformance";
 import Pricing from "./pages/Pricing";
 import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
@@ -60,6 +61,7 @@ function App() {
             <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/zuckerbot" />} />
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
             <Route path="/zuckerbot" element={user ? <ZuckerBot /> : <Navigate to="/auth" />} />
+            <Route path="/ad-performance" element={user ? <AdPerformance /> : <Navigate to="/auth" />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/faq" element={<FAQ />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

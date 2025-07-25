@@ -67,51 +67,119 @@ export const FacebookAdsPerformance = () => {
 
   const loadAdMetrics = async () => {
     setIsLoading(true);
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // This would call your Facebook Ads API integration
-      // For now, we'll show demo data structure
-      const demoMetrics: AdMetrics = {
-        impressions: 45678,
-        clicks: 1234,
-        ctr: 2.7,
-        cpm: 8.45,
-        spend: 389.23,
-        reach: 23456,
-        conversions: 89,
-        period: "Last 30 days"
-      };
+      // First sync the latest Facebook Ads data
+      await supabase.functions.invoke('sync-facebook-ads');
+      
+      // Then fetch the synced data from our database
+      const { data: campaigns } = await supabase
+        .from('facebook_campaigns')
+        .select('*')
+        .eq('status', 'ACTIVE');
 
-      const demoInsights: AdInsight[] = [
-        {
-          metric: "CTR Performance",
-          value: "2.7%",
-          change: 0.3,
-          trend: "up",
-          description: "Click-through rate improved vs last period"
-        },
-        {
-          metric: "Cost Efficiency", 
-          value: "$4.37",
-          change: -0.82,
-          trend: "up",
-          description: "Cost per conversion decreased significantly"
-        },
-        {
-          metric: "Reach Growth",
-          value: "23.4K",
-          change: 12.5,
-          trend: "up", 
-          description: "Audience reach expanded by 12.5%"
-        }
-      ];
+      const { data: recentMetrics } = await supabase
+        .from('facebook_ad_metrics')
+        .select('*')
+        .gte('date_start', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+        .order('date_start', { ascending: false });
 
-      setMetrics(demoMetrics);
-      setInsights(demoInsights);
+      if (recentMetrics && recentMetrics.length > 0) {
+        const totalSpend = recentMetrics.reduce((sum, m) => sum + (parseFloat(m.spend?.toString() || '0') || 0), 0);
+        const totalImpressions = recentMetrics.reduce((sum, m) => sum + (parseInt(m.impressions?.toString() || '0') || 0), 0);
+        const totalClicks = recentMetrics.reduce((sum, m) => sum + (parseInt(m.clicks?.toString() || '0') || 0), 0);
+        const totalConversions = recentMetrics.reduce((sum, m) => sum + (parseInt(m.conversions?.toString() || '0') || 0), 0);
+        const totalReach = recentMetrics.reduce((sum, m) => sum + (parseInt(m.reach?.toString() || '0') || 0), 0);
+        
+        const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
+        const avgCPM = totalImpressions > 0 ? (totalSpend / totalImpressions * 1000) : 0;
+
+        const metrics: AdMetrics = {
+          impressions: totalImpressions,
+          clicks: totalClicks,
+          ctr: parseFloat(avgCTR.toFixed(2)),
+          cpm: parseFloat(avgCPM.toFixed(2)),
+          spend: totalSpend,
+          reach: totalReach,
+          conversions: totalConversions,
+          period: "Last 30 days"
+        };
+
+        setMetrics(metrics);
+
+        // Calculate insights from real data
+        const recentWeekMetrics = recentMetrics.filter(m => 
+          new Date(m.date_start) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        );
+        const previousWeekMetrics = recentMetrics.filter(m => {
+          const date = new Date(m.date_start);
+          return date >= new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) && 
+                 date < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        });
+
+        const currentWeekCTR = recentWeekMetrics.length > 0 ? 
+          recentWeekMetrics.reduce((sum, m) => sum + (parseFloat(m.ctr?.toString() || '0') || 0), 0) / recentWeekMetrics.length : 0;
+        const previousWeekCTR = previousWeekMetrics.length > 0 ? 
+          previousWeekMetrics.reduce((sum, m) => sum + (parseFloat(m.ctr?.toString() || '0') || 0), 0) / previousWeekMetrics.length : 0;
+        
+        const ctrChange = previousWeekCTR > 0 ? ((currentWeekCTR - previousWeekCTR) / previousWeekCTR * 100) : 0;
+
+        const insights: AdInsight[] = [
+          {
+            metric: "CTR Performance",
+            value: `${currentWeekCTR.toFixed(2)}%`,
+            change: parseFloat(ctrChange.toFixed(1)),
+            trend: ctrChange >= 0 ? "up" : "down",
+            description: `Click-through rate ${ctrChange >= 0 ? 'improved' : 'decreased'} vs last week`
+          },
+          {
+            metric: "Active Campaigns", 
+            value: campaigns?.length.toString() || "0",
+            change: 0,
+            trend: "up",
+            description: "Currently running campaigns"
+          },
+          {
+            metric: "Avg Daily Spend",
+            value: `$${(totalSpend / 30).toFixed(2)}`,
+            change: 0,
+            trend: "up", 
+            description: "Average daily spend over the last 30 days"
+          }
+        ];
+
+        setInsights(insights);
+      } else {
+        // Fallback to demo data if no real data available
+        const demoMetrics: AdMetrics = {
+          impressions: 0,
+          clicks: 0,
+          ctr: 0,
+          cpm: 0,
+          spend: 0,
+          reach: 0,
+          conversions: 0,
+          period: "No data available"
+        };
+
+        const demoInsights: AdInsight[] = [
+          {
+            metric: "Status",
+            value: "No Data",
+            change: 0,
+            trend: "up",
+            description: "Sync your Facebook Ads to see real performance data"
+          }
+        ];
+
+        setMetrics(demoMetrics);
+        setInsights(demoInsights);
+      }
     } catch (error) {
-      console.error('Error loading ad metrics:', error);
+      console.error('Error loading Facebook Ads data:', error);
       toast({
         title: "Error Loading Metrics",
         description: "Failed to load Facebook ads performance data",

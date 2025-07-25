@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
 const corsHeaders = {
@@ -77,6 +78,17 @@ serve(async (req) => {
       throw new Error('OpenAI API key not configured');
     }
 
+    // Initialize Supabase client to fetch user's Facebook Ads data
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: { Authorization: req.headers.get('Authorization')! },
+        },
+      }
+    );
+
     // Build enhanced system message with business context
     let systemMessage = META_ADS_CONTEXT;
     
@@ -94,7 +106,61 @@ Business Details:
 - Business Description: ${brand?.niche || 'Not specified'}
 - Target Audience: ${brand?.business_category || 'Not specified'}
 - Main Products/Services: ${brand?.main_products ? JSON.stringify(brand.main_products) : 'Not specified'}
-- Value Propositions: ${brand?.value_propositions ? JSON.stringify(brand.value_propositions) : 'Not specified'}
+- Value Propositions: ${brand?.value_propositions ? JSON.stringify(brand.value_propositions) : 'Not specified'}`;
+
+      // Try to get current user for Facebook Ads data
+      try {
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        if (user) {
+          // Fetch recent Facebook Ads performance data
+          const { data: campaigns } = await supabaseClient
+            .from('facebook_campaigns')
+            .select('campaign_name, objective, status, daily_budget')
+            .eq('user_id', user.id)
+            .eq('status', 'ACTIVE')
+            .limit(5);
+
+          const { data: recentMetrics } = await supabaseClient
+            .from('facebook_ad_metrics')
+            .select('spend, impressions, clicks, ctr, conversions')
+            .eq('user_id', user.id)
+            .gte('date_start', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+            .order('date_start', { ascending: false })
+            .limit(10);
+
+          const { data: audiences } = await supabaseClient
+            .from('facebook_audiences')
+            .select('audience_name, audience_type, audience_size')
+            .eq('user_id', user.id)
+            .limit(5);
+
+          if (campaigns && campaigns.length > 0) {
+            systemMessage += `
+
+CURRENT FACEBOOK ADS PERFORMANCE:
+Active Campaigns: ${campaigns.map(c => `${c.campaign_name} (${c.objective}, $${c.daily_budget}/day)`).join(', ')}`;
+          }
+
+          if (recentMetrics && recentMetrics.length > 0) {
+            const totalSpend = recentMetrics.reduce((sum, m) => sum + (parseFloat(m.spend) || 0), 0);
+            const totalImpressions = recentMetrics.reduce((sum, m) => sum + (parseInt(m.impressions) || 0), 0);
+            const totalClicks = recentMetrics.reduce((sum, m) => sum + (parseInt(m.clicks) || 0), 0);
+            const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100).toFixed(2) : 0;
+
+            systemMessage += `
+Recent Performance (Last 7 days): $${totalSpend.toFixed(2)} spent, ${totalImpressions.toLocaleString()} impressions, ${totalClicks.toLocaleString()} clicks, ${avgCTR}% CTR`;
+          }
+
+          if (audiences && audiences.length > 0) {
+            systemMessage += `
+Saved Audiences: ${audiences.map(a => `${a.audience_name} (${a.audience_size?.toLocaleString()} people)`).join(', ')}`;
+          }
+        }
+      } catch (error) {
+        console.log('Could not fetch Facebook Ads data:', error);
+      }
+
+      systemMessage += `
 
 Always reference this business information when asking clarifying questions. Make responses personal by mentioning their business name and type. Focus on understanding their specific goals before providing detailed advice.`;
     }

@@ -240,6 +240,240 @@ export type Database = {
         }
         Relationships: []
       }
+      facebook_ad_creatives: {
+        Row: {
+          ad_id: string | null
+          body: string | null
+          call_to_action: string | null
+          created_at: string
+          creative_id: string
+          creative_name: string | null
+          creative_type: string | null
+          id: string
+          image_url: string | null
+          link_url: string | null
+          performance_score: number | null
+          raw_data: Json | null
+          title: string | null
+          updated_at: string
+          user_id: string
+          video_url: string | null
+        }
+        Insert: {
+          ad_id?: string | null
+          body?: string | null
+          call_to_action?: string | null
+          created_at?: string
+          creative_id: string
+          creative_name?: string | null
+          creative_type?: string | null
+          id?: string
+          image_url?: string | null
+          link_url?: string | null
+          performance_score?: number | null
+          raw_data?: Json | null
+          title?: string | null
+          updated_at?: string
+          user_id: string
+          video_url?: string | null
+        }
+        Update: {
+          ad_id?: string | null
+          body?: string | null
+          call_to_action?: string | null
+          created_at?: string
+          creative_id?: string
+          creative_name?: string | null
+          creative_type?: string | null
+          id?: string
+          image_url?: string | null
+          link_url?: string | null
+          performance_score?: number | null
+          raw_data?: Json | null
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+          video_url?: string | null
+        }
+        Relationships: []
+      }
+      facebook_ad_metrics: {
+        Row: {
+          ad_id: string | null
+          adset_id: string | null
+          campaign_id: string | null
+          clicks: number | null
+          conversion_value: number | null
+          conversions: number | null
+          cost_per_conversion: number | null
+          cpc: number | null
+          cpm: number | null
+          cpp: number | null
+          created_at: string
+          ctr: number | null
+          date_start: string
+          date_stop: string
+          frequency: number | null
+          id: string
+          impressions: number | null
+          raw_data: Json | null
+          reach: number | null
+          spend: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ad_id?: string | null
+          adset_id?: string | null
+          campaign_id?: string | null
+          clicks?: number | null
+          conversion_value?: number | null
+          conversions?: number | null
+          cost_per_conversion?: number | null
+          cpc?: number | null
+          cpm?: number | null
+          cpp?: number | null
+          created_at?: string
+          ctr?: number | null
+          date_start: string
+          date_stop: string
+          frequency?: number | null
+          id?: string
+          impressions?: number | null
+          raw_data?: Json | null
+          reach?: number | null
+          spend?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ad_id?: string | null
+          adset_id?: string | null
+          campaign_id?: string | null
+          clicks?: number | null
+          conversion_value?: number | null
+          conversions?: number | null
+          cost_per_conversion?: number | null
+          cpc?: number | null
+          cpm?: number | null
+          cpp?: number | null
+          created_at?: string
+          ctr?: number | null
+          date_start?: string
+          date_stop?: string
+          frequency?: number | null
+          id?: string
+          impressions?: number | null
+          raw_data?: Json | null
+          reach?: number | null
+          spend?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      facebook_audiences: {
+        Row: {
+          audience_id: string
+          audience_name: string
+          audience_size: number | null
+          audience_type: string | null
+          behaviors: Json | null
+          created_at: string
+          demographics: Json | null
+          description: string | null
+          id: string
+          interests: Json | null
+          raw_data: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audience_id: string
+          audience_name: string
+          audience_size?: number | null
+          audience_type?: string | null
+          behaviors?: Json | null
+          created_at?: string
+          demographics?: Json | null
+          description?: string | null
+          id?: string
+          interests?: Json | null
+          raw_data?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audience_id?: string
+          audience_name?: string
+          audience_size?: number | null
+          audience_type?: string | null
+          behaviors?: Json | null
+          created_at?: string
+          demographics?: Json | null
+          description?: string | null
+          id?: string
+          interests?: Json | null
+          raw_data?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      facebook_campaigns: {
+        Row: {
+          campaign_id: string
+          campaign_name: string
+          created_at: string
+          created_time: string | null
+          daily_budget: number | null
+          end_time: string | null
+          id: string
+          lifetime_budget: number | null
+          objective: string | null
+          raw_data: Json | null
+          start_time: string | null
+          status: string | null
+          updated_at: string
+          updated_time: string | null
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          campaign_name: string
+          created_at?: string
+          created_time?: string | null
+          daily_budget?: number | null
+          end_time?: string | null
+          id?: string
+          lifetime_budget?: number | null
+          objective?: string | null
+          raw_data?: Json | null
+          start_time?: string | null
+          status?: string | null
+          updated_at?: string
+          updated_time?: string | null
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          campaign_name?: string
+          created_at?: string
+          created_time?: string | null
+          daily_budget?: number | null
+          end_time?: string | null
+          id?: string
+          lifetime_budget?: number | null
+          objective?: string | null
+          raw_data?: Json | null
+          start_time?: string | null
+          status?: string | null
+          updated_at?: string
+          updated_time?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       monitoring_alerts: {
         Row: {
           alert_type: string
