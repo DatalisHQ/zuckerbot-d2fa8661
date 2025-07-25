@@ -186,6 +186,15 @@ const ZuckerBot = () => {
               .map(p => p.replace(/^[-•*]\s*/, "").trim())
               .filter(p => p.length > 0);
           }
+        } else {
+          // Also look for square bracket format like [More Leads]
+          const bracketRegex = /\[([^\]]+)\]/g;
+          const matches = responseContent.match(bracketRegex);
+          if (matches) {
+            prompts = matches.map(match => match.replace(/[\[\]]/g, ""));
+            // Remove the bracket prompts from the main response
+            responseContent = responseContent.replace(bracketRegex, "").trim();
+          }
         }
         
         return [...filtered, {
