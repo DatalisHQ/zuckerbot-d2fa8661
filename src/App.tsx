@@ -9,6 +9,7 @@ import { Session, User } from "@supabase/supabase-js";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
+import Dashboard from "./pages/Dashboard";
 import ZuckerBot from "./pages/ZuckerBot";
 import Conversations from "./pages/Conversations";
 import Files from "./pages/Files";
@@ -61,9 +62,10 @@ function App() {
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={!user ? <Index /> : <Navigate to="/zuckerbot" />} />
-            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/zuckerbot" />} />
+            <Route path="/" element={!user ? <Index /> : <Navigate to="/dashboard" />} />
+            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/dashboard" />} />
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
+              <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
               <Route path="/zuckerbot" element={user ? <ZuckerBot /> : <Navigate to="/auth" />} />
               <Route path="/conversations" element={user ? <ConversationLayout><Conversations /></ConversationLayout> : <Navigate to="/auth" />} />
               <Route path="/files" element={user ? <ConversationLayout><Files /></ConversationLayout> : <Navigate to="/auth" />} />
