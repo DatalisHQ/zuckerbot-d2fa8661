@@ -70,13 +70,15 @@ const ZuckerBot = () => {
         setUser(session.user);
 
         // Load user profile and check onboarding status
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('*')
           .eq('user_id', session.user.id)
           .single();
 
+        console.log('ZuckerBot - User ID:', session.user.id); // Debug log
         console.log('ZuckerBot - User profile:', profile); // Debug log
+        console.log('ZuckerBot - Profile error:', profileError); // Debug log
 
         // If user hasn't completed onboarding, redirect
         if (!profile?.onboarding_completed) {
