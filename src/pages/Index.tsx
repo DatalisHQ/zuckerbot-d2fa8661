@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from '@supabase/supabase-js';
-import { LogOut, User as UserIcon, Zap, Target, Brain, Shield, BarChart3, Bell } from "lucide-react";
+import { LogOut, User as UserIcon, Zap, Target, Brain, Shield, BarChart3, Bell, Eye } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 const Index = () => {
@@ -131,31 +131,39 @@ const Index = () => {
             </div>
             
             <h1 className="text-5xl md:text-7xl font-bold leading-tight">
-              <span className="gradient-text">AI-Powered</span>
+              <span className="gradient-text">Spy on Your</span>
               <br />
-              <span className="text-foreground">Competitive Intelligence</span>
+              <span className="text-foreground">Competition</span>
             </h1>
             
             <p className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-              Analyze competitors, discover market opportunities, and gain strategic insights 
-              with our cutting-edge AI platform. Stay ahead of the competition with real-time monitoring and intelligent analysis.
+              Discover what your competitors are doing, analyze their strategies, and uncover hidden opportunities. 
+              Get instant insights from their websites, ads, and market positioning - completely free.
             </p>
             
-            {!user && (
-              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
-                <Link to="/auth">
-                  <Button size="lg" className="btn-primary h-14 px-8 text-lg">
-                    <Zap className="w-5 h-5 mr-2" />
-                    Start Free Analysis
-                  </Button>
-                </Link>
-                <Link to="/dashboard">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
+              {!user ? (
+                <>
+                  <Link to="/auth">
+                    <Button size="lg" className="btn-primary h-14 px-8 text-lg">
+                      <Target className="w-5 h-5 mr-2" />
+                      Spy on My Competition - FREE
+                    </Button>
+                  </Link>
                   <Button variant="outline" size="lg" className="h-14 px-8 text-lg border-border/50">
-                    View Demo
+                    <Eye className="w-5 h-5 mr-2" />
+                    See How It Works
+                  </Button>
+                </>
+              ) : (
+                <Link to="/dashboard">
+                  <Button size="lg" className="btn-primary h-14 px-8 text-lg">
+                    <Target className="w-5 h-5 mr-2" />
+                    Start Competitor Analysis
                   </Button>
                 </Link>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Features Grid */}
@@ -191,26 +199,18 @@ const Index = () => {
             </div>
           </div>
 
-          {/* Main Content */}
-          {user ? (
-            <div className="animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+          {/* Free Competitor Analysis Tool */}
+          <div className="animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+            <div className="max-w-4xl mx-auto">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold mb-4">Try Our Free Competitor Analysis Tool</h2>
+                <p className="text-muted-foreground text-lg">
+                  Enter any competitor's website and get instant insights - no signup required for the first analysis
+                </p>
+              </div>
               <BrandAnalysisForm />
             </div>
-          ) : (
-            <div className="text-center py-16 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
-              <div className="modern-card max-w-2xl mx-auto">
-                <h3 className="text-2xl font-semibold mb-4">Ready to Get Started?</h3>
-                <p className="text-muted-foreground mb-6">
-                  Sign up now to analyze your first competitor and discover strategic opportunities in your market.
-                </p>
-                <Link to="/auth">
-                  <Button size="lg" className="btn-primary h-12 px-8">
-                    Create Free Account
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
