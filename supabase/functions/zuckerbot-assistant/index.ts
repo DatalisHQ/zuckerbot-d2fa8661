@@ -20,6 +20,15 @@ META ADVERTISING EXPERTISE:
 - Creative best practices for each placement
 - A/B testing strategies and optimization techniques
 
+REAL-TIME PERFORMANCE ANALYSIS:
+When a user asks to "analyze and optimize Meta ads performance" or similar:
+1. Fetch their actual Facebook campaigns using the Marketing API
+2. Analyze real performance metrics (CTR, CPC, CPM, ROAS, conversion rates)
+3. Compare performance against campaign objectives
+4. Provide specific optimization recommendations based on actual data
+5. Identify underperforming campaigns, ad sets, or ads
+6. Suggest budget reallocation, audience refinements, or creative updates
+
 AD COPY EXPERTISE:
 - Hook-focused headlines that stop the scroll
 - Benefit-driven body copy with social proof
@@ -41,12 +50,14 @@ CONVERSATIONAL STYLE:
 Keep responses short, conversational, and clarifying. Use "us" and "we" language to create partnership. Focus on understanding what the user wants rather than giving detailed instructions unless specifically requested.
 
 WORKFLOW RULES - CRITICAL:
-1. When someone asks for "Create Ad Copy", "Write Ad Copy", or similar requests, follow this streamlined process:
+1. When someone asks for "analyze and optimize Meta ads performance", immediately fetch their actual campaign data and provide specific insights.
+
+2. When someone asks for "Create Ad Copy", "Write Ad Copy", or similar requests, follow this streamlined process:
    - Ask MAXIMUM 1 question about their main campaign objective (leads, sales, traffic, awareness)
    - Then immediately generate 3 different ad copy variations using their business context
    - Do NOT ask about placement, creative type, audience details, or other specifics
 
-2. For ad copy generation, create 3 distinct variations with this structure:
+3. For ad copy generation, create 3 distinct variations with this structure:
    **Version A - Benefit-Focused:**
    Headline: [compelling 40-char headline]
    Primary Text: [125-char benefit-driven copy]
@@ -96,6 +107,77 @@ Common prompt options to use:
 
 NEVER give step-by-step instructions unless specifically asked. Move quickly from minimal questions to actionable outputs. Reference their business name and type when possible to make it personal. ALWAYS include the PROMPTS section with clickable options.`;
 
+// Facebook Marketing API helper functions
+async function fetchFacebookCampaigns(accessToken: string, accountId?: string) {
+  try {
+    console.log('Fetching Facebook campaigns...');
+    
+    // If no specific account ID, get ad accounts first
+    let adAccountId = accountId;
+    if (!adAccountId) {
+      const accountsResponse = await fetch(
+        `https://graph.facebook.com/v18.0/me/adaccounts?fields=id,name,account_status&access_token=${accessToken}`
+      );
+      const accountsData = await accountsResponse.json();
+      if (accountsData.data && accountsData.data.length > 0) {
+        adAccountId = accountsData.data[0].id;
+        console.log('Using ad account:', adAccountId);
+      } else {
+        throw new Error('No ad accounts found');
+      }
+    }
+
+    // Fetch campaigns with insights
+    const campaignsResponse = await fetch(
+      `https://graph.facebook.com/v18.0/${adAccountId}/campaigns?fields=id,name,objective,status,daily_budget,lifetime_budget,created_time&limit=10&access_token=${accessToken}`
+    );
+    
+    if (!campaignsResponse.ok) {
+      const error = await campaignsResponse.text();
+      throw new Error(`Facebook API error: ${error}`);
+    }
+    
+    const campaignsData = await campaignsResponse.json();
+    console.log(`Found ${campaignsData.data?.length || 0} campaigns`);
+
+    // Fetch insights for active campaigns
+    const campaigns = [];
+    for (const campaign of campaignsData.data || []) {
+      try {
+        const insightsResponse = await fetch(
+          `https://graph.facebook.com/v18.0/${campaign.id}/insights?fields=spend,impressions,clicks,ctr,cpm,cpp,reach,frequency,actions&date_preset=last_7d&access_token=${accessToken}`
+        );
+        
+        const insightsData = await insightsResponse.json();
+        const insights = insightsData.data?.[0] || {};
+        
+        campaigns.push({
+          ...campaign,
+          insights: {
+            spend: parseFloat(insights.spend || '0'),
+            impressions: parseInt(insights.impressions || '0'),
+            clicks: parseInt(insights.clicks || '0'),
+            ctr: parseFloat(insights.ctr || '0'),
+            cpm: parseFloat(insights.cpm || '0'),
+            cpp: parseFloat(insights.cpp || '0'),
+            reach: parseInt(insights.reach || '0'),
+            frequency: parseFloat(insights.frequency || '0'),
+            conversions: insights.actions?.find((a: any) => a.action_type === 'offsite_conversion.custom')?.value || '0'
+          }
+        });
+      } catch (error) {
+        console.log(`Could not fetch insights for campaign ${campaign.id}:`, error);
+        campaigns.push({ ...campaign, insights: {} });
+      }
+    }
+
+    return campaigns;
+  } catch (error) {
+    console.error('Error fetching Facebook campaigns:', error);
+    throw error;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -139,56 +221,68 @@ Business Details:
 - Main Products/Services: ${brand?.main_products ? JSON.stringify(brand.main_products) : 'Not specified'}
 - Value Propositions: ${brand?.value_propositions ? JSON.stringify(brand.value_propositions) : 'Not specified'}`;
 
-      // Try to get current user for Facebook Ads data
-      try {
-        const { data: { user } } = await supabaseClient.auth.getUser();
-        if (user) {
-          // Fetch recent Facebook Ads performance data
-          const { data: campaigns } = await supabaseClient
-            .from('facebook_campaigns')
-            .select('campaign_name, objective, status, daily_budget')
-            .eq('user_id', user.id)
-            .eq('status', 'ACTIVE')
-            .limit(5);
+      // Check if this is a performance analysis request
+      const isPerformanceAnalysis = message.toLowerCase().includes('analyze') || 
+                                   message.toLowerCase().includes('optimize') || 
+                                   message.toLowerCase().includes('performance');
 
-          const { data: recentMetrics } = await supabaseClient
-            .from('facebook_ad_metrics')
-            .select('spend, impressions, clicks, ctr, conversions')
-            .eq('user_id', user.id)
-            .gte('date_start', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-            .order('date_start', { ascending: false })
-            .limit(10);
-
-          const { data: audiences } = await supabaseClient
-            .from('facebook_audiences')
-            .select('audience_name, audience_type, audience_size')
-            .eq('user_id', user.id)
-            .limit(5);
-
-          if (campaigns && campaigns.length > 0) {
-            systemMessage += `
-
-CURRENT FACEBOOK ADS PERFORMANCE:
-Active Campaigns: ${campaigns.map(c => `${c.campaign_name} (${c.objective}, $${c.daily_budget}/day)`).join(', ')}`;
+      if (isPerformanceAnalysis && profile?.facebook_connected) {
+        try {
+          console.log('Fetching real Facebook Ads data for performance analysis...');
+          
+          const facebookAccessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
+          if (facebookAccessToken) {
+            const campaigns = await fetchFacebookCampaigns(facebookAccessToken, profile.facebook_business_id);
+            
+            if (campaigns && campaigns.length > 0) {
+              systemMessage += `\n\nREAL-TIME FACEBOOK ADS PERFORMANCE DATA:`;
+              
+              campaigns.forEach((campaign: any) => {
+                const insights = campaign.insights || {};
+                systemMessage += `\n\nCampaign: ${campaign.name}
+- Objective: ${campaign.objective}
+- Status: ${campaign.status}
+- Budget: $${campaign.daily_budget || campaign.lifetime_budget || 'Not set'}
+- Last 7 days performance:
+  * Spend: $${insights.spend?.toFixed(2) || '0'}
+  * Impressions: ${insights.impressions?.toLocaleString() || '0'}
+  * Clicks: ${insights.clicks?.toLocaleString() || '0'}
+  * CTR: ${insights.ctr?.toFixed(2) || '0'}%
+  * CPM: $${insights.cpm?.toFixed(2) || '0'}
+  * CPC: $${insights.cpp?.toFixed(2) || '0'}
+  * Reach: ${insights.reach?.toLocaleString() || '0'}
+  * Frequency: ${insights.frequency?.toFixed(2) || '0'}
+  * Conversions: ${insights.conversions || '0'}`;
+              });
+              
+              systemMessage += `\n\nBased on this REAL performance data, provide specific optimization recommendations. Focus on campaigns with poor CTR (<1%), high CPM, low conversion rates, or other performance issues you can identify from the actual metrics.`;
+            } else {
+              systemMessage += `\n\nNote: No active Facebook campaigns found. User may need to create campaigns first or check their Facebook Ads Manager access.`;
+            }
           }
-
-          if (recentMetrics && recentMetrics.length > 0) {
-            const totalSpend = recentMetrics.reduce((sum, m) => sum + (parseFloat(m.spend) || 0), 0);
-            const totalImpressions = recentMetrics.reduce((sum, m) => sum + (parseInt(m.impressions) || 0), 0);
-            const totalClicks = recentMetrics.reduce((sum, m) => sum + (parseInt(m.clicks) || 0), 0);
-            const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100).toFixed(2) : 0;
-
-            systemMessage += `
-Recent Performance (Last 7 days): $${totalSpend.toFixed(2)} spent, ${totalImpressions.toLocaleString()} impressions, ${totalClicks.toLocaleString()} clicks, ${avgCTR}% CTR`;
-          }
-
-          if (audiences && audiences.length > 0) {
-            systemMessage += `
-Saved Audiences: ${audiences.map(a => `${a.audience_name} (${a.audience_size?.toLocaleString()} people)`).join(', ')}`;
-          }
+        } catch (error) {
+          console.error('Error fetching Facebook Ads data:', error);
+          systemMessage += `\n\nNote: Could not fetch real-time Facebook Ads data. Using general optimization guidance.`;
         }
-      } catch (error) {
-        console.log('Could not fetch Facebook Ads data:', error);
+      } else {
+        // Fallback to database data for non-performance requests
+        try {
+          const { data: { user } } = await supabaseClient.auth.getUser();
+          if (user) {
+            const { data: campaigns } = await supabaseClient
+              .from('facebook_campaigns')
+              .select('campaign_name, objective, status, daily_budget')
+              .eq('user_id', user.id)
+              .eq('status', 'ACTIVE')
+              .limit(5);
+
+            if (campaigns && campaigns.length > 0) {
+              systemMessage += `\n\nCURRENT FACEBOOK ADS: ${campaigns.map(c => `${c.campaign_name} (${c.objective})`).join(', ')}`;
+            }
+          }
+        } catch (error) {
+          console.log('Could not fetch stored campaign data:', error);
+        }
       }
 
       systemMessage += `
