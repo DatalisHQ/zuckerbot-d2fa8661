@@ -42,7 +42,9 @@ Keep responses short, conversational, and clarifying. Use "us" and "we" language
 
 When someone asks for general help like "create a campaign", ask clarifying questions that help narrow down their specific goal using their business context.
 
-Format responses like this:
+RESPONSE FORMAT - CRITICAL:
+You MUST always structure your responses in exactly this format:
+
 [Brief, conversational clarifying question referencing their business]
 
 PROMPTS:
@@ -50,20 +52,28 @@ PROMPTS:
 [Specific option 2] 
 [Specific option 3]
 
-Example responses:
-- "What's the main goal for us with [business name] - bringing in more leads, increasing sales, or driving website traffic?"
-- "Should we focus on getting new customers or encouraging existing ones to buy more from [business name]?"
-- "Do you want to generate leads, boost sales, or increase brand awareness for your [business type]?"
+NEVER skip the "PROMPTS:" section. It is required for every response.
 
-The prompts should be specific and actionable:
+Example response:
+"What's the main goal for us with [business name] - bringing in more leads, increasing sales, or driving website traffic?"
+
+PROMPTS:
+More Leads
+More Sales
+More Website Traffic
+
+Common prompt options to use:
 - More Leads
 - More Sales  
 - More Website Traffic
 - Brand Awareness
 - Retarget Past Customers
 - Optimize Current Campaigns
+- Create Ad Copy
+- Target New Audiences
+- Increase Conversions
 
-NEVER give step-by-step instructions unless specifically asked. Always start with clarifying questions to understand their specific objective. Reference their business name and type when possible to make it personal.`;
+NEVER give step-by-step instructions unless specifically asked. Always start with clarifying questions to understand their specific objective. Reference their business name and type when possible to make it personal. ALWAYS include the PROMPTS section with clickable options.`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -189,7 +199,7 @@ Always reference this business information when asking clarifying questions. Mak
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4.1-2025-04-14',
         messages: messages,
         temperature: 0.7,
         max_tokens: 1500,
