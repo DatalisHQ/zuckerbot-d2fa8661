@@ -373,6 +373,8 @@ export type Database = {
       profiles: {
         Row: {
           business_name: string | null
+          conversation_limit: number | null
+          conversations_used: number | null
           created_at: string
           email: string | null
           facebook_access_token: string | null
@@ -381,11 +383,14 @@ export type Database = {
           full_name: string | null
           id: string
           onboarding_completed: boolean | null
+          subscription_tier: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           business_name?: string | null
+          conversation_limit?: number | null
+          conversations_used?: number | null
           created_at?: string
           email?: string | null
           facebook_access_token?: string | null
@@ -394,11 +399,14 @@ export type Database = {
           full_name?: string | null
           id?: string
           onboarding_completed?: boolean | null
+          subscription_tier?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           business_name?: string | null
+          conversation_limit?: number | null
+          conversations_used?: number | null
           created_at?: string
           email?: string | null
           facebook_access_token?: string | null
@@ -407,6 +415,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           onboarding_completed?: boolean | null
+          subscription_tier?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -477,9 +486,46 @@ export type Database = {
           },
         ]
       }
+      subscribers: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          stripe_customer_id: string | null
+          subscribed: boolean
+          subscription_end: string | null
+          subscription_tier: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          stripe_customer_id?: string | null
+          subscribed?: boolean
+          subscription_end?: string | null
+          subscription_tier?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          stripe_customer_id?: string | null
+          subscribed?: boolean
+          subscription_end?: string | null
+          subscription_tier?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       zuckerbot_conversations: {
         Row: {
           business_context: Json | null
+          conversation_count: number | null
           conversation_title: string | null
           created_at: string
           id: string
@@ -489,6 +535,7 @@ export type Database = {
         }
         Insert: {
           business_context?: Json | null
+          conversation_count?: number | null
           conversation_title?: string | null
           created_at?: string
           id?: string
@@ -498,6 +545,7 @@ export type Database = {
         }
         Update: {
           business_context?: Json | null
+          conversation_count?: number | null
           conversation_title?: string | null
           created_at?: string
           id?: string

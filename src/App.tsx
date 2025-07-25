@@ -14,6 +14,8 @@ import ZuckerBot from "./pages/ZuckerBot";
 import CompetitorAnalysis from "./pages/CompetitorAnalysis";
 import AdPerformance from "./pages/AdPerformance";
 import StrategicInsights from "./pages/StrategicInsights";
+import Pricing from "./pages/Pricing";
+import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -66,6 +68,8 @@ function App() {
             <Route path="/ad-performance" element={user ? <AdPerformance /> : <Navigate to="/auth" />} />
             <Route path="/strategic-insights" element={user ? <StrategicInsights /> : <Navigate to="/auth" />} />
             <Route path="/zuckerbot" element={user ? <ZuckerBot /> : <Navigate to="/auth" />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/faq" element={<FAQ />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
