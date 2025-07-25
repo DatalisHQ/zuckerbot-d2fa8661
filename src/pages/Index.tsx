@@ -83,9 +83,21 @@ const Index = () => {
       <div className="absolute inset-0 bg-grid-pattern opacity-20" />
       <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-background/50" />
       
-      {/* Floating orbs */}
-      <div className="absolute top-20 left-1/4 w-64 h-64 bg-gradient-primary rounded-full opacity-10 blur-3xl animate-float" />
-      <div className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-primary rounded-full opacity-5 blur-3xl animate-float" style={{ animationDelay: '3s' }} />
+      {/* Octopus mascots */}
+      <div className="absolute top-20 right-10 w-48 h-48 opacity-80 animate-float">
+        <img 
+          src="/lovable-uploads/afb2c5d2-0748-401a-bd73-d4fcd8f060a8.png" 
+          alt="ZuckerBot Octopus Mascot" 
+          className="w-full h-full object-contain"
+        />
+      </div>
+      <div className="absolute bottom-20 left-10 w-56 h-56 opacity-70 animate-float" style={{ animationDelay: '2s' }}>
+        <img 
+          src="/lovable-uploads/73b8ca3e-db14-4dfd-b0ad-ea5986795f7e.png" 
+          alt="User Friendly Octopus" 
+          className="w-full h-full object-contain"
+        />
+      </div>
 
       <div className="relative z-10">
         {/* Navigation */}
@@ -258,7 +270,14 @@ const Index = () => {
           </div>
           
           <div className="grid md:grid-cols-3 gap-8 mb-16 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
-            <div className="modern-card text-center group">
+            <div className="modern-card text-center group relative overflow-hidden">
+              <div className="absolute top-4 right-4 w-16 h-16 opacity-20 group-hover:opacity-40 transition-opacity duration-300">
+                <img 
+                  src="/lovable-uploads/5284f730-4713-4c15-af9f-a866fb771283.png" 
+                  alt="Social Media Octopus" 
+                  className="w-full h-full object-contain"
+                />
+              </div>
               <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-4 glow-sm group-hover:glow-primary transition-all duration-300">
                 <MessageCircle className="w-6 h-6 text-primary-foreground" />
               </div>
@@ -286,6 +305,33 @@ const Index = () => {
               <p className="text-muted-foreground">
                 Get expert advice on audience targeting, campaign structure, and performance optimization.
               </p>
+            </div>
+          </div>
+          
+          {/* Mascot Introduction Section */}
+          <div className="text-center py-16 bg-gradient-accent rounded-2xl mb-16">
+            <div className="flex flex-col md:flex-row items-center justify-center gap-8 max-w-4xl mx-auto px-8">
+              <div className="w-48 h-48 flex-shrink-0">
+                <img 
+                  src="/lovable-uploads/73b8ca3e-db14-4dfd-b0ad-ea5986795f7e.png" 
+                  alt="ZuckerBot Mascot" 
+                  className="w-full h-full object-contain animate-float"
+                />
+              </div>
+              <div className="text-left space-y-4">
+                <h3 className="text-2xl font-bold">Meet Your AI Facebook Ads Expert</h3>
+                <p className="text-muted-foreground text-lg leading-relaxed">
+                  ZuckerBot isn't just another chatbot - it's your dedicated Facebook advertising specialist. 
+                  With multiple AI "arms" working simultaneously, we can analyze your campaigns, optimize your targeting, 
+                  generate compelling ad copy, and provide strategic insights all at once.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">Campaign Analysis</span>
+                  <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">Ad Copy Generation</span>
+                  <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">Targeting Optimization</span>
+                  <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">Performance Insights</span>
+                </div>
+              </div>
             </div>
           </div>
           
