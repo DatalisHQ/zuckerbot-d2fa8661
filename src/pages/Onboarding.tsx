@@ -37,7 +37,7 @@ const Onboarding = () => {
         .single();
 
       if (profile?.onboarding_completed) {
-        navigate("/dashboard");
+        navigate("/zuckerbot");
       }
     };
     checkUser();
@@ -145,7 +145,7 @@ const Onboarding = () => {
 
       // Don't call setIsAnalyzing(false) or setIsLoading(false) here to prevent state reset
       // Navigate immediately after successful verification
-      navigate("/dashboard");
+      navigate("/zuckerbot");
       
     } catch (error: any) {
       console.error("Onboarding error:", error);

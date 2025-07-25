@@ -7,13 +7,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import Index from "./pages/Index";
-import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import ZuckerBot from "./pages/ZuckerBot";
-import CompetitorAnalysis from "./pages/CompetitorAnalysis";
-import AdPerformance from "./pages/AdPerformance";
-import StrategicInsights from "./pages/StrategicInsights";
 import Pricing from "./pages/Pricing";
 import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
@@ -60,13 +56,9 @@ function App() {
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={!user ? <Index /> : <Navigate to="/dashboard" />} />
-            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/dashboard" />} />
+            <Route path="/" element={!user ? <Index /> : <Navigate to="/zuckerbot" />} />
+            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/zuckerbot" />} />
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
-            <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
-            <Route path="/competitor-analysis" element={user ? <CompetitorAnalysis /> : <Navigate to="/auth" />} />
-            <Route path="/ad-performance" element={user ? <AdPerformance /> : <Navigate to="/auth" />} />
-            <Route path="/strategic-insights" element={user ? <StrategicInsights /> : <Navigate to="/auth" />} />
             <Route path="/zuckerbot" element={user ? <ZuckerBot /> : <Navigate to="/auth" />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/faq" element={<FAQ />} />
