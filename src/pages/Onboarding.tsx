@@ -60,7 +60,7 @@ const Onboarding = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("No user session");
 
-      // Update profile with business info
+      // Update profile with business info and mark onboarding as completed
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
@@ -96,6 +96,7 @@ const Onboarding = () => {
 
       navigate("/zuckerbot");
     } catch (error: any) {
+      console.error("Onboarding error:", error);
       toast({
         title: "Error",
         description: error.message,
@@ -108,10 +109,15 @@ const Onboarding = () => {
   };
 
   const connectFacebook = () => {
+    // For now, skip Facebook and go directly to business setup
     toast({
-      title: "Coming Soon",
-      description: "Facebook integration will be available shortly.",
+      title: "Skipping Facebook",
+      description: "You can connect Facebook later. Let's set up your business first.",
     });
+    setCurrentStep(2);
+  };
+
+  const skipFacebook = () => {
     setCurrentStep(2);
   };
 
