@@ -48,21 +48,26 @@ serve(async (req) => {
 
     console.log('Analyzing competitor ads...');
 
-    // Analyze each competitor with enhanced data collection
+    // Process each competitor through the full sub-pipeline
     const competitorInsights = [];
     const competitors = competitorList.competitors || [];
 
     for (const competitor of competitors) {
-      console.log(`Analyzing competitor: ${competitor.name}`);
+      console.log(`Processing competitor: ${competitor.name}`);
       
       let websiteData = null;
       let adsData = null;
 
-      // Scrape website if URL is provided
+      // Step 2: Website Scraping & Analysis
       if (competitor.url) {
         try {
           const websiteResponse = await supabase.functions.invoke('scrape-competitor-website', {
-            body: { competitorUrl: competitor.url }
+            body: { 
+              competitorUrl: competitor.url,
+              competitorName: competitor.name,
+              competitorListId: competitorListId,
+              userId: userId
+            }
           });
           
           if (websiteResponse.data?.success) {
@@ -73,12 +78,14 @@ serve(async (req) => {
         }
       }
 
-      // Analyze Meta ads
+      // Step 3: Meta Ad Library Analysis
       try {
         const adsResponse = await supabase.functions.invoke('analyze-meta-ads', {
           body: { 
             competitorName: competitor.name,
-            competitorUrl: competitor.url 
+            competitorUrl: competitor.url,
+            competitorListId: competitorListId,
+            userId: userId
           }
         });
         
@@ -89,27 +96,45 @@ serve(async (req) => {
         console.error(`Failed to analyze ads for ${competitor.name}:`, error);
       }
 
-      // Fallback to mock data if no data found
-      if (!adsData) {
-        const ads = await fetchCompetitorAds(competitor.name);
-        const insights = analyzeCompetitorAds(ads);
-        adsData = { ads, insights };
-      }
-      
+      // Compile competitor insights
       competitorInsights.push({
         name: competitor.name,
         url: competitor.url,
-        websiteAnalysis: websiteData,
-        ads: adsData.ads.slice(0, 5), // Top 5 ads
-        insights: adsData.insights
+        websiteAnalysis: websiteData?.analysis || null,
+        ads: adsData?.ads || [],
+        insights: adsData?.insights || { hooks: [], ctas: [], creative_trends: [] },
+        total_ads_found: adsData?.total_ads_found || 0,
+        no_ads_message: adsData?.message || null
       });
     }
 
     // Generate overall patterns and trends
     const overallInsights = generateOverallInsights(competitorInsights);
     
-    // Generate angle suggestions based on insights
-    const suggestedAngles = generateAngleSuggestions(overallInsights, competitorInsights);
+    // Step 4: Generate angle suggestions for user selection
+    const suggestedAngles = [
+      {
+        type: 'competitor-inspired',
+        title: 'Competitor-Inspired',
+        description: 'Use proven angles and tactics that competitors are using successfully.',
+        strategy: 'Leverage competitor-validated messaging patterns and successful ad formats.',
+        confidence: 85
+      },
+      {
+        type: 'differentiated', 
+        title: 'Differentiated',
+        description: 'Stand out by taking a unique position that competitors are not addressing.',
+        strategy: 'Identify gaps in competitor messaging and position your brand as the unique solution.',
+        confidence: 75
+      },
+      {
+        type: 'hybrid',
+        title: 'Hybrid',
+        description: 'Combine proven competitor tactics with your unique brand positioning.',
+        strategy: 'Use competitor-validated hooks but differentiate through your unique approach and value props.',
+        confidence: 90
+      }
+    ];
 
     const result = {
       competitorInsights,

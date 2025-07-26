@@ -12,13 +12,20 @@ serve(async (req) => {
   }
 
   try {
-    const { competitorName, competitorUrl } = await req.json();
+    const { competitorName, competitorUrl, competitorListId, userId } = await req.json();
     
-    if (!competitorName) {
-      throw new Error('Competitor name is required');
+    if (!competitorName || !competitorListId || !userId) {
+      throw new Error('Missing required parameters: competitorName, competitorListId, userId');
     }
 
     console.log('Analyzing Meta ads for competitor:', competitorName);
+
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Use Meta Ad Library API
     const facebookAccessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
@@ -97,17 +104,16 @@ serve(async (req) => {
           model: 'gpt-4o-mini',
           messages: [
             {
-              role: 'system',
-              content: `Analyze these Facebook ads and identify patterns. Return JSON with:
-- common_hooks: Array of top 3 most common opening hooks/phrases
-- common_ctas: Array of most used call-to-action buttons
-- dominant_tones: Array of emotional tones used (urgent, trustworthy, innovative, etc.)
-- avg_text_length: Average character count of primary text
-- creative_trends: Array of visual/creative themes mentioned`
-            },
-            {
               role: 'user',
-              content: `Analyze these ads from ${competitorName}:\n\n${adTexts}`
+              content: `You are a marketing analyst. Analyze the competitor ads and return JSON:
+{
+  "hooks": ["Hook 1", "Hook 2", "Hook 3"],
+  "ctas": ["Most common CTA"],
+  "creative_trends": ["Creative trend 1", "Creative trend 2"]
+}
+
+Analyze these ads from ${competitorName}:
+${adTexts}`
             }
           ],
           max_tokens: 800,
@@ -121,35 +127,60 @@ serve(async (req) => {
 
       const analysisData = await analysisResponse.json();
       let insights;
-      
       try {
         insights = JSON.parse(analysisData.choices[0].message.content);
       } catch (parseError) {
         // Fallback insights
         insights = {
-          common_hooks: ["Transform Your Business", "Limited Time Offer", "See What Customers Say"],
-          common_ctas: ["Learn More", "Shop Now", "Get Started"],
-          dominant_tones: ["Urgent", "Trustworthy", "Results-focused"],
-          avg_text_length: 120,
+          hooks: ["Transform Your Business", "Limited Time Offer", "See What Customers Say"],
+          ctas: ["Learn More", "Shop Now", "Get Started"],
           creative_trends: ["Social proof", "Urgency", "Benefits-focused"]
         };
       }
 
+      // Save competitor ad insights to database
+      const { data: insightsData, error: insightsError } = await supabase
+        .from('competitor_ad_insights')
+        .insert({
+          user_id: userId,
+          competitor_list_id: competitorListId,
+          competitor_name: competitorName,
+          ads_data: mockAds,
+          hooks: insights.hooks,
+          ctas: insights.ctas,
+          creative_trends: insights.creative_trends,
+          total_ads_found: mockAds.length
+        })
+        .select()
+        .single();
+
+      if (insightsError) {
+        console.error('Error saving competitor ad insights:', insightsError);
+      }
+
       const result = {
-        competitor: competitorName,
-        ads: mockAds,
-        insights,
-        total_ads_found: mockAds.length,
-        analysis_date: new Date().toISOString()
+        success: true,
+        data: {
+          competitor_ad_insights_id: insightsData?.id,
+          competitor: competitorName,
+          ads: mockAds,
+          insights,
+          total_ads_found: mockAds.length,
+          analysis_date: new Date().toISOString()
+        }
       };
 
-      console.log('Meta ads analysis completed for:', competitorName);
+      console.log('Meta ads analysis completed and saved for:', competitorName);
 
-      return new Response(JSON.stringify({ success: true, data: result }), {
+      return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+
     }
 
+    // Handle case where no active ads found (this logic should be inside the processing)
+    // For now, mockAds will always have data so this case won't trigger
+    
     // TODO: Implement real Meta Ad Library API integration when token is available
     // For now, return mock data as above
 

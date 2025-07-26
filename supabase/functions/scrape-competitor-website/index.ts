@@ -12,13 +12,20 @@ serve(async (req) => {
   }
 
   try {
-    const { competitorUrl } = await req.json();
+    const { competitorUrl, competitorName, competitorListId, userId } = await req.json();
     
-    if (!competitorUrl) {
-      throw new Error('Competitor URL is required');
+    if (!competitorUrl || !competitorName || !competitorListId || !userId) {
+      throw new Error('Missing required parameters: competitorUrl, competitorName, competitorListId, userId');
     }
 
     console.log('Scraping competitor website:', competitorUrl);
+
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Use Firecrawl API for website scraping
     const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
@@ -71,19 +78,17 @@ serve(async (req) => {
         model: 'gpt-4o-mini',
         messages: [
           {
-            role: 'system',
-            content: `You are a marketing analyst. Analyze the following website content and extract:
-1. Business niche/industry
-2. Target audience
-3. Brand tone and voice
-4. Top 3 value propositions
-5. Key messaging themes
-
-Format as JSON with these keys: niche, audience, tone, valuePropositions (array), messagingThemes (array)`
-          },
-          {
             role: 'user',
-            content: `Website: ${competitorUrl}\n\nContent:\n${content.substring(0, 8000)}`
+            content: `You are a brand strategist. Analyze this website content and return JSON:
+{
+  "niche": "Brand niche",
+  "audience": "Target audience", 
+  "value_props": ["Value Prop 1", "Value Prop 2", "Value Prop 3"],
+  "tone": "Brand tone"
+}
+
+Website: ${competitorUrl}
+Content: ${content.substring(0, 8000)}`
           }
         ],
         max_tokens: 1000,
@@ -97,35 +102,53 @@ Format as JSON with these keys: niche, audience, tone, valuePropositions (array)
 
     const analysisData = await analysisResponse.json();
     let analysis;
-    
     try {
       analysis = JSON.parse(analysisData.choices[0].message.content);
     } catch (parseError) {
       // Fallback if JSON parsing fails
       analysis = {
         niche: "Unknown",
-        audience: "General",
-        tone: "Professional",
-        valuePropositions: [],
-        messagingThemes: []
+        audience: "General", 
+        value_props: [],
+        tone: "Professional"
       };
     }
 
+    // Save competitor profile to database
+    const { data: profileData, error: profileError } = await supabase
+      .from('competitor_profiles')
+      .insert({
+        user_id: userId,
+        competitor_list_id: competitorListId,
+        competitor_name: competitorName,
+        competitor_url: competitorUrl,
+        scraped_content: content.substring(0, 5000),
+        niche: analysis.niche,
+        audience: analysis.audience,
+        value_props: analysis.value_props,
+        tone: analysis.tone
+      })
+      .select()
+      .single();
+
+    if (profileError) {
+      console.error('Error saving competitor profile:', profileError);
+    }
+
     const result = {
-      url: competitorUrl,
-      scraped_content: content.substring(0, 5000), // Store first 5k characters
-      metadata: {
-        title: metadata.title || '',
-        description: metadata.description || '',
-        ...analysis
-      },
-      analysis,
-      scraped_at: new Date().toISOString()
+      success: true,
+      data: {
+        competitor_profile_id: profileData?.id,
+        url: competitorUrl,
+        name: competitorName,
+        analysis,
+        scraped_at: new Date().toISOString()
+      }
     };
 
-    console.log('Website analysis completed for:', competitorUrl);
+    console.log('Website analysis completed and saved for:', competitorName);
 
-    return new Response(JSON.stringify({ success: true, data: result }), {
+    return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

@@ -199,6 +199,48 @@ export type Database = {
         }
         Relationships: []
       }
+      competitor_ad_insights: {
+        Row: {
+          ads_data: Json
+          competitor_list_id: string
+          competitor_name: string
+          created_at: string
+          creative_trends: Json | null
+          ctas: Json | null
+          hooks: Json | null
+          id: string
+          total_ads_found: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ads_data?: Json
+          competitor_list_id: string
+          competitor_name: string
+          created_at?: string
+          creative_trends?: Json | null
+          ctas?: Json | null
+          hooks?: Json | null
+          id?: string
+          total_ads_found?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ads_data?: Json
+          competitor_list_id?: string
+          competitor_name?: string
+          created_at?: string
+          creative_trends?: Json | null
+          ctas?: Json | null
+          hooks?: Json | null
+          id?: string
+          total_ads_found?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       competitor_discovery: {
         Row: {
           brand_analysis_id: string | null
@@ -326,6 +368,51 @@ export type Database = {
           id?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      competitor_profiles: {
+        Row: {
+          audience: string | null
+          competitor_list_id: string
+          competitor_name: string
+          competitor_url: string | null
+          created_at: string
+          id: string
+          niche: string | null
+          scraped_content: string | null
+          tone: string | null
+          updated_at: string
+          user_id: string
+          value_props: Json | null
+        }
+        Insert: {
+          audience?: string | null
+          competitor_list_id: string
+          competitor_name: string
+          competitor_url?: string | null
+          created_at?: string
+          id?: string
+          niche?: string | null
+          scraped_content?: string | null
+          tone?: string | null
+          updated_at?: string
+          user_id: string
+          value_props?: Json | null
+        }
+        Update: {
+          audience?: string | null
+          competitor_list_id?: string
+          competitor_name?: string
+          competitor_url?: string | null
+          created_at?: string
+          id?: string
+          niche?: string | null
+          scraped_content?: string | null
+          tone?: string | null
+          updated_at?: string
+          user_id?: string
+          value_props?: Json | null
         }
         Relationships: []
       }
