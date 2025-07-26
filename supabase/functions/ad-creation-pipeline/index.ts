@@ -127,7 +127,7 @@ async function runBrandAnalyzer(supabase: any, userId: string, businessContext: 
   // Get user's Facebook ad history
   const { data: adHistory } = await supabase
     .from('facebook_ad_creatives')
-    .select('*')
+    .select('title, body, call_to_action, performance_score')
     .eq('user_id', userId)
     .limit(10);
 
@@ -136,38 +136,40 @@ async function runBrandAnalyzer(supabase: any, userId: string, businessContext: 
   if (brandAnalysisId) {
     const { data } = await supabase
       .from('brand_analysis')
-      .select('*')
+      .select('brand_url, brand_name, business_category, main_products, value_propositions')
       .eq('id', brandAnalysisId)
       .single();
     brandData = data;
   }
 
-  const prompt = `As a Brand Analyzer AI, analyze the following business data and extract key brand insights:
+  // Create FB ad data summary
+  const fbAdDataSummary = adHistory?.length 
+    ? `Previous ads: ${adHistory.map(ad => `"${ad.title || ad.body}" (${ad.call_to_action})`).join(', ')}`
+    : 'No previous ad data available';
 
-BUSINESS CONTEXT:
-${JSON.stringify(businessContext, null, 2)}
+  const prompt = `You are a marketing strategist. Analyze the following data and summarize the brand:
 
-BRAND ANALYSIS DATA:
-${brandData ? JSON.stringify(brandData, null, 2) : 'No brand analysis available'}
+- Business URL: ${brandData?.brand_url || 'Not provided'}
+- Business description: ${businessContext?.business_name || 'Not provided'} - ${businessContext?.industry || brandData?.business_category || 'General business'}
+- Campaign goal: Generate high-converting Facebook ad campaigns
+- Target audience (optional): ${businessContext?.target_audience || 'Not specified'}
+- Historical ad data summary: ${fbAdDataSummary}
 
-FACEBOOK AD HISTORY:
-${adHistory?.length ? JSON.stringify(adHistory, null, 2) : 'No ad history available'}
+Additional context:
+- Brand name: ${brandData?.brand_name || businessContext?.business_name || 'Not provided'}
+- Main products/services: ${brandData?.main_products ? JSON.stringify(brandData.main_products) : 'Not provided'}
+- Value propositions: ${brandData?.value_propositions ? brandData.value_propositions.join(', ') : 'Not provided'}
 
-Based on this data, provide a comprehensive brand analysis with:
-1. 3-4 Unique Selling Propositions (USPs)
-2. Brand tone and voice
-3. Target positioning
-4. Key value propositions
-5. Competitive advantages
+TASK:
+1. Extract the top 3 Unique Selling Points (USPs).
+2. Identify the brand tone and voice (e.g., playful, professional, luxury).
+3. Write a 2-sentence brand positioning summary.
 
-Format your response as a JSON object with the following structure:
+Return the result as structured JSON:
 {
   "usps": ["USP 1", "USP 2", "USP 3"],
-  "tone": "brand tone description",
-  "positioning": "positioning statement", 
-  "value_propositions": ["value prop 1", "value prop 2"],
-  "competitive_advantages": ["advantage 1", "advantage 2"],
-  "summary": "brief brand summary"
+  "tone": "Brand tone",
+  "positioning": "2-sentence positioning"
 }`;
 
   return await callOpenAI(prompt, 'brand_analysis');
