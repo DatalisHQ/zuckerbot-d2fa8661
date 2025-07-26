@@ -8,11 +8,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface AdSet {
   id?: string;
-  set_name: string;
-  framework_used: string;
+  framework: string;
   primary_text: string;
   headline: string;
-  call_to_action: string;
+  cta: string;
   creative_concept: string;
   campaign_id?: string;
   is_saved?: boolean;
@@ -86,9 +85,9 @@ export const AdSetCard = ({ adSet, onRegenerate, onSave }: AdSetCardProps) => {
     <Card className="w-full max-w-md">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">{adSet.set_name}</CardTitle>
+          <CardTitle className="text-lg">{adSet.framework} Ad</CardTitle>
           <Badge variant="secondary" className="text-xs">
-            {adSet.framework_used}
+            {adSet.framework}
           </Badge>
         </div>
       </CardHeader>
@@ -134,7 +133,7 @@ export const AdSetCard = ({ adSet, onRegenerate, onSave }: AdSetCardProps) => {
         <div className="space-y-2">
           <label className="text-sm font-medium text-muted-foreground">Call to Action</label>
           <Badge variant="outline" className="text-xs">
-            {adSet.call_to_action}
+            {adSet.cta}
           </Badge>
         </div>
 

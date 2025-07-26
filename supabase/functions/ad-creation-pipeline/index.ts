@@ -83,7 +83,7 @@ serve(async (req) => {
       .eq('id', campaign.id);
 
     // Save individual ad sets to database
-    const adSets = generatedAds.ad_sets || [];
+    const adSets = generatedAds.ads || [];
     for (let i = 0; i < adSets.length; i++) {
       const adSet = adSets[i];
       await supabase
@@ -91,12 +91,12 @@ serve(async (req) => {
         .insert({
           user_id: userId,
           campaign_id: campaign.id,
-          set_name: adSet.set_name || `Ad Set ${i + 1}`,
+          set_name: `${adSet.framework} Ad`,
           primary_text: adSet.primary_text,
           headline: adSet.headline,
-          call_to_action: adSet.call_to_action,
+          call_to_action: adSet.cta,
           creative_concept: adSet.creative_concept,
-          framework_used: adSet.framework_used
+          framework_used: adSet.framework
         });
     }
 
@@ -208,35 +208,34 @@ Return the result as structured JSON:
 async function runAdGenerator(brandAnalysis: any, frameworkSelection: any) {
   console.log('Ad Generator - Creating ads...');
   
-  const prompt = `As an Ad Generator AI, create 3 distinct ad sets using the brand analysis and selected frameworks:
+  const prompt = `You are a high-performance ad copywriter. Use the brand data and chosen frameworks to generate 3 complete ad sets.
 
-BRAND ANALYSIS:
+Brand Data:
 ${JSON.stringify(brandAnalysis, null, 2)}
 
-SELECTED FRAMEWORKS:
+Frameworks:
 ${JSON.stringify(frameworkSelection, null, 2)}
 
-Create 3 unique ad sets, each using a different framework. Each ad set should include:
-- Primary Text (main ad copy, 90-125 words)
-- Headline (compelling hook, 5-8 words)
-- Call-to-Action (action button text)
-- Creative Concept (visual description)
+TASK:
+1. For each framework, create:
+   - Primary Text (100-150 characters, direct and compelling)
+   - Headline (max 6 words, high impact)
+   - Call-to-Action (e.g., "Shop Now", "Learn More")
+   - Creative Concept (image or video idea, 1-2 sentences)
 
-Make the ads compelling, on-brand, and conversion-focused. Vary the approach between emotional, logical, and social proof angles.
+2. Write copy that aligns with the brand tone and positioning.
 
-Format your response as a JSON object:
+Return the result as structured JSON:
 {
-  "ad_sets": [
+  "ads": [
     {
-      "set_name": "Ad Set 1",
-      "framework_used": "Framework Name",
-      "primary_text": "Main ad copy text...",
-      "headline": "Compelling headline",
-      "call_to_action": "Learn More",
-      "creative_concept": "Visual description for creative team"
+      "framework": "Framework Name",
+      "primary_text": "Sample primary text",
+      "headline": "Sample headline",
+      "cta": "CTA text",
+      "creative_concept": "Creative concept description"
     }
-  ],
-  "performance_prediction": "Brief prediction of which ad might perform best and why"
+  ]
 }`;
 
   return await callOpenAI(prompt, 'ad_generation');

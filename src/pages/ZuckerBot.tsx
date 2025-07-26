@@ -209,7 +209,7 @@ const ZuckerBot = () => {
             role: "assistant",
             content: "✅ **Campaign Created Successfully!**\n\nI've analyzed your brand and created 3 personalized ad sets using proven frameworks:",
             timestamp: new Date(),
-            adSets: generated_ads?.ad_sets || [],
+            adSets: generated_ads?.ads || [],
             campaignId: campaign_id,
             pipelineResults: {
               brand_analysis,
