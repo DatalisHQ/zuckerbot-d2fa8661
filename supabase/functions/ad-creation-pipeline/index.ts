@@ -178,35 +178,28 @@ Return the result as structured JSON:
 async function runFrameworkSelector(brandAnalysis: any) {
   console.log('Framework Selector - Analyzing brand...');
   
-  const prompt = `As a Framework Selector AI, analyze the brand data and choose the 3 most effective ad frameworks:
+  const prompt = `You are an advertising strategist. Based on the brand data below, select 3 high-converting ad frameworks that will resonate with the target audience.
 
-BRAND ANALYSIS:
+Brand Data:
 ${JSON.stringify(brandAnalysis, null, 2)}
 
-Based on this brand analysis, select 3 ad frameworks from these options:
-- Problem-Agitate-Solution (PAS)
-- Before-After-Bridge (BAB)
-- Attention-Interest-Desire-Action (AIDA)
-- Features-Advantages-Benefits (FAB)
-- Social Proof/Testimonial
-- Scarcity/Urgency
-- Story-based
-- Educational/How-to
-- Comparison/Competitive
-- Emotional Appeal
+TASK:
+1. Pick 3 frameworks from these common ones:
+   - Problem-Agitate-Solution
+   - Testimonial/Social Proof
+   - Scarcity/Offer
+   - Lifestyle/Emotional Hook
+   - Feature-Benefit
+   - Before/After
+2. Briefly explain why you chose each framework.
 
-For each framework, explain why it fits the brand and provide a brief strategy outline.
-
-Format your response as a JSON object:
+Return the result as structured JSON:
 {
-  "selected_frameworks": [
-    {
-      "name": "Framework Name",
-      "reason": "Why this framework fits",
-      "strategy": "Brief strategy outline"
-    }
-  ],
-  "reasoning": "Overall reasoning for framework selection"
+  "frameworks": [
+    {"name": "Framework Name", "reason": "Why this fits"},
+    {"name": "Framework Name", "reason": "Why this fits"},
+    {"name": "Framework Name", "reason": "Why this fits"}
+  ]
 }`;
 
   return await callOpenAI(prompt, 'framework_selection');
