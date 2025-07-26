@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
 import { TypingText } from "@/components/TypingText";
 import { Navbar } from "@/components/Navbar";
+import { AdSetCard } from "@/components/AdSetCard";
 
 interface Message {
   id: string;
@@ -18,6 +19,9 @@ interface Message {
   timestamp: Date;
   isTyping?: boolean;
   prompts?: string[];
+  adSets?: any[];
+  campaignId?: string;
+  pipelineResults?: any;
 }
 
 const PREDEFINED_PROMPTS = [
@@ -166,53 +170,104 @@ const ZuckerBot = () => {
     setMessages(prev => [...prev, typingMessage]);
 
     try {
-      const { data, error } = await supabase.functions.invoke("zuckerbot-assistant", {
-        body: {
-          message: messageToSend,
-          conversation_history: messages.slice(-10),
-          business_context: businessContext,
-        },
-      });
+      // Check if this is a "Create Campaign" request to trigger the 3-agent pipeline
+      if (messageToSend.toLowerCase().includes('create') && messageToSend.toLowerCase().includes('campaign')) {
+        // Update typing message to show pipeline status
+        setMessages(prev => prev.map(msg => 
+          msg.isTyping ? {
+            ...msg,
+            content: "🚀 Launching AI Campaign Creation Pipeline...\n\n⏳ **Step 1:** Analyzing your brand and previous ads...\n⏳ **Step 2:** Selecting optimal ad frameworks...\n⏳ **Step 3:** Generating personalized ad sets...\n\nThis may take 30-60 seconds."
+          } : msg
+        ));
 
-      if (error) throw error;
+        // Get user's latest brand analysis
+        const { data: brandAnalysis } = await supabase
+          .from('brand_analysis')
+          .select('id')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
 
-      // Remove typing message and add real response
-      setMessages(prev => {
-        const filtered = prev.filter(msg => !msg.isTyping);
-        
-        // Parse response for prompts
-        let responseContent = data.response;
-        let prompts: string[] = [];
-        
-        // Look for PROMPTS section in response
-        if (responseContent.includes("PROMPTS:")) {
-          const parts = responseContent.split("PROMPTS:");
-          responseContent = parts[0].trim();
-          if (parts[1]) {
-            prompts = parts[1]
-              .split("\n")
-              .map(p => p.replace(/^[-•*]\s*/, "").trim())
-              .filter(p => p.length > 0);
+        // Call the 3-agent pipeline
+        const { data: pipelineData, error: pipelineError } = await supabase.functions.invoke('ad-creation-pipeline', {
+          body: {
+            userId: user.id,
+            businessContext: businessContext,
+            brandAnalysisId: brandAnalysis?.[0]?.id
           }
-        } else {
-          // Also look for square bracket format like [More Leads]
-          const bracketRegex = /\[([^\]]+)\]/g;
-          const matches = responseContent.match(bracketRegex);
-          if (matches) {
-            prompts = matches.map(match => match.replace(/[\[\]]/g, ""));
-            // Remove the bracket prompts from the main response
-            responseContent = responseContent.replace(bracketRegex, "").trim();
+        });
+
+        if (pipelineError) throw pipelineError;
+
+        const { brand_analysis, framework_selection, generated_ads, campaign_id } = pipelineData;
+
+        // Remove typing message and add structured response with ad sets
+        setMessages(prev => {
+          const filtered = prev.filter(msg => !msg.isTyping);
+          return [...filtered, {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: "✅ **Campaign Created Successfully!**\n\nI've analyzed your brand and created 3 personalized ad sets using proven frameworks:",
+            timestamp: new Date(),
+            adSets: generated_ads?.ad_sets || [],
+            campaignId: campaign_id,
+            pipelineResults: {
+              brand_analysis,
+              framework_selection, 
+              generated_ads
+            }
+          }];
+        });
+      } else {
+        // Regular chat message
+        const { data, error } = await supabase.functions.invoke("zuckerbot-assistant", {
+          body: {
+            message: messageToSend,
+            conversation_history: messages.slice(-10),
+            business_context: businessContext,
+          },
+        });
+
+        if (error) throw error;
+
+        // Remove typing message and add real response
+        setMessages(prev => {
+          const filtered = prev.filter(msg => !msg.isTyping);
+          
+          // Parse response for prompts
+          let responseContent = data.response;
+          let prompts: string[] = [];
+          
+          // Look for PROMPTS section in response
+          if (responseContent.includes("PROMPTS:")) {
+            const parts = responseContent.split("PROMPTS:");
+            responseContent = parts[0].trim();
+            if (parts[1]) {
+              prompts = parts[1]
+                .split("\n")
+                .map(p => p.replace(/^[-•*]\s*/, "").trim())
+                .filter(p => p.length > 0);
+            }
+          } else {
+            // Also look for square bracket format like [More Leads]
+            const bracketRegex = /\[([^\]]+)\]/g;
+            const matches = responseContent.match(bracketRegex);
+            if (matches) {
+              prompts = matches.map(match => match.replace(/[\[\]]/g, ""));
+              // Remove the bracket prompts from the main response
+              responseContent = responseContent.replace(bracketRegex, "").trim();
+            }
           }
-        }
-        
-        return [...filtered, {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: responseContent,
-          timestamp: new Date(),
-          prompts,
-        }];
-      });
+          
+          return [...filtered, {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: responseContent,
+            timestamp: new Date(),
+            prompts,
+          }];
+        });
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       setMessages(prev => prev.filter(msg => !msg.isTyping));
@@ -350,6 +405,31 @@ const ZuckerBot = () => {
                              message.content
                            )}
                          </p>
+                         
+                         {/* Display Ad Sets if present */}
+                         {message.role === "assistant" && message.adSets && message.adSets.length > 0 && (
+                           <div className="mt-4 space-y-4">
+                             <h4 className="font-semibold text-sm">Generated Ad Sets:</h4>
+                             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                               {message.adSets.map((adSet: any, index: number) => (
+                                 <AdSetCard
+                                   key={index}
+                                   adSet={{
+                                     ...adSet,
+                                     campaign_id: message.campaignId
+                                   }}
+                                   onRegenerate={(adSet) => {
+                                     // TODO: Implement regenerate functionality
+                                     console.log('Regenerate:', adSet);
+                                   }}
+                                   onSave={(adSet) => {
+                                     console.log('Saved:', adSet);
+                                   }}
+                                 />
+                               ))}
+                             </div>
+                           </div>
+                         )}
                          
                          {/* Interactive Prompts */}
                          {message.role === "assistant" && message.prompts && message.prompts.length > 0 && (

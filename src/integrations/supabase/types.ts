@@ -14,6 +14,101 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_campaigns: {
+        Row: {
+          brand_analysis: Json | null
+          campaign_name: string
+          created_at: string
+          current_step: number
+          framework_selection: Json | null
+          generated_ads: Json | null
+          id: string
+          pipeline_status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brand_analysis?: Json | null
+          campaign_name?: string
+          created_at?: string
+          current_step?: number
+          framework_selection?: Json | null
+          generated_ads?: Json | null
+          id?: string
+          pipeline_status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brand_analysis?: Json | null
+          campaign_name?: string
+          created_at?: string
+          current_step?: number
+          framework_selection?: Json | null
+          generated_ads?: Json | null
+          id?: string
+          pipeline_status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ad_sets: {
+        Row: {
+          call_to_action: string
+          campaign_id: string
+          created_at: string
+          creative_concept: string | null
+          framework_used: string | null
+          headline: string
+          id: string
+          is_saved: boolean | null
+          performance_score: number | null
+          primary_text: string
+          set_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          call_to_action: string
+          campaign_id: string
+          created_at?: string
+          creative_concept?: string | null
+          framework_used?: string | null
+          headline: string
+          id?: string
+          is_saved?: boolean | null
+          performance_score?: number | null
+          primary_text: string
+          set_name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          call_to_action?: string
+          campaign_id?: string
+          created_at?: string
+          creative_concept?: string | null
+          framework_used?: string | null
+          headline?: string
+          id?: string
+          is_saved?: boolean | null
+          performance_score?: number | null
+          primary_text?: string
+          set_name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_sets_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brand_analysis: {
         Row: {
           analysis_status: string | null
