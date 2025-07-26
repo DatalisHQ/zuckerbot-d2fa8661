@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { TypingText } from "@/components/TypingText";
 import { Navbar } from "@/components/Navbar";
 import { AdSetCard } from "@/components/AdSetCard";
+import { CompetitorFlow } from "@/pages/CompetitorFlow";
 
 interface Message {
   id: string;
@@ -65,6 +66,9 @@ const ZuckerBot = () => {
   const [businessContext, setBusinessContext] = useState<any>(null);
   const [isLoadingContext, setIsLoadingContext] = useState(true);
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
+  const [showCompetitorFlow, setShowCompetitorFlow] = useState(false);
+  const [competitorInsights, setCompetitorInsights] = useState<any>(null);
+  const [selectedAngle, setSelectedAngle] = useState<any>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -170,54 +174,13 @@ const ZuckerBot = () => {
     setMessages(prev => [...prev, typingMessage]);
 
     try {
-      // Check if this is a "Create Campaign" request to trigger the 3-agent pipeline
+      // Check if this is a "Create Campaign" request to trigger competitor research first
       if (messageToSend.toLowerCase().includes('create') && messageToSend.toLowerCase().includes('campaign')) {
-        // Update typing message to show pipeline status
-        setMessages(prev => prev.map(msg => 
-          msg.isTyping ? {
-            ...msg,
-            content: "🚀 Launching AI Campaign Creation Pipeline...\n\n⏳ **Step 1:** Analyzing your brand and previous ads...\n⏳ **Step 2:** Selecting optimal ad frameworks...\n⏳ **Step 3:** Generating personalized ad sets...\n\nThis may take 30-60 seconds."
-          } : msg
-        ));
-
-        // Get user's latest brand analysis
-        const { data: brandAnalysis } = await supabase
-          .from('brand_analysis')
-          .select('id')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        // Call the 3-agent pipeline
-        const { data: pipelineData, error: pipelineError } = await supabase.functions.invoke('ad-creation-pipeline', {
-          body: {
-            userId: user.id,
-            businessContext: businessContext,
-            brandAnalysisId: brandAnalysis?.[0]?.id
-          }
-        });
-
-        if (pipelineError) throw pipelineError;
-
-        const { brand_analysis, framework_selection, generated_ads, campaign_id } = pipelineData;
-
-        // Remove typing message and add structured response with ad sets
-        setMessages(prev => {
-          const filtered = prev.filter(msg => !msg.isTyping);
-          return [...filtered, {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: "✅ **Campaign Created Successfully!**\n\nI've analyzed your brand and created 3 personalized ad sets using proven frameworks:",
-            timestamp: new Date(),
-            adSets: generated_ads?.ads || [],
-            campaignId: campaign_id,
-            pipelineResults: {
-              brand_analysis,
-              framework_selection, 
-              generated_ads
-            }
-          }];
-        });
+        // Remove typing message and show competitor flow
+        setMessages(prev => prev.filter(msg => !msg.isTyping));
+        setShowCompetitorFlow(true);
+        setIsLoading(false);
+        return;
       } else {
         // Regular chat message
         const { data, error } = await supabase.functions.invoke("zuckerbot-assistant", {
@@ -281,6 +244,76 @@ const ZuckerBot = () => {
     }
   };
 
+  const handleCompetitorFlowComplete = async (competitorInsights: any, selectedAngle: any) => {
+    setCompetitorInsights(competitorInsights);
+    setSelectedAngle(selectedAngle);
+    setShowCompetitorFlow(false);
+    
+    // Add message about starting pipeline
+    const pipelineMessage: Message = {
+      id: Date.now().toString(),
+      role: "assistant",
+      content: "🚀 Launching AI Campaign Creation Pipeline...\n\n⏳ **Step 1:** Analyzing your brand and previous ads...\n⏳ **Step 2:** Selecting optimal ad frameworks...\n⏳ **Step 3:** Generating personalized ad sets...\n\nThis may take 30-60 seconds.",
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, pipelineMessage]);
+    setIsLoading(true);
+
+    try {
+      // Get user's latest brand analysis
+      const { data: brandAnalysis } = await supabase
+        .from('brand_analysis')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      // Call the 3-agent pipeline with competitor insights
+      const { data: pipelineData, error: pipelineError } = await supabase.functions.invoke('ad-creation-pipeline', {
+        body: {
+          userId: user.id,
+          businessContext: businessContext,
+          brandAnalysisId: brandAnalysis?.[0]?.id,
+          competitorInsights,
+          selectedAngle
+        }
+      });
+
+      if (pipelineError) throw pipelineError;
+
+      const { brand_analysis, framework_selection, generated_ads, campaign_id } = pipelineData;
+
+      // Update message with results
+      setMessages(prev => {
+        const filtered = prev.filter(msg => msg.id !== pipelineMessage.id);
+        return [...filtered, {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: "✅ **Campaign Created Successfully!**\n\nI've analyzed your competitors and created 3 personalized ad sets using proven frameworks:",
+          timestamp: new Date(),
+          adSets: generated_ads?.ads || [],
+          campaignId: campaign_id,
+          pipelineResults: {
+            brand_analysis,
+            framework_selection, 
+            generated_ads,
+            competitorInsights,
+            selectedAngle
+          }
+        }];
+      });
+    } catch (error) {
+      console.error("Error in pipeline:", error);
+      toast({
+        title: "Pipeline Error",
+        description: "Failed to generate ads. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handlePredefinedPrompt = (prompt: string) => {
     if (prompt.includes("upload an image")) {
       fileInputRef.current?.click();
@@ -310,6 +343,19 @@ const ZuckerBot = () => {
       sendMessage();
     }
   };
+
+  // Show competitor flow if requested
+  if (showCompetitorFlow) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <CompetitorFlow 
+          brandAnalysisId={businessContext?.brandAnalysis?.id}
+          onFlowComplete={handleCompetitorFlowComplete}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

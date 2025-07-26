@@ -48,24 +48,60 @@ serve(async (req) => {
 
     console.log('Analyzing competitor ads...');
 
-    // Analyze each competitor's ads
+    // Analyze each competitor with enhanced data collection
     const competitorInsights = [];
     const competitors = competitorList.competitors || [];
 
     for (const competitor of competitors) {
       console.log(`Analyzing competitor: ${competitor.name}`);
       
-      // Fetch competitor ads from Facebook Ad Library (or use mock data)
-      const ads = await fetchCompetitorAds(competitor.url || competitor.name);
-      
-      // Extract insights from ads
-      const insights = analyzeCompetitorAds(ads);
+      let websiteData = null;
+      let adsData = null;
+
+      // Scrape website if URL is provided
+      if (competitor.url) {
+        try {
+          const websiteResponse = await supabase.functions.invoke('scrape-competitor-website', {
+            body: { competitorUrl: competitor.url }
+          });
+          
+          if (websiteResponse.data?.success) {
+            websiteData = websiteResponse.data.data;
+          }
+        } catch (error) {
+          console.error(`Failed to scrape website for ${competitor.name}:`, error);
+        }
+      }
+
+      // Analyze Meta ads
+      try {
+        const adsResponse = await supabase.functions.invoke('analyze-meta-ads', {
+          body: { 
+            competitorName: competitor.name,
+            competitorUrl: competitor.url 
+          }
+        });
+        
+        if (adsResponse.data?.success) {
+          adsData = adsResponse.data.data;
+        }
+      } catch (error) {
+        console.error(`Failed to analyze ads for ${competitor.name}:`, error);
+      }
+
+      // Fallback to mock data if no data found
+      if (!adsData) {
+        const ads = await fetchCompetitorAds(competitor.name);
+        const insights = analyzeCompetitorAds(ads);
+        adsData = { ads, insights };
+      }
       
       competitorInsights.push({
         name: competitor.name,
         url: competitor.url,
-        ads: ads.slice(0, 5), // Top 5 ads
-        insights: insights
+        websiteAnalysis: websiteData,
+        ads: adsData.ads.slice(0, 5), // Top 5 ads
+        insights: adsData.insights
       });
     }
 
@@ -180,26 +216,35 @@ function generateOverallInsights(competitorInsights: any[]) {
 }
 
 function generateAngleSuggestions(overallInsights: any, competitorInsights: any[]) {
+  const topHook = overallInsights.trending_hooks[0] || 'Transform Your Business';
+  const hasWebsiteData = competitorInsights.some(c => c.websiteAnalysis);
+  
   return [
     {
       type: 'competitor-inspired',
       title: 'Follow the Winners',
-      description: `Use proven angles like "${overallInsights.trending_hooks[0]}" with urgency tactics that competitors are using successfully.`,
-      strategy: 'Leverage the most effective competitor patterns while adding your unique value proposition.',
+      description: `Use proven angles like "${topHook}" with urgency tactics that competitors are using successfully.`,
+      strategy: hasWebsiteData 
+        ? 'Leverage competitor-validated messaging patterns combined with similar tone and value propositions from their websites.'
+        : 'Use the most effective competitor ad patterns while adding your unique value proposition.',
       confidence: 85
     },
     {
       type: 'differentiated',
       title: 'Stand Out from the Crowd',
-      description: 'Position your brand as the unique alternative by focusing on what competitors are NOT doing.',
-      strategy: 'Identify gaps in competitor messaging and position your brand as the solution to unaddressed pain points.',
+      description: 'Position your brand as the unique alternative by focusing on what competitors are NOT addressing.',
+      strategy: hasWebsiteData
+        ? 'Analyze competitor website messaging to identify gaps in their positioning and target unaddressed customer pain points.'
+        : 'Identify gaps in competitor ad messaging and position your brand as the solution to unaddressed pain points.',
       confidence: 75
     },
     {
       type: 'hybrid',
       title: 'Best of Both Worlds',
       description: 'Combine proven competitor tactics with your unique brand positioning for maximum impact.',
-      strategy: 'Use competitor-validated hooks but differentiate through your unique approach, pricing, or guarantees.',
+      strategy: hasWebsiteData
+        ? 'Use competitor-validated hooks and website messaging patterns but differentiate through your unique approach, pricing, or guarantees.'
+        : 'Use competitor-validated hooks but differentiate through your unique approach, pricing, or guarantees.',
       confidence: 90
     }
   ];

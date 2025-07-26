@@ -14,3 +14,18 @@ verify_jwt = false
 
 [functions.strategic-dashboard]
 verify_jwt = false
+
+[functions.scrape-competitor-website]
+verify_jwt = true
+
+[functions.analyze-meta-ads]
+verify_jwt = true
+
+[functions.competitor-insights]
+verify_jwt = true
+
+[functions.ad-creation-pipeline]
+verify_jwt = true
+
+[functions.zuckerbot-assistant]
+verify_jwt = true
