@@ -299,6 +299,36 @@ export type Database = {
           },
         ]
       }
+      competitor_lists: {
+        Row: {
+          auto_generated: boolean | null
+          brand_analysis_id: string | null
+          competitors: Json
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_generated?: boolean | null
+          brand_analysis_id?: string | null
+          competitors?: Json
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_generated?: boolean | null
+          brand_analysis_id?: string | null
+          competitors?: Json
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       dashboard_metrics: {
         Row: {
           calculation_date: string
@@ -745,6 +775,42 @@ export type Database = {
           id?: string
           onboarding_completed?: boolean | null
           subscription_tier?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      selected_angles: {
+        Row: {
+          angle_description: string
+          angle_type: string
+          brand_analysis_id: string | null
+          competitor_insights: Json | null
+          competitor_list_id: string | null
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          angle_description: string
+          angle_type: string
+          brand_analysis_id?: string | null
+          competitor_insights?: Json | null
+          competitor_list_id?: string | null
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          angle_description?: string
+          angle_type?: string
+          brand_analysis_id?: string | null
+          competitor_insights?: Json | null
+          competitor_list_id?: string | null
+          created_at?: string
+          id?: string
           updated_at?: string
           user_id?: string
         }

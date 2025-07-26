@@ -18,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    const { userId, businessContext, brandAnalysisId } = await req.json();
+    const { userId, businessContext, brandAnalysisId, competitorInsights, selectedAngle } = await req.json();
     
     if (!userId) {
       throw new Error('User ID is required');
@@ -47,7 +47,7 @@ serve(async (req) => {
 
     // Step 1: Brand Analyzer Agent
     console.log('Starting Step 1: Brand Analysis');
-    const brandAnalysis = await runBrandAnalyzer(supabase, userId, businessContext, brandAnalysisId);
+    const brandAnalysis = await runBrandAnalyzer(supabase, userId, businessContext, brandAnalysisId, competitorInsights, selectedAngle);
     
     await supabase
       .from('ad_campaigns')
@@ -121,7 +121,7 @@ serve(async (req) => {
   }
 });
 
-async function runBrandAnalyzer(supabase: any, userId: string, businessContext: any, brandAnalysisId?: string) {
+async function runBrandAnalyzer(supabase: any, userId: string, businessContext: any, brandAnalysisId?: string, competitorInsights?: any, selectedAngle?: any) {
   console.log('Brand Analyzer - Getting user data...');
   
   // Get user's Facebook ad history
@@ -147,13 +147,22 @@ async function runBrandAnalyzer(supabase: any, userId: string, businessContext: 
     ? `Previous ads: ${adHistory.map(ad => `"${ad.title || ad.body}" (${ad.call_to_action})`).join(', ')}`
     : 'No previous ad data available';
 
+  // Include competitor insights and selected angle if available
+  const competitorContext = competitorInsights ? `
+
+COMPETITOR INSIGHTS:
+${JSON.stringify(competitorInsights, null, 2)}
+
+SELECTED MARKETING ANGLE:
+${JSON.stringify(selectedAngle, null, 2)}` : '';
+
   const prompt = `You are a marketing strategist. Analyze the following data and summarize the brand:
 
 - Business URL: ${brandData?.brand_url || 'Not provided'}
 - Business description: ${businessContext?.business_name || 'Not provided'} - ${businessContext?.industry || brandData?.business_category || 'General business'}
 - Campaign goal: Generate high-converting Facebook ad campaigns
 - Target audience (optional): ${businessContext?.target_audience || 'Not specified'}
-- Historical ad data summary: ${fbAdDataSummary}
+- Historical ad data summary: ${fbAdDataSummary}${competitorContext}
 
 Additional context:
 - Brand name: ${brandData?.brand_name || businessContext?.business_name || 'Not provided'}
@@ -161,15 +170,15 @@ Additional context:
 - Value propositions: ${brandData?.value_propositions ? brandData.value_propositions.join(', ') : 'Not provided'}
 
 TASK:
-1. Extract the top 3 Unique Selling Points (USPs).
-2. Identify the brand tone and voice (e.g., playful, professional, luxury).
-3. Write a 2-sentence brand positioning summary.
+1. Extract the top 3 Unique Selling Points (USPs) ${competitorInsights ? '(considering competitive differentiation)' : ''}.
+2. Identify the brand tone and voice ${selectedAngle ? '(aligned with selected angle)' : ''}.
+3. Write a 2-sentence brand positioning summary ${competitorInsights ? '(vs competitors)' : ''}.
 
 Return the result as structured JSON:
 {
   "usps": ["USP 1", "USP 2", "USP 3"],
   "tone": "Brand tone",
-  "positioning": "2-sentence positioning"
+  "positioning": "2-sentence positioning"${competitorInsights ? ',\n  "competitive_edge": "How this brand differentiates from competitors"' : ''}${selectedAngle ? ',\n  "angle_integration": "How the selected angle enhances brand strategy"' : ''}
 }`;
 
   return await callOpenAI(prompt, 'brand_analysis');
