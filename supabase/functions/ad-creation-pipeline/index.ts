@@ -242,32 +242,53 @@ Return valid JSON:
 async function runAdGenerator(brandAnalysis: any, frameworkSelection: any) {
   console.log('Ad Generator - Creating ads...');
   
-  const prompt = `You are a high-performance ad copywriter. Use the brand data and chosen frameworks to generate 3 complete ad sets.
+  const prompt = `You are a high-converting ad copywriter. Your job is to generate 3 ad sets that combine brand strengths with competitor-informed insights.
 
-Brand Data:
+### INPUTS:
+- BRAND & COMPETITOR ANALYSIS:
 ${JSON.stringify(brandAnalysis, null, 2)}
 
-Frameworks:
+- SELECTED FRAMEWORKS:
 ${JSON.stringify(frameworkSelection, null, 2)}
 
-TASK:
-1. For each framework, create:
-   - Primary Text (100-150 characters, direct and compelling)
-   - Headline (max 6 words, high impact)
-   - Call-to-Action (e.g., "Shop Now", "Learn More")
-   - Creative Concept (image or video idea, 1-2 sentences)
+---
 
-2. Write copy that aligns with the brand tone and positioning.
+### TASK:
+1. For each framework, generate:
+   - **Primary Text (100-150 characters)**: Compelling hook, focused on value props and selected angle.
+   - **Headline (max 6 words)**: Clear and clickable.
+   - **CTA (Call-to-Action)**: Align with competitor trends OR fill gaps (e.g., "Shop Now," "Learn More").
+   - **Creative Concept**: 1-2 sentence suggestion for image/video (e.g., "UGC testimonial video of a customer unboxing the product").
 
-Return the result as structured JSON:
+2. Use the **brand tone** and highlight **competitor gaps** where possible (e.g., humor or unique angles competitors are missing).
+3. Provide **3 ad sets** in total.
+
+---
+
+### OUTPUT FORMAT:
+Return valid JSON:
 {
   "ads": [
     {
-      "framework": "Framework Name",
-      "primary_text": "Sample primary text",
-      "headline": "Sample headline",
-      "cta": "CTA text",
-      "creative_concept": "Creative concept description"
+      "framework": "Framework 1",
+      "primary_text": "Ad copy text",
+      "headline": "Headline text",
+      "cta": "Call-to-Action",
+      "creative_concept": "Image or video idea"
+    },
+    {
+      "framework": "Framework 2",
+      "primary_text": "Ad copy text",
+      "headline": "Headline text",
+      "cta": "Call-to-Action",
+      "creative_concept": "Image or video idea"
+    },
+    {
+      "framework": "Framework 3",
+      "primary_text": "Ad copy text",
+      "headline": "Headline text",
+      "cta": "Call-to-Action",
+      "creative_concept": "Image or video idea"
     }
   ]
 }`;
