@@ -87,10 +87,10 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: Co
 
       console.log('🔍 Full response data:', JSON.stringify(data, null, 2));
 
-      if (data && data.discovered_competitors) {
-        console.log('✅ Found discovered_competitors:', data.discovered_competitors);
+      if (data && data.competitors) {
+        console.log('✅ Found competitors:', data.competitors);
         
-        const autoCompetitors = data.discovered_competitors.slice(0, 5).map((comp: any) => ({
+        const autoCompetitors = data.competitors.slice(0, 5).map((comp: any) => ({
           name: comp.name,
           url: comp.website
         }));
@@ -103,7 +103,7 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: Co
           description: `Found ${autoCompetitors.length} potential competitors.`,
         });
       } else {
-        console.log('⚠️ No discovered_competitors in response');
+        console.log('⚠️ No competitors in response');
         console.log('📋 Available keys in data:', data ? Object.keys(data) : 'data is null/undefined');
         
         toast({
