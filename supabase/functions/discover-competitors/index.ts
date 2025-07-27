@@ -82,8 +82,8 @@ serve(async (req) => {
       try {
         console.log(`Searching for: ${query}`);
         
-        // Simple web search simulation - in production you'd use a real search API
-        const searchResults = await simulateWebSearch(query, brandAnalysis);
+        // Use AI to discover real competitors
+        const searchResults = await discoverCompetitorsWithAI(query, brandAnalysis);
         discoveredCompetitors.push(...searchResults);
         
       } catch (searchError) {
@@ -138,56 +138,76 @@ serve(async (req) => {
   }
 });
 
-// Simulate web search results - in production, replace with real search API
-async function simulateWebSearch(query: string, brandAnalysis: any) {
-  const competitors = [
+// Use OpenAI to analyze search results and suggest competitors
+async function discoverCompetitorsWithAI(query: string, brandAnalysis: any) {
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  
+  if (!openAIApiKey) {
+    console.log('OpenAI API key not configured, using fallback');
+    return [];
+  }
+
+  try {
+    console.log(`Using AI to discover competitors for: ${query}`);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'user',
+            content: `You are a business analyst. Find real competitor companies for this search query: "${query}"
+
+Brand details:
+- Name: ${brandAnalysis.brand_name}
+- Category: ${brandAnalysis.business_category}
+- Niche: ${brandAnalysis.niche}
+- URL: ${brandAnalysis.brand_url}
+
+Return JSON with an array of real competitor companies (not the original brand):
+{
+  "competitors": [
     {
-      name: "TechFlow Solutions",
-      website: "https://techflow.example.com",
-      description: "Leading provider of business automation tools",
-      category: brandAnalysis.business_category,
-      similarity_score: 85
-    },
-    {
-      name: "DataSync Pro",
-      website: "https://datasync.example.com", 
-      description: "Enterprise data management platform",
-      category: brandAnalysis.business_category,
-      similarity_score: 78
-    },
-    {
-      name: "CloudOps Central",
-      website: "https://cloudops.example.com",
-      description: "Cloud infrastructure management solutions",
-      category: brandAnalysis.business_category,
-      similarity_score: 72
-    },
-    {
-      name: "InnovateTech",
-      website: "https://innovatetech.example.com",
-      description: "Cutting-edge technology solutions for businesses",
-      category: brandAnalysis.business_category,
-      similarity_score: 90
-    },
-    {
-      name: "SmartBiz Tools",
-      website: "https://smartbiz.example.com",
-      description: "AI-powered business intelligence platform",
-      category: brandAnalysis.business_category,
-      similarity_score: 82
+      "name": "Real Company Name",
+      "website": "https://realcompany.com",
+      "description": "Brief description",
+      "category": "${brandAnalysis.business_category}",
+      "similarity_score": 85
     }
-  ];
+  ]
+}
 
-  // Filter and randomize results based on query
-  const queryLower = query.toLowerCase();
-  const relevantCompetitors = competitors.filter(comp => 
-    comp.category.toLowerCase() === brandAnalysis.business_category?.toLowerCase() ||
-    comp.description.toLowerCase().includes(queryLower.split(' ')[0])
-  );
+Requirements:
+- Find 2-3 REAL companies that compete in this space
+- Include actual websites (not example.com)
+- Focus on companies that offer similar services/products
+- Don't include the original brand: ${brandAnalysis.brand_name}`
+          }
+        ],
+        max_tokens: 1000,
+        temperature: 0.3
+      })
+    });
 
-  // Return 2-3 random competitors per search
-  const shuffled = relevantCompetitors.sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, Math.min(3, shuffled.length));
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const result = JSON.parse(data.choices[0].message.content);
+    
+    console.log(`AI found ${result.competitors?.length || 0} competitors for "${query}"`);
+    return result.competitors || [];
+    
+  } catch (error) {
+    console.error(`Error using AI for competitor discovery:`, error);
+    return [];
+  }
 }
 
 function removeDuplicates(competitors: any[], originalBrandName: string) {
