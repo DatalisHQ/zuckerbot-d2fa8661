@@ -15,6 +15,12 @@ export const CompetitorFlow = ({ brandAnalysisId, onFlowComplete }: CompetitorFl
   const { toast } = useToast();
 
   const handleCompetitorListCreated = (listId: string) => {
+    if (listId === 'skip') {
+      // User chose to skip competitor research
+      onFlowComplete(null, { type: 'skip', description: 'User chose to skip competitor research' });
+      return;
+    }
+    
     setCompetitorListId(listId);
     setCurrentStep('insights');
   };

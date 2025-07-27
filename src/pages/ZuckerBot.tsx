@@ -177,7 +177,15 @@ const ZuckerBot = () => {
       // Check if this is a "Create Campaign" request to trigger competitor research first
       if (messageToSend.toLowerCase().includes('create') && messageToSend.toLowerCase().includes('campaign')) {
         // Remove typing message and show competitor flow
-        setMessages(prev => prev.filter(msg => !msg.isTyping));
+        setMessages(prev => {
+          const filtered = prev.filter(msg => !msg.isTyping);
+          return [...filtered, {
+            id: Date.now().toString(),
+            role: "assistant",
+            content: "🎯 **Let's create your campaign!**\n\nTo generate the most effective ads, I recommend analyzing your competitors first. This helps us understand what's working in your market and find unique angles.\n\n✨ **What happens next:**\n• Competitor research (optional but recommended)\n• AI analyzes your brand + competition\n• Generate 3 high-converting ad sets\n\nReady to start?",
+            timestamp: new Date(),
+          }];
+        });
         setShowCompetitorFlow(true);
         setIsLoading(false);
         return;

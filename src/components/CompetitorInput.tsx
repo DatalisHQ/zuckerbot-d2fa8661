@@ -142,9 +142,9 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: Co
     <div className="max-w-2xl mx-auto space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add Your Competitors</CardTitle>
+          <CardTitle>Would you like to analyze competitors?</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Add up to 5 competitors to analyze their ad strategies and find winning angles.
+            Competitor analysis helps us create more effective ads by understanding what works in your market. You can add up to 5 competitors or skip this step.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -216,17 +216,31 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: Co
             </div>
           )}
 
-          {/* Continue button */}
-          <Button 
-            onClick={saveCompetitorList}
-            disabled={competitors.length === 0 || isSaving}
-            className="w-full"
-          >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : null}
-            Continue to Analysis ({competitors.length} competitors)
-          </Button>
+          {/* Action buttons */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
+            <Button 
+              onClick={saveCompetitorList}
+              disabled={competitors.length === 0 || isSaving}
+              className="w-full"
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Analyze Competitors ({competitors.length})
+            </Button>
+            
+            <Button 
+              onClick={() => onCompetitorListCreated('skip')}
+              variant="outline"
+              className="w-full"
+            >
+              Skip & Create Ads Now
+            </Button>
+          </div>
+          
+          <p className="text-xs text-muted-foreground text-center">
+            Tip: Competitor analysis usually leads to 2-3x better performing ads
+          </p>
         </CardContent>
       </Card>
     </div>
