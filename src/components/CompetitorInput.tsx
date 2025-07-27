@@ -52,7 +52,10 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: Co
   };
 
   const autoFindCompetitors = async () => {
+    console.log('🔍 Auto-find competitors clicked');
+    
     if (!brandAnalysisId) {
+      console.log('❌ No brandAnalysisId provided');
       toast({
         title: "Error",
         description: "Brand analysis required for auto-discovery",
@@ -63,31 +66,58 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: Co
 
     setIsAutoFinding(true);
     try {
+      console.log('📡 Calling discover-competitors function with:', { brandAnalysisId });
+      
+      const user = await supabase.auth.getUser();
+      console.log('👤 Current user:', user.data.user?.id);
+      
       const { data, error } = await supabase.functions.invoke('discover-competitors', {
-        body: { brandAnalysisId, userId: (await supabase.auth.getUser()).data.user?.id }
+        body: { brandAnalysisId, userId: user.data.user?.id }
       });
 
-      if (error) throw error;
+      console.log('📥 Response received:', { data, error });
 
-      if (data.discovered_competitors) {
+      if (error) {
+        console.error('❌ Function returned error:', error);
+        throw error;
+      }
+
+      console.log('🔍 Full response data:', JSON.stringify(data, null, 2));
+
+      if (data && data.discovered_competitors) {
+        console.log('✅ Found discovered_competitors:', data.discovered_competitors);
+        
         const autoCompetitors = data.discovered_competitors.slice(0, 5).map((comp: any) => ({
           name: comp.name,
           url: comp.website
         }));
+        
+        console.log('🏢 Processed competitors:', autoCompetitors);
+        
         setCompetitors(autoCompetitors);
         toast({
           title: "Competitors found!",
           description: `Found ${autoCompetitors.length} potential competitors.`,
         });
+      } else {
+        console.log('⚠️ No discovered_competitors in response');
+        console.log('📋 Available keys in data:', data ? Object.keys(data) : 'data is null/undefined');
+        
+        toast({
+          title: "No competitors found",
+          description: "Try adding competitors manually.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
-      console.error('Error auto-finding competitors:', error);
+      console.error('💥 Error in autoFindCompetitors:', error);
       toast({
         title: "Auto-discovery failed",
         description: "Please add competitors manually.",
         variant: "destructive",
       });
     } finally {
+      console.log('🏁 Setting isAutoFinding to false');
       setIsAutoFinding(false);
     }
   };
