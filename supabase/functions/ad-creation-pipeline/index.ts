@@ -202,27 +202,37 @@ Return valid JSON:
 async function runFrameworkSelector(brandAnalysis: any) {
   console.log('Framework Selector - Analyzing brand...');
   
-  const prompt = `You are an advertising strategist. Based on the brand data below, select 3 high-converting ad frameworks that will resonate with the target audience.
+  const prompt = `You are a performance marketing strategist. Your job is to select the 3 best ad frameworks based on the brand's USPs, tone, and competitor insights.
 
-Brand Data:
+### INPUTS:
+- BRAND & COMPETITOR ANALYSIS:
 ${JSON.stringify(brandAnalysis, null, 2)}
 
-TASK:
-1. Pick 3 frameworks from these common ones:
-   - Problem-Agitate-Solution
-   - Testimonial/Social Proof
-   - Scarcity/Offer
-   - Lifestyle/Emotional Hook
-   - Feature-Benefit
-   - Before/After
-2. Briefly explain why you chose each framework.
+---
 
-Return the result as structured JSON:
+### TASK:
+1. Select **3 ad frameworks** (e.g., Problem-Agitate-Solution, Testimonial, Scarcity/Offer, Lifestyle/Emotional Hook, Before/After).
+2. For each framework, explain **why it's a strong fit** for this brand given the selected_angle and competitor gaps.
+3. Ensure at least one framework is aligned with **competitor trends** and another is **differentiated**.
+
+---
+
+### OUTPUT FORMAT:
+Return valid JSON:
 {
   "frameworks": [
-    {"name": "Framework Name", "reason": "Why this fits"},
-    {"name": "Framework Name", "reason": "Why this fits"},
-    {"name": "Framework Name", "reason": "Why this fits"}
+    {
+      "name": "Framework 1",
+      "reason": "Why this fits based on USPs and competitor opportunities"
+    },
+    {
+      "name": "Framework 2",
+      "reason": "Why this fits based on USPs and competitor opportunities"
+    },
+    {
+      "name": "Framework 3",
+      "reason": "Why this fits based on USPs and competitor opportunities"
+    }
   ]
 }`;
 
