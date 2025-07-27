@@ -156,29 +156,44 @@ ${JSON.stringify(competitorInsights, null, 2)}
 SELECTED MARKETING ANGLE:
 ${JSON.stringify(selectedAngle, null, 2)}` : '';
 
-  const prompt = `You are a marketing strategist. Analyze the following data and summarize the brand:
+  const prompt = `You are a senior marketing strategist. Your goal is to create a sharp, actionable brand summary that will guide ad creation.
+You have data from the brand itself and from competitor research.
 
-- Business URL: ${brandData?.brand_url || 'Not provided'}
-- Business description: ${businessContext?.business_name || 'Not provided'} - ${businessContext?.industry || brandData?.business_category || 'General business'}
-- Campaign goal: Generate high-converting Facebook ad campaigns
-- Target audience (optional): ${businessContext?.target_audience || 'Not specified'}
-- Historical ad data summary: ${fbAdDataSummary}${competitorContext}
+### INPUTS:
+- BRAND PROFILE:
+Business URL: ${brandData?.brand_url || 'Not provided'}
+Business Name: ${brandData?.brand_name || businessContext?.business_name || 'Not provided'}  
+Business Category: ${businessContext?.industry || brandData?.business_category || 'General business'}
+Campaign Goal: Generate high-converting Facebook ad campaigns
+Target Audience: ${businessContext?.target_audience || 'Not specified'}
+Main Products/Services: ${brandData?.main_products ? JSON.stringify(brandData.main_products) : 'Not provided'}
+Value Propositions: ${brandData?.value_propositions ? brandData.value_propositions.join(', ') : 'Not provided'}
+Historical Ad Data: ${fbAdDataSummary}
 
-Additional context:
-- Brand name: ${brandData?.brand_name || businessContext?.business_name || 'Not provided'}
-- Main products/services: ${brandData?.main_products ? JSON.stringify(brandData.main_products) : 'Not provided'}
-- Value propositions: ${brandData?.value_propositions ? brandData.value_propositions.join(', ') : 'Not provided'}
+- COMPETITOR INSIGHTS:
+${competitorInsights ? JSON.stringify(competitorInsights, null, 2) : 'No competitor data available'}
 
-TASK:
-1. Extract the top 3 Unique Selling Points (USPs) ${competitorInsights ? '(considering competitive differentiation)' : ''}.
-2. Identify the brand tone and voice ${selectedAngle ? '(aligned with selected angle)' : ''}.
-3. Write a 2-sentence brand positioning summary ${competitorInsights ? '(vs competitors)' : ''}.
+- SELECTED ANGLE:
+${selectedAngle ? JSON.stringify(selectedAngle, null, 2) : 'No specific angle selected'}
 
-Return the result as structured JSON:
+---
+
+### TASK:
+1. Analyze the brand profile and competitors.
+2. Highlight 3-4 **unique selling points (USPs)** for this brand (how they stand out or can differentiate).
+3. Summarize the **brand tone and voice** (e.g., playful, authoritative, luxury).
+4. Identify **opportunities or gaps** based on competitor trends (e.g., "Competitors push urgency hooks, but humor is untapped.").
+5. Keep output concise and structured.
+
+---
+
+### OUTPUT FORMAT:
+Return valid JSON:
 {
   "usps": ["USP 1", "USP 2", "USP 3"],
-  "tone": "Brand tone",
-  "positioning": "2-sentence positioning"${competitorInsights ? ',\n  "competitive_edge": "How this brand differentiates from competitors"' : ''}${selectedAngle ? ',\n  "angle_integration": "How the selected angle enhances brand strategy"' : ''}
+  "tone": "Brand tone/voice",
+  "competitor_opportunities": ["Gap 1", "Gap 2"],
+  "angle_focus": "How this angle will shape ad strategy"
 }`;
 
   return await callOpenAI(prompt, 'brand_analysis');
