@@ -25,6 +25,9 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: Co
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
+  // Debug logging
+  console.log('🏢 CompetitorInput rendered with brandAnalysisId:', brandAnalysisId);
+
   const addCompetitor = () => {
     if (!newCompetitorName.trim()) return;
     
