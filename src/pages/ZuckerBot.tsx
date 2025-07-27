@@ -176,6 +176,10 @@ const ZuckerBot = () => {
     try {
       // Check if this is a "Create Campaign" request to trigger competitor research first
       if (messageToSend.toLowerCase().includes('create') && messageToSend.toLowerCase().includes('campaign')) {
+        console.log('🚀 Create campaign detected, showing competitor flow');
+        console.log('📋 Business context:', businessContext);
+        console.log('🏢 Brand analysis ID:', businessContext?.brandAnalysis?.id);
+        
         // Remove typing message and show competitor flow
         setMessages(prev => {
           const filtered = prev.filter(msg => !msg.isTyping);
