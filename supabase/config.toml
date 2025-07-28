@@ -35,3 +35,6 @@ verify_jwt = true
 
 [functions.generate-campaign-config]
 verify_jwt = true
+
+[functions.fetch-facebook-assets]
+verify_jwt = true
