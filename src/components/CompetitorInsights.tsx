@@ -102,57 +102,22 @@ export const CompetitorInsights = ({
 
       if (error) throw error;
 
-      // Ensure we always have some insights to display
       const insights = data.competitorInsights || [];
       
-      // If no insights returned, create demo data
-      if (insights.length === 0) {
-        const demoInsights = [{
-          name: 'Demo Competitor',
-          url: 'https://example.com',
-          websiteAnalysis: {
-            niche: 'Business Software',
-            audience: 'Small to medium businesses',
-            tone: 'Professional and trustworthy',
-            value_props: ['Save Time', 'Increase Efficiency', 'Reduce Costs']
-          },
-          ads: [
-            {
-              id: 'demo_1',
-              headline: 'Transform Your Business',
-              primary_text: 'Join thousands of businesses that have increased their productivity by 200% with our platform.',
-              cta: 'Get Started',
-              image_url: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=300&h=200&fit=crop',
-              impressions: '25K-50K',
-              spend_estimate: '$800-$1200',
-              date_created: '2024-01-15'
-            }
-          ],
-          insights: {
-            common_hooks: ['Transform Your Business', 'Increase Productivity', 'Join Thousands'],
-            common_ctas: ['Get Started', 'Learn More', 'Try Free'],
-            dominant_tones: ['professional', 'results-focused', 'social-proof'],
-            avg_text_length: 120
-          },
-          total_ads_found: 1
-        }];
-        setCompetitorInsights(demoInsights);
-      } else {
-        setCompetitorInsights(insights);
-      }
+      setCompetitorInsights(insights);
       
       setOverallInsights(data.overallInsights);
       setSuggestedAngles(data.suggestedAngles);
 
       toast({
         title: "Analysis complete!",
-        description: `Analyzed ${insights.length || 1} competitors and their ad strategies.`,
+        description: `Analyzed ${insights.length} competitors and their ad strategies.`,
       });
     } catch (error) {
       console.error('Error fetching competitor insights:', error);
       toast({
         title: "Analysis failed",
-        description: "Please try again or proceed with manual angle selection.",
+        description: error.message || "Please check Facebook API credentials and try again.",
         variant: "destructive",
       });
     } finally {

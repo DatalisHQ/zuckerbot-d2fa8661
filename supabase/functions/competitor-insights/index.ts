@@ -105,12 +105,17 @@ serve(async (req) => {
         }
       } catch (error) {
         console.error(`Failed to analyze ads for ${competitor.name}:`, error);
-        // Use mock data as fallback
-        const mockAds = await fetchCompetitorAds(competitor.name);
+        // No fallback - let the error propagate
         adsData = {
-          ads: mockAds,
-          insights: analyzeCompetitorAds(mockAds),
-          total_ads_found: mockAds.length
+          ads: [],
+          insights: { 
+            common_hooks: [],
+            common_ctas: [],
+            dominant_tones: [],
+            avg_text_length: 0
+          },
+          total_ads_found: 0,
+          error: error.message
         };
       }
 
@@ -183,53 +188,14 @@ serve(async (req) => {
   }
 });
 
-async function fetchCompetitorAds(competitorName: string) {
-  // Mock Facebook Ad Library data for now
-  // In production, this would call the actual Facebook Ad Library API
-  
-  const mockAds = [
-    {
-      id: '1',
-      headline: 'Transform Your Business Today',
-      primary_text: 'Discover the secret strategies that top entrepreneurs use to scale their businesses. Join thousands who have already transformed their revenue.',
-      cta: 'Learn More',
-      image_url: 'https://via.placeholder.com/300x200',
-      impressions: '10K-50K',
-      spend_estimate: '$500-$1000',
-      date_created: '2024-01-15'
-    },
-    {
-      id: '2',
-      headline: 'Limited Time Offer',
-      primary_text: 'Get 50% off our premium course. Only 48 hours left! This exclusive deal has helped over 5,000 business owners increase their profits.',
-      cta: 'Claim Offer',
-      image_url: 'https://via.placeholder.com/300x200',
-      impressions: '50K-100K',
-      spend_estimate: '$1000-$2000',
-      date_created: '2024-01-10'
-    },
-    {
-      id: '3',
-      headline: 'Real Results, Real People',
-      primary_text: '"I increased my revenue by 300% in just 6 months using these strategies. The ROI was incredible!" - Sarah M., Business Owner',
-      cta: 'See Proof',
-      image_url: 'https://via.placeholder.com/300x200',
-      impressions: '25K-75K',
-      spend_estimate: '$750-$1500',
-      date_created: '2024-01-05'
-    }
-  ];
-
-  return mockAds;
-}
 
 function analyzeCompetitorAds(ads: any[]) {
   if (!ads || ads.length === 0) {
     return {
-      common_hooks: ['Transform Your Business', 'Get Results Fast', 'Join Thousands'],
-      common_ctas: ['Learn More', 'Get Started', 'Try Free'],
-      dominant_tones: ['professional', 'results-focused', 'urgency'],
-      avg_text_length: 120
+      common_hooks: [],
+      common_ctas: [],
+      dominant_tones: [],
+      avg_text_length: 0
     };
   }
 

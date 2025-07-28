@@ -76,44 +76,6 @@ async function performWebSearch(query: string) {
   }
 }
 
-// Generate realistic mock ads for demonstration
-function generateMockAds(competitorName: string) {
-  const adTemplates = [
-    {
-      headline: "Transform Your Business Today",
-      primary_text: `Discover how ${competitorName} helps thousands of businesses grow. Join the success stories and see results in 30 days.`,
-      cta: "Learn More"
-    },
-    {
-      headline: "Limited Time Offer",
-      primary_text: `Get 50% off ${competitorName}'s premium features. Don't miss this exclusive deal - only available this week!`,
-      cta: "Claim Offer"
-    },
-    {
-      headline: "See Real Results",
-      primary_text: `"${competitorName} increased our revenue by 300% in just 6 months. The ROI was incredible!" - Verified Customer`,
-      cta: "Get Started"
-    },
-    {
-      headline: "Free Trial Available",
-      primary_text: `Try ${competitorName} risk-free for 14 days. No credit card required. See why 10,000+ businesses trust us.`,
-      cta: "Start Free Trial"
-    }
-  ];
-
-  return adTemplates.map((template, index) => ({
-    id: `${competitorName.toLowerCase().replace(/\s+/g, '_')}_mock_${index}`,
-    headline: template.headline,
-    primary_text: template.primary_text,
-    cta: template.cta,
-    image_url: `https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=300&fit=crop&crop=center`,
-    impressions: `${Math.floor(Math.random() * 50 + 10)}K-${Math.floor(Math.random() * 100 + 50)}K`,
-    spend_estimate: `$${Math.floor(Math.random() * 1000 + 500)}-$${Math.floor(Math.random() * 2000 + 1000)}`,
-    date_created: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString(),
-    page_name: competitorName,
-    relevance_score: 'high'
-  }));
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -136,11 +98,22 @@ serve(async (req) => {
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Use Meta Ad Library API
+    // Check for required Facebook credentials
     const facebookAccessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
+    const facebookAppId = Deno.env.get('FACEBOOK_APP_ID');
+    
     if (!facebookAccessToken) {
-      throw new Error('Facebook access token not configured');
+      console.error('FACEBOOK_ACCESS_TOKEN environment variable is not set');
+      throw new Error('Facebook Access Token is required but not configured. Please set FACEBOOK_ACCESS_TOKEN environment variable.');
     }
+    
+    if (!facebookAppId) {
+      console.error('FACEBOOK_APP_ID environment variable is not set');
+      throw new Error('Facebook App ID is required but not configured. Please set FACEBOOK_APP_ID environment variable.');
+    }
+
+    console.log('Facebook credentials found - Access Token:', facebookAccessToken ? 'SET' : 'MISSING');
+    console.log('Facebook credentials found - App ID:', facebookAppId ? 'SET' : 'MISSING');
 
     console.log('Fetching ads from Meta Ad Library for:', competitorName);
 
@@ -295,11 +268,8 @@ serve(async (req) => {
 
     // If no ads found, provide fallback
     if (allAds.length === 0) {
-      console.log('No ads found in Meta Ad Library, generating fallback insights');
-      
-      // Generate realistic mock ads based on competitor name and industry
-      const mockAds = generateMockAds(competitorName);
-      allAds = mockAds;
+      console.log('No ads found in Meta Ad Library for:', competitorName);
+      throw new Error(`No active ads found for "${competitorName}" in Facebook Ad Library. This could mean: 1) The competitor is not running Facebook ads, 2) Their page name doesn't match the search terms, or 3) Their ads are not publicly visible in the Ad Library.`);
     }
 
     console.log(`Total ads collected: ${allAds.length}`);
