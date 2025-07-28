@@ -44,6 +44,25 @@ function formatSpend(spend: any, currency: string = 'USD'): string {
   return `$${lower}-$${upper}`;
 }
 
+// Simple web search function (placeholder for real search API)
+async function performWebSearch(query: string) {
+  try {
+    // This is a placeholder. In production, you'd use:
+    // - Google Custom Search API
+    // - Bing Search API  
+    // - SerpAPI
+    // - Or any other search API
+    
+    console.log('Performing web search for:', query);
+    
+    // For now, return null to use fallback logic
+    return null;
+  } catch (error) {
+    console.error('Web search error:', error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -73,13 +92,75 @@ serve(async (req) => {
 
     console.log('Fetching ads from Meta Ad Library for:', competitorName);
 
-    // Search for ads using Meta Ad Library API
+    // First, search the web to find the competitor's Facebook page
+    console.log('Searching for Facebook page URL...');
+    const facebookPageQueries = [
+      `${competitorName} facebook page`,
+      `${competitorName} facebook profile`,
+      `${competitorName} fb page`,
+      `site:facebook.com ${competitorName}`,
+      `"${competitorName}" facebook`
+    ];
+    
+    let facebookPageName = null;
+    let facebookPageId = null;
+    
+    // Use web search to find Facebook page
+    for (const webQuery of facebookPageQueries) {
+      try {
+        console.log('Web search query:', webQuery);
+        
+        // Use a simple search API or fallback to enhanced name variations
+        const searchResults = await performWebSearch(webQuery);
+        
+        if (searchResults && searchResults.length > 0) {
+          // Parse search results to find Facebook URLs
+          const facebookUrls = searchResults
+            .filter((result: any) => result.url && result.url.includes('facebook.com'))
+            .map((result: any) => result.url);
+          
+          if (facebookUrls.length > 0) {
+            // Extract page name from Facebook URL
+            const fbUrl = facebookUrls[0];
+            const pageNameMatch = fbUrl.match(/facebook\.com\/([^\/\?]+)/);
+            if (pageNameMatch && pageNameMatch[1]) {
+              facebookPageName = pageNameMatch[1];
+              console.log('Found Facebook page name from search:', facebookPageName);
+              break;
+            }
+          }
+        }
+        
+        // Fallback to enhanced name variations
+        const potentialPageNames = [
+          competitorName,
+          competitorName.replace(/\s+/g, ''),
+          competitorName.toLowerCase(),
+          competitorName.replace(/[^a-zA-Z0-9]/g, ''),
+          competitorName.split(' ')[0], // First word only
+          competitorUrl ? new URL(competitorUrl).hostname.replace('www.', '').split('.')[0] : ''
+        ].filter(Boolean);
+        
+        facebookPageName = potentialPageNames[0];
+        break;
+      } catch (error) {
+        console.error('Error in web search:', error);
+        continue;
+      }
+    }
+
+    
+    // Search for ads using Meta Ad Library API with enhanced queries
     const searchQueries = [
       competitorName,
       competitorName.replace(/\s+/g, ''),
       competitorName.toLowerCase(),
-      competitorUrl ? new URL(competitorUrl).hostname.replace('www.', '') : ''
-    ].filter(Boolean);
+      competitorName.replace(/[^a-zA-Z0-9\s]/g, ''), // Remove special characters
+      competitorName.split(' ')[0], // First word only
+      competitorName.split(' ').slice(-1)[0], // Last word only
+      competitorUrl ? new URL(competitorUrl).hostname.replace('www.', '').split('.')[0] : '',
+      facebookPageName
+    ].filter(Boolean).slice(0, 6); // Limit to 6 queries to avoid rate limits
 
     let allAds = [];
 
@@ -92,7 +173,7 @@ serve(async (req) => {
         adLibraryUrl.searchParams.set('search_terms', query);
         adLibraryUrl.searchParams.set('ad_reached_countries', 'ALL');
         adLibraryUrl.searchParams.set('ad_active_status', 'ALL');
-        adLibraryUrl.searchParams.set('limit', '10');
+        adLibraryUrl.searchParams.set('limit', '15'); // Increased limit
         adLibraryUrl.searchParams.set('fields', 'id,page_name,page_id,funding_entity,currency,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_descriptions,ad_creative_link_titles,ad_snapshot_url,ad_delivery_start_time,impressions,spend,demographic_distribution');
 
         console.log('Querying Meta Ad Library with:', query);
@@ -109,8 +190,28 @@ serve(async (req) => {
         if (data.data && data.data.length > 0) {
           console.log(`Found ${data.data.length} ads for "${query}"`);
           
+          // Filter ads to find the most relevant ones
+          const relevantAds = data.data.filter((ad: any) => {
+            const pageName = ad.page_name?.toLowerCase() || '';
+            const competitorLower = competitorName.toLowerCase();
+            
+            // Check if page name contains competitor name or vice versa
+            return pageName.includes(competitorLower) || 
+                   competitorLower.includes(pageName) ||
+                   // Check for partial matches
+                   pageName.split(' ').some((word: string) => 
+                     competitorLower.includes(word) && word.length > 3
+                   ) ||
+                   competitorLower.split(' ').some((word: string) => 
+                     pageName.includes(word) && word.length > 3
+                   );
+          });
+          
+          // Use relevant ads first, then fall back to all ads
+          const adsToProcess = relevantAds.length > 0 ? relevantAds : data.data;
+          
           // Process and format the ads
-          const processedAds = data.data.slice(0, 5 - allAds.length).map((ad: any) => ({
+          const processedAds = adsToProcess.slice(0, 5 - allAds.length).map((ad: any) => ({
             id: ad.id,
             headline: ad.ad_creative_link_titles?.[0] || ad.ad_creative_link_captions?.[0] || 'No headline',
             primary_text: ad.ad_creative_bodies?.[0] || ad.ad_creative_link_descriptions?.[0] || 'No description',
@@ -120,10 +221,19 @@ serve(async (req) => {
             spend_estimate: formatSpend(ad.spend, ad.currency),
             date_created: ad.ad_delivery_start_time || new Date().toISOString(),
             page_name: ad.page_name,
-            funding_entity: ad.funding_entity
+            page_id: ad.page_id,
+            funding_entity: ad.funding_entity,
+            relevance_score: relevantAds.includes(ad) ? 'high' : 'medium'
           }));
           
           allAds.push(...processedAds);
+          
+          // If we found relevant ads, store the page info for future use
+          if (relevantAds.length > 0 && !facebookPageId) {
+            facebookPageId = relevantAds[0].page_id;
+            facebookPageName = relevantAds[0].page_name;
+            console.log('Found Facebook page:', facebookPageName, 'ID:', facebookPageId);
+          }
         }
       } catch (error) {
         console.error(`Error fetching ads for "${query}":`, error);
