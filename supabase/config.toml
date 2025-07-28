@@ -39,6 +39,9 @@ verify_jwt = true
 [functions.fetch-facebook-assets]
 verify_jwt = true
 
+[functions.get-facebook-ad-accounts]
+verify_jwt = true
+
 [functions.transform-assets]
 verify_jwt = true
 
