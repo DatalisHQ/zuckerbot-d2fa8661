@@ -29,3 +29,6 @@ verify_jwt = true
 
 [functions.zuckerbot-assistant]
 verify_jwt = true
+
+[functions.suggest-audience]
+verify_jwt = true

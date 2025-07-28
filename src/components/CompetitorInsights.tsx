@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Loader2, TrendingUp, Target, Lightbulb, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { AudienceSegments, type AudienceSegment } from './AudienceSegments';
 
 interface CompetitorAd {
   id: string;
@@ -48,16 +49,24 @@ interface AngleSuggestion {
 
 interface CompetitorInsightsProps {
   competitorListId: string;
+  brandUrl?: string;
   onAngleSelected: (angle: AngleSuggestion, insights: any) => void;
+  onAudienceSelected?: (segments: AudienceSegment[]) => void;
 }
 
-export const CompetitorInsights = ({ competitorListId, onAngleSelected }: CompetitorInsightsProps) => {
+export const CompetitorInsights = ({ 
+  competitorListId, 
+  brandUrl, 
+  onAngleSelected, 
+  onAudienceSelected 
+}: CompetitorInsightsProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [competitorInsights, setCompetitorInsights] = useState<CompetitorInsight[]>([]);
   const [overallInsights, setOverallInsights] = useState<any>(null);
   const [suggestedAngles, setSuggestedAngles] = useState<AngleSuggestion[]>([]);
   const [selectedAngle, setSelectedAngle] = useState<AngleSuggestion | null>(null);
+  const [showAudienceSegments, setShowAudienceSegments] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -111,12 +120,35 @@ export const CompetitorInsights = ({ competitorListId, onAngleSelected }: Compet
 
   const handleAngleSelection = (angle: AngleSuggestion) => {
     setSelectedAngle(angle);
-    onAngleSelected(angle, {
-      competitorInsights,
-      overallInsights,
-      suggestedAngles
-    });
+    if (brandUrl && onAudienceSelected) {
+      setShowAudienceSegments(true);
+    } else {
+      onAngleSelected(angle, {
+        competitorInsights,
+        overallInsights,
+        suggestedAngles
+      });
+    }
   };
+
+  const handleAudienceSelection = (segments: AudienceSegment[]) => {
+    if (selectedAngle && onAudienceSelected) {
+      onAudienceSelected(segments);
+      onAngleSelected(selectedAngle, {
+        competitorInsights,
+        overallInsights,
+        suggestedAngles,
+        audienceSegments: segments
+      });
+    }
+  };
+
+  // Transform competitor insights for audience analysis
+  const competitorProfiles = competitorInsights.map(competitor => ({
+    name: competitor.name,
+    valueProps: competitor.websiteAnalysis?.value_props || competitor.insights.hooks || [],
+    toneProfile: competitor.websiteAnalysis?.tone || 'professional'
+  }));
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 85) return "bg-green-500";
@@ -250,12 +282,21 @@ export const CompetitorInsights = ({ competitorListId, onAngleSelected }: Compet
               </div>
               <p className="text-sm text-muted-foreground mb-4">{selectedAngle.strategy}</p>
               <Button onClick={() => handleAngleSelection(selectedAngle)} className="w-full">
-                Generate Ads with This Angle
+                {brandUrl && onAudienceSelected ? 'Continue to Audience Selection' : 'Generate Ads with This Angle'}
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Audience Segments */}
+      {showAudienceSegments && brandUrl && competitorProfiles.length > 0 && (
+        <AudienceSegments
+          brandUrl={brandUrl}
+          competitorProfiles={competitorProfiles}
+          onSegmentsSelected={handleAudienceSelection}
+        />
+      )}
 
       {/* Detailed Competitor Analysis */}
       <Card>
