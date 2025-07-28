@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CompetitorInput } from '@/components/CompetitorInput';
 import { CompetitorInsights } from '@/components/CompetitorInsights';
+import { CampaignSettings, CampaignSettings as CampaignSettingsType } from '@/components/CampaignSettings';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { type AudienceSegment } from '@/components/AudienceSegments';
@@ -8,13 +9,16 @@ import { type AudienceSegment } from '@/components/AudienceSegments';
 interface CompetitorFlowProps {
   brandAnalysisId?: string;
   brandUrl?: string;
-  onFlowComplete: (competitorInsights: any, selectedAngle: any, audienceSegments?: AudienceSegment[]) => void;
+  onFlowComplete: (competitorInsights: any, selectedAngle: any, audienceSegments?: AudienceSegment[], campaignSettings?: CampaignSettingsType) => void;
 }
 
 export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: CompetitorFlowProps) => {
-  const [currentStep, setCurrentStep] = useState<'input' | 'insights'>('input');
+  const [currentStep, setCurrentStep] = useState<'input' | 'insights' | 'campaign-settings'>('input');
   const [competitorListId, setCompetitorListId] = useState<string>('');
   const [selectedAudienceSegments, setSelectedAudienceSegments] = useState<AudienceSegment[]>([]);
+  const [competitorInsights, setCompetitorInsights] = useState<any>(null);
+  const [selectedAngle, setSelectedAngle] = useState<any>(null);
+  const [competitorProfiles, setCompetitorProfiles] = useState<any[]>([]);
   const { toast } = useToast();
 
   const handleCompetitorListCreated = (listId: string) => {
@@ -32,12 +36,26 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
     setSelectedAudienceSegments(segments);
   };
 
-  const handleAngleSelected = async (selectedAngle: any, insights: any) => {
+  const handleAngleSelected = async (selectedAngle: any, insights: any, profiles: any[] = []) => {
+    // Store data and move to campaign settings
+    setCompetitorInsights(insights);
+    setSelectedAngle(selectedAngle);
+    setCompetitorProfiles(profiles);
+    
+    toast({
+      title: "Strategy selected!",
+      description: "Now let's configure your campaign settings.",
+    });
+    
+    setCurrentStep('campaign-settings');
+  };
+
+  const handleCampaignSettingsComplete = async (campaignSettings: CampaignSettingsType) => {
     try {
       const user = await supabase.auth.getUser();
       if (!user.data.user) throw new Error('User not authenticated');
 
-      // Save selected angle to database
+      // Save selected angle and campaign settings to database
       const { error } = await supabase
         .from('selected_angles')
         .insert({
@@ -46,32 +64,30 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
           competitor_list_id: competitorListId,
           angle_type: selectedAngle.type,
           angle_description: selectedAngle.description,
-          competitor_insights: insights,
-          audience_segments: selectedAudienceSegments
+          competitor_insights: competitorInsights,
+          audience_segments: selectedAudienceSegments,
+          campaign_settings: campaignSettings
         });
 
       if (error) throw error;
 
-      const hasAudience = selectedAudienceSegments.length > 0;
       toast({
-        title: "Strategy selected!",
-        description: hasAudience 
-          ? `Proceeding with ${selectedAudienceSegments.length} audience segment(s)` 
-          : "Proceeding to generate your ads with this strategy.",
+        title: "Campaign configured!",
+        description: "Proceeding to generate your ads.",
       });
 
-      // Pass data back to parent component
-      onFlowComplete(insights, selectedAngle, selectedAudienceSegments);
+      // Pass all data back to parent component
+      onFlowComplete(competitorInsights, selectedAngle, selectedAudienceSegments, campaignSettings);
     } catch (error) {
-      console.error('Error saving selected angle:', error);
+      console.error('Error saving campaign settings:', error);
       toast({
-        title: "Error saving angle",
+        title: "Error saving settings",
         description: "Proceeding anyway...",
         variant: "destructive",
       });
       
       // Still proceed even if saving fails
-      onFlowComplete(insights, selectedAngle, selectedAudienceSegments);
+      onFlowComplete(competitorInsights, selectedAngle, selectedAudienceSegments, campaignSettings);
     }
   };
 
@@ -105,6 +121,17 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
             brandUrl={brandUrl}
             onAngleSelected={handleAngleSelected}
             onAudienceSelected={handleAudienceSelected}
+          />
+        </div>
+      )}
+
+      {currentStep === 'campaign-settings' && (
+        <div className="container mx-auto px-4 py-8">
+          <CampaignSettings
+            brandUrl={brandUrl || ''}
+            competitorProfiles={competitorProfiles}
+            selectedSegments={selectedAudienceSegments}
+            onSettingsComplete={handleCampaignSettingsComplete}
           />
         </div>
       )}

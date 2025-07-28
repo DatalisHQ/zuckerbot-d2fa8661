@@ -32,3 +32,6 @@ verify_jwt = true
 
 [functions.suggest-audience]
 verify_jwt = true
+
+[functions.generate-campaign-config]
+verify_jwt = true
