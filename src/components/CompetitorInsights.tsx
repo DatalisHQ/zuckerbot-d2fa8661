@@ -31,9 +31,13 @@ interface CompetitorInsight {
     value_props: string[];
   };
   insights: {
-    hooks: string[];
-    ctas: string[];
-    creative_trends: string[];
+    hooks?: string[];
+    ctas?: string[];
+    creative_trends?: string[];
+    common_hooks?: string[];
+    common_ctas?: string[];
+    dominant_tones?: string[];
+    avg_text_length?: number;
   };
   total_ads_found?: number;
   no_ads_message?: string;
@@ -364,30 +368,36 @@ export const CompetitorInsights = ({
                     <h4 className="font-semibold">Meta Ads Analysis ({competitor.total_ads_found} ads found)</h4>
                     
                     {/* Ad Insights Summary */}
-                    <Card className="bg-blue-50 dark:bg-blue-950/20">
+                    <Card className="bg-primary/5 border-primary/20">
                       <CardContent className="pt-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
-                            <h5 className="font-medium text-sm mb-2">Top Hooks</h5>
+                            <h5 className="font-medium text-sm mb-2 text-foreground">Top Hooks</h5>
                             <div className="space-y-1">
-                              {competitor.insights.hooks?.slice(0, 3).map((hook: string, i: number) => (
-                                <Badge key={i} variant="outline" className="text-xs block w-fit">{hook}</Badge>
+                              {(competitor.insights.common_hooks || competitor.insights.hooks || []).slice(0, 3).map((hook: string, i: number) => (
+                                <Badge key={i} variant="secondary" className="text-xs block w-fit bg-secondary/80 text-secondary-foreground border border-border">
+                                  {hook}
+                                </Badge>
                               ))}
                             </div>
                           </div>
                           <div>
-                            <h5 className="font-medium text-sm mb-2">Common CTAs</h5>
+                            <h5 className="font-medium text-sm mb-2 text-foreground">Common CTAs</h5>
                             <div className="space-y-1">
-                              {competitor.insights.ctas?.map((cta: string, i: number) => (
-                                <Badge key={i} variant="secondary" className="text-xs block w-fit">{cta}</Badge>
+                              {(competitor.insights.common_ctas || competitor.insights.ctas || []).map((cta: string, i: number) => (
+                                <Badge key={i} className="text-xs block w-fit bg-primary text-primary-foreground">
+                                  {cta}
+                                </Badge>
                               ))}
                             </div>
                           </div>
                           <div>
-                            <h5 className="font-medium text-sm mb-2">Creative Trends</h5>
+                            <h5 className="font-medium text-sm mb-2 text-foreground">Dominant Tones</h5>
                             <div className="space-y-1">
-                              {competitor.insights.creative_trends?.slice(0, 2).map((trend: string, i: number) => (
-                                <Badge key={i} variant="default" className="text-xs block w-fit">{trend}</Badge>
+                              {(competitor.insights.dominant_tones || competitor.insights.creative_trends || []).slice(0, 2).map((tone: string, i: number) => (
+                                <Badge key={i} variant="outline" className="text-xs block w-fit bg-background border-2 border-primary/30 text-foreground">
+                                  {tone}
+                                </Badge>
                               ))}
                             </div>
                           </div>
@@ -417,7 +427,7 @@ export const CompetitorInsights = ({
                               </p>
                             </div>
                             <div className="flex justify-between items-center">
-                              <Badge variant="outline" className="text-xs">{ad.cta}</Badge>
+                              <Badge variant="default" className="text-xs bg-primary text-primary-foreground">{ad.cta}</Badge>
                               <span className="text-xs text-muted-foreground">{ad.impressions}</span>
                             </div>
                           </div>
