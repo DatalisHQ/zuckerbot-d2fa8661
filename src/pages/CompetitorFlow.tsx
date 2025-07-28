@@ -4,19 +4,21 @@ import { CompetitorInsights } from '@/components/CompetitorInsights';
 import { RawAssetCollector } from '@/components/RawAssetCollector';
 import { AssetTransformer } from '@/components/AssetTransformer';
 import { CampaignSettings, CampaignSettings as CampaignSettingsType } from '@/components/CampaignSettings';
+import { CampaignLauncher } from '@/components/CampaignLauncher';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useBuildCampaign } from '@/hooks/useBuildCampaign';
 import { type AudienceSegment } from '@/components/AudienceSegments';
 import { type TransformedAsset } from '@/hooks/useTransformAssets';
 
 interface CompetitorFlowProps {
   brandAnalysisId?: string;
   brandUrl?: string;
-  onFlowComplete: (competitorInsights: any, selectedAngle: any, audienceSegments?: AudienceSegment[], campaignSettings?: CampaignSettingsType, rawAssets?: string[], transformedAssets?: TransformedAsset[]) => void;
+  onFlowComplete: (competitorInsights: any, selectedAngle: any, audienceSegments?: AudienceSegment[], campaignSettings?: CampaignSettingsType, rawAssets?: string[], transformedAssets?: TransformedAsset[], campaignConfig?: any) => void;
 }
 
 export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: CompetitorFlowProps) => {
-  const [currentStep, setCurrentStep] = useState<'input' | 'insights' | 'assets' | 'transform' | 'campaign-settings'>('input');
+  const [currentStep, setCurrentStep] = useState<'input' | 'insights' | 'assets' | 'transform' | 'campaign-settings' | 'launch'>('input');
   const [competitorListId, setCompetitorListId] = useState<string>('');
   const [selectedAudienceSegments, setSelectedAudienceSegments] = useState<AudienceSegment[]>([]);
   const [competitorInsights, setCompetitorInsights] = useState<any>(null);
@@ -24,6 +26,9 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
   const [competitorProfiles, setCompetitorProfiles] = useState<any[]>([]);
   const [rawAssets, setRawAssets] = useState<string[]>([]);
   const [transformedAssets, setTransformedAssets] = useState<TransformedAsset[]>([]);
+  const [campaignSettings, setCampaignSettings] = useState<CampaignSettingsType | null>(null);
+  const [campaignConfig, setCampaignConfig] = useState<any>(null);
+  const buildCampaignMutation = useBuildCampaign();
   const { toast } = useToast();
 
   const handleCompetitorListCreated = (listId: string) => {
@@ -81,45 +86,60 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
     setCurrentStep('campaign-settings');
   };
 
-  const handleCampaignSettingsComplete = async (campaignSettings: CampaignSettingsType) => {
+  const handleCampaignSettingsComplete = async (settings: CampaignSettingsType) => {
     try {
-      const user = await supabase.auth.getUser();
-      if (!user.data.user) throw new Error('User not authenticated');
-
-      // Save selected angle and campaign settings to database
-      const { error } = await supabase
-        .from('selected_angles')
-        .insert({
-          user_id: user.data.user.id,
-          brand_analysis_id: brandAnalysisId,
-          competitor_list_id: competitorListId,
-          angle_type: selectedAngle.type,
-          angle_description: selectedAngle.description,
-          competitor_insights: competitorInsights,
-          audience_segments: selectedAudienceSegments,
-          campaign_settings: campaignSettings
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "Campaign configured!",
-        description: "Proceeding to generate your ads.",
+      setCampaignSettings(settings);
+      
+      // Build the campaign configuration
+      const config = await buildCampaignMutation.mutateAsync({
+        brandUrl: brandUrl || '',
+        competitorProfiles,
+        selectedSegments: selectedAudienceSegments,
+        campaignGoal: settings.campaignGoal,
+        budget: settings.budget,
+        audienceType: settings.audienceType,
+        geos: settings.geos,
+        lookbackDays: settings.lookbackDays,
+        placements: settings.placements
       });
 
-      // Pass all data back to parent component
-      onFlowComplete(competitorInsights, selectedAngle, selectedAudienceSegments, campaignSettings, rawAssets, transformedAssets);
-    } catch (error) {
-      console.error('Error saving campaign settings:', error);
+      setCampaignConfig(config);
+
       toast({
-        title: "Error saving settings",
-        description: "Proceeding anyway...",
+        title: "Campaign built!",
+        description: "Ready to launch on Facebook.",
+      });
+
+      setCurrentStep('launch');
+    } catch (error) {
+      console.error('Error building campaign:', error);
+      toast({
+        title: "Error building campaign",
+        description: "Please try again.",
         variant: "destructive",
       });
-      
-      // Still proceed even if saving fails
-      onFlowComplete(competitorInsights, selectedAngle, selectedAudienceSegments, campaignSettings, rawAssets, transformedAssets);
     }
+  };
+
+  const handleLaunchComplete = (result: any) => {
+    // Log the successful launch
+    console.log('Campaign launched successfully:', result);
+
+    toast({
+      title: "🎉 Campaign Launched!",
+      description: `Your campaign is now live in Facebook Ads Manager`,
+    });
+
+    // Complete the flow
+    onFlowComplete(
+      competitorInsights, 
+      selectedAngle, 
+      selectedAudienceSegments, 
+      campaignSettings, 
+      rawAssets, 
+      transformedAssets,
+      campaignConfig
+    );
   };
 
   return (
@@ -214,6 +234,23 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
             selectedSegments={selectedAudienceSegments}
             onSettingsComplete={handleCampaignSettingsComplete}
           />
+        </div>
+      )}
+
+      {currentStep === 'launch' && campaignConfig && (
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold mb-2">Launch Campaign</h1>
+            <p className="text-muted-foreground">
+              Deploy your campaign to Facebook Ads Manager
+            </p>
+          </div>
+          <div className="max-w-4xl mx-auto">
+            <CampaignLauncher
+              campaignConfig={campaignConfig}
+              onLaunchComplete={handleLaunchComplete}
+            />
+          </div>
         </div>
       )}
     </div>
