@@ -3,26 +3,33 @@ import { CompetitorInput } from '@/components/CompetitorInput';
 import { CompetitorInsights } from '@/components/CompetitorInsights';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { type AudienceSegment } from '@/components/AudienceSegments';
 
 interface CompetitorFlowProps {
   brandAnalysisId?: string;
-  onFlowComplete: (competitorInsights: any, selectedAngle: any) => void;
+  brandUrl?: string;
+  onFlowComplete: (competitorInsights: any, selectedAngle: any, audienceSegments?: AudienceSegment[]) => void;
 }
 
-export const CompetitorFlow = ({ brandAnalysisId, onFlowComplete }: CompetitorFlowProps) => {
+export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: CompetitorFlowProps) => {
   const [currentStep, setCurrentStep] = useState<'input' | 'insights'>('input');
   const [competitorListId, setCompetitorListId] = useState<string>('');
+  const [selectedAudienceSegments, setSelectedAudienceSegments] = useState<AudienceSegment[]>([]);
   const { toast } = useToast();
 
   const handleCompetitorListCreated = (listId: string) => {
     if (listId === 'skip') {
       // User chose to skip competitor research
-      onFlowComplete(null, { type: 'skip', description: 'User chose to skip competitor research' });
+      onFlowComplete(null, { type: 'skip', description: 'User chose to skip competitor research' }, []);
       return;
     }
     
     setCompetitorListId(listId);
     setCurrentStep('insights');
+  };
+
+  const handleAudienceSelected = (segments: AudienceSegment[]) => {
+    setSelectedAudienceSegments(segments);
   };
 
   const handleAngleSelected = async (selectedAngle: any, insights: any) => {
@@ -39,18 +46,22 @@ export const CompetitorFlow = ({ brandAnalysisId, onFlowComplete }: CompetitorFl
           competitor_list_id: competitorListId,
           angle_type: selectedAngle.type,
           angle_description: selectedAngle.description,
-          competitor_insights: insights
+          competitor_insights: insights,
+          audience_segments: selectedAudienceSegments
         });
 
       if (error) throw error;
 
+      const hasAudience = selectedAudienceSegments.length > 0;
       toast({
-        title: "Angle selected!",
-        description: "Proceeding to generate your ads with this strategy.",
+        title: "Strategy selected!",
+        description: hasAudience 
+          ? `Proceeding with ${selectedAudienceSegments.length} audience segment(s)` 
+          : "Proceeding to generate your ads with this strategy.",
       });
 
       // Pass data back to parent component
-      onFlowComplete(insights, selectedAngle);
+      onFlowComplete(insights, selectedAngle, selectedAudienceSegments);
     } catch (error) {
       console.error('Error saving selected angle:', error);
       toast({
@@ -60,7 +71,7 @@ export const CompetitorFlow = ({ brandAnalysisId, onFlowComplete }: CompetitorFl
       });
       
       // Still proceed even if saving fails
-      onFlowComplete(insights, selectedAngle);
+      onFlowComplete(insights, selectedAngle, selectedAudienceSegments);
     }
   };
 
@@ -91,7 +102,9 @@ export const CompetitorFlow = ({ brandAnalysisId, onFlowComplete }: CompetitorFl
           </div>
           <CompetitorInsights 
             competitorListId={competitorListId}
+            brandUrl={brandUrl}
             onAngleSelected={handleAngleSelected}
+            onAudienceSelected={handleAudienceSelected}
           />
         </div>
       )}

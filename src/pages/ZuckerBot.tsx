@@ -256,7 +256,7 @@ const ZuckerBot = () => {
     }
   };
 
-  const handleCompetitorFlowComplete = async (competitorInsights: any, selectedAngle: any) => {
+  const handleCompetitorFlowComplete = async (competitorInsights: any, selectedAngle: any, audienceSegments?: any[]) => {
     setCompetitorInsights(competitorInsights);
     setSelectedAngle(selectedAngle);
     setShowCompetitorFlow(false);
@@ -363,6 +363,7 @@ const ZuckerBot = () => {
         <Navbar />
         <CompetitorFlow 
           brandAnalysisId={businessContext?.brandAnalysis?.id}
+          brandUrl={businessContext?.brandAnalysis?.brand_url}
           onFlowComplete={handleCompetitorFlowComplete}
         />
       </div>
