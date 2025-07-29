@@ -310,50 +310,27 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
 
   const connectFacebook = async () => {
     try {
-      // Facebook OAuth URL - in production this would be your actual Facebook app
-      const facebookAuthUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${encodeURIComponent('YOUR_FACEBOOK_APP_ID')}&redirect_uri=${encodeURIComponent(window.location.origin + '/auth/facebook/callback')}&scope=${encodeURIComponent('ads_read,ads_management')}&response_type=code&state=${encodeURIComponent('facebook_oauth')}`;
-      
-      // Open Facebook OAuth in new tab
-      const popup = window.open(
-        facebookAuthUrl,
-        'facebook-oauth',
-        'width=600,height=600,scrollbars=yes,resizable=yes'
-      );
-
-      if (!popup) {
-        toast({
-          title: "Popup Blocked",
-          description: "Please allow popups and try again to connect to Facebook",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      toast({
-        title: "Redirecting to Facebook",
-        description: "Please authorize access to your Facebook Ads data",
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'facebook',
+        options: {
+          scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
+          redirectTo: `${window.location.origin}/?facebook=connected`
+        }
       });
 
-      // Listen for popup to close (in real app you'd handle the OAuth callback)
-      const checkClosed = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(checkClosed);
-          // For demo purposes, simulate successful connection after popup closes
-          setTimeout(() => {
-            setIsConnected(true);
-            loadAdMetrics();
-            toast({
-              title: "Facebook Connected",
-              description: "Successfully connected to Facebook Ads",
-            });
-          }, 1000);
-        }
-      }, 1000);
-    } catch (error) {
-      console.error('Error connecting Facebook:', error);
+      if (error) {
+        console.error('Facebook OAuth error:', error);
+        toast({
+          title: "Connection Failed",
+          description: error.message || "Could not connect to Facebook. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error('Facebook connection error:', error);
       toast({
-        title: "Connection Failed",
-        description: "Failed to connect to Facebook Ads. Please try again.",
+        title: "Connection Error",
+        description: "There was an error connecting to Facebook. Please try again.",
         variant: "destructive",
       });
     }
