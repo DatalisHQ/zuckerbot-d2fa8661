@@ -1,11 +1,11 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { LogOut, User } from "lucide-react";
+import { SlidingMenu } from "./SlidingMenu";
 
 export const Navbar = () => {
-  const location = useLocation();
   const { toast } = useToast();
 
   const handleSignOut = async () => {
@@ -30,12 +30,13 @@ export const Navbar = () => {
     <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
-          <div className="flex items-center space-x-8">
+          <div className="flex items-center gap-4">
+            <SlidingMenu />
             <Link to="/dashboard" className="font-bold text-xl">
-              ZuckerBot AI
+              ZuckerBot.ai
             </Link>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="hidden md:flex items-center space-x-2">
             <Button variant="ghost" asChild>
               <Link to="/profile">
                 <User className="h-4 w-4 mr-2" />

@@ -89,15 +89,19 @@ export default function Pricing() {
               <ul className="space-y-3">
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
-                  <span>5 conversations per month</span>
+                  <span>1 business</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
-                  <span>Basic AI assistance</span>
+                  <span>Up to 3 ad campaigns</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
-                  <span>Core ad guidance</span>
+                  <span>Access to beta tools</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-green-500" />
+                  <span>Ad Creative Generation</span>
                 </li>
               </ul>
             </CardContent>
@@ -134,15 +138,15 @@ export default function Pricing() {
               <ul className="space-y-3">
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
-                  <span>100 conversations per month</span>
+                  <span>3 businesses</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-green-500" />
+                  <span>Up to 100 ad campaigns</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
                   <span>Advanced AI insights</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Ad copy optimization</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
@@ -177,23 +181,25 @@ export default function Pricing() {
               </div>
               <CardDescription>For agencies and enterprise users</CardDescription>
               <div className="text-3xl font-bold">
-                $89
-                <span className="text-sm text-muted-foreground font-normal">/month</span>
+                Starting at ${isAnnual ? '71' : '89'}
+                <span className="text-sm text-muted-foreground font-normal">
+                  /month {isAnnual && '(billed annually)'}
+                </span>
               </div>
             </CardHeader>
             <CardContent>
               <ul className="space-y-3">
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
-                  <span>Unlimited conversations</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
                   <span>Multiple business accounts</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
-                  <span>Competitor analysis tools</span>
+                  <span>Unlimited ad campaigns</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-green-500" />
+                  <span>Access to beta tools</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500" />
@@ -212,10 +218,13 @@ export default function Pricing() {
             <CardFooter>
               <Button 
                 className="w-full" 
-                onClick={() => handleSubscribe('agency_monthly', 'agency')}
-                disabled={loading === 'agency_monthly'}
+                onClick={() => handleSubscribe(
+                  isAnnual ? 'agency_yearly' : 'agency_monthly',
+                  'agency'
+                )}
+                disabled={loading === (isAnnual ? 'agency_yearly' : 'agency_monthly')}
               >
-                {loading === 'agency_monthly' ? 'Loading...' : 'Subscribe to Agency'}
+                {loading === (isAnnual ? 'agency_yearly' : 'agency_monthly') ? 'Loading...' : 'Subscribe to Agency'}
               </Button>
             </CardFooter>
           </Card>

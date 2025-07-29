@@ -18,6 +18,7 @@ import Profile from "./pages/Profile";
 import ConversationLayout from "./pages/ConversationLayout";
 import AdPerformance from "./pages/AdPerformance";
 import Pricing from "./pages/Pricing";
+import Billing from "./pages/Billing";
 import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
 
@@ -74,6 +75,7 @@ function App() {
               <Route path="/profile" element={user ? <ConversationLayout><Profile /></ConversationLayout> : <Navigate to="/auth" />} />
             <Route path="/ad-performance" element={user ? <AdPerformance /> : <Navigate to="/auth" />} />
             <Route path="/pricing" element={<Pricing />} />
+            <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
             <Route path="/faq" element={<FAQ />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
