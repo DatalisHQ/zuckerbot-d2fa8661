@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -16,6 +17,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { TimeFrameFilter } from "./TimeFrameFilter";
+import { useGetFacebookAdAccounts, AdAccount } from "@/hooks/useGetFacebookAdAccounts";
 
 interface AdMetrics {
   impressions: number;
@@ -36,7 +38,25 @@ interface AdInsight {
   description: string;
 }
 
-export const FacebookAdsPerformance = () => {
+interface FacebookCampaign {
+  id: string;
+  campaign_id: string;
+  campaign_name: string;
+  objective: string;
+  status: string;
+  daily_budget: number;
+  lifetime_budget: number;
+  start_time: string;
+  end_time: string;
+  created_time: string;
+  updated_time: string;
+}
+
+interface FacebookAdsPerformanceProps {
+  selectedCampaign?: FacebookCampaign | null;
+}
+
+export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerformanceProps) => {
   const { toast } = useToast();
   const [metrics, setMetrics] = useState<AdMetrics | null>(null);
   const [insights, setInsights] = useState<AdInsight[]>([]);
@@ -44,6 +64,9 @@ export const FacebookAdsPerformance = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [selectedTimeFrame, setSelectedTimeFrame] = useState('month');
   const [customDateRange, setCustomDateRange] = useState<{ from: Date | null; to: Date | null }>({ from: null, to: null });
+  const [selectedAdAccount, setSelectedAdAccount] = useState<string>('');
+  
+  const { data: adAccounts, isLoading: accountsLoading } = useGetFacebookAdAccounts();
 
   useEffect(() => {
     checkFacebookConnection();
@@ -53,7 +76,7 @@ export const FacebookAdsPerformance = () => {
     if (isConnected) {
       loadAdMetrics();
     }
-  }, [selectedTimeFrame, customDateRange, isConnected]);
+  }, [selectedTimeFrame, customDateRange, isConnected, selectedCampaign, selectedAdAccount]);
 
   const handleTimeFrameChange = (timeFrame: string, customRange?: { from: Date | null; to: Date | null }) => {
     setSelectedTimeFrame(timeFrame);
@@ -93,6 +116,16 @@ export const FacebookAdsPerformance = () => {
       };
     }
     
+    if (selectedTimeFrame === 'all') {
+      // For "All Time", get the earliest campaign date
+      const earliestDate = new Date();
+      earliestDate.setFullYear(earliestDate.getFullYear() - 2); // Default to 2 years ago
+      return {
+        start: earliestDate.toISOString().split('T')[0],
+        end: new Date().toISOString().split('T')[0]
+      };
+    }
+    
     const timeFrames: Record<string, number> = {
       'today': 1,
       'week': 7,
@@ -121,19 +154,32 @@ export const FacebookAdsPerformance = () => {
       await supabase.functions.invoke('sync-facebook-ads');
       
       // Then fetch the synced data from our database
-      const { data: campaigns } = await supabase
+      let campaignsQuery = supabase
         .from('facebook_campaigns')
         .select('*')
         .eq('user_id', user.id);
 
+      // Filter by selected campaign if one is selected
+      if (selectedCampaign) {
+        campaignsQuery = campaignsQuery.eq('campaign_id', selectedCampaign.campaign_id);
+      }
+
+      const { data: campaigns } = await campaignsQuery;
+
       const dateRange = getDateRange();
-      const { data: recentMetrics } = await supabase
+      let metricsQuery = supabase
         .from('facebook_ad_metrics')
         .select('*')
         .eq('user_id', user.id)
         .gte('date_start', dateRange.start)
-        .lte('date_start', dateRange.end)
-        .order('date_start', { ascending: false });
+        .lte('date_start', dateRange.end);
+
+      // Filter by selected campaign if one is selected
+      if (selectedCampaign) {
+        metricsQuery = metricsQuery.eq('campaign_id', selectedCampaign.campaign_id);
+      }
+
+      const { data: recentMetrics } = await metricsQuery.order('date_start', { ascending: false });
 
       if (recentMetrics && recentMetrics.length > 0) {
         const totalSpend = recentMetrics.reduce((sum, m) => sum + (parseFloat(m.spend?.toString() || '0') || 0), 0);
@@ -145,6 +191,13 @@ export const FacebookAdsPerformance = () => {
         const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
         const avgCPM = totalImpressions > 0 ? (totalSpend / totalImpressions * 1000) : 0;
 
+        const periodLabel = selectedTimeFrame === 'custom' ? 
+          `${customDateRange.from?.toLocaleDateString()} - ${customDateRange.to?.toLocaleDateString()}` :
+          selectedTimeFrame === 'all' ? 'All Time' :
+          (['today', 'week', 'month', 'quarter'].find(tf => tf === selectedTimeFrame) ? 
+            ({ 'today': 'Today', 'week': 'Last 7 days', 'month': 'Last 30 days', 'quarter': 'Last 90 days' }[selectedTimeFrame]) : 
+            "Last 30 days");
+
         const metrics: AdMetrics = {
           impressions: totalImpressions,
           clicks: totalClicks,
@@ -153,11 +206,7 @@ export const FacebookAdsPerformance = () => {
           spend: totalSpend,
           reach: totalReach,
           conversions: totalConversions,
-          period: selectedTimeFrame === 'custom' ? 
-            `${customDateRange.from?.toLocaleDateString()} - ${customDateRange.to?.toLocaleDateString()}` :
-            (['today', 'week', 'month', 'quarter'].find(tf => tf === selectedTimeFrame) ? 
-              ({ 'today': 'Today', 'week': 'Last 7 days', 'month': 'Last 30 days', 'quarter': 'Last 90 days' }[selectedTimeFrame]) : 
-              "Last 30 days")
+          period: selectedCampaign ? `${selectedCampaign.campaign_name} - ${periodLabel}` : periodLabel
         };
 
         setMetrics(metrics);
@@ -327,6 +376,21 @@ export const FacebookAdsPerformance = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!accountsLoading && adAccounts && adAccounts.length > 1 && (
+            <Select value={selectedAdAccount} onValueChange={setSelectedAdAccount}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Select Ad Account" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Ad Accounts</SelectItem>
+                {adAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button 
             onClick={loadAdMetrics} 
             variant="outline" 
