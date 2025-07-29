@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useOnboardingGuard } from "@/hooks/useOnboardingGuard";
 
 interface Conversation {
   id: string;
@@ -18,6 +19,8 @@ interface Conversation {
 }
 
 export default function Conversations() {
+  useOnboardingGuard();
+  
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);

@@ -1,7 +1,10 @@
 import { Navbar } from "@/components/Navbar";
 import { StrategicDashboard } from "@/components/StrategicDashboard";
+import { useOnboardingGuard } from "@/hooks/useOnboardingGuard";
 
 export default function StrategicInsights() {
+  useOnboardingGuard();
+  
   return (
     <div className="min-h-screen bg-background">
       <Navbar />

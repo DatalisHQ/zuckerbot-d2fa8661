@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useOnboardingGuard } from "@/hooks/useOnboardingGuard";
 
 interface FileItem {
   id: string;
@@ -21,6 +22,8 @@ interface FileItem {
 }
 
 export default function Files() {
+  useOnboardingGuard();
+  
   const [files, setFiles] = useState<FileItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);

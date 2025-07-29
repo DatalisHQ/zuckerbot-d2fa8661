@@ -1,7 +1,10 @@
 import { Navbar } from "@/components/Navbar";
 import { CompetitorAnalysisDashboard } from "@/components/CompetitorAnalysisDashboard";
+import { useOnboardingGuard } from "@/hooks/useOnboardingGuard";
 
 export default function CompetitorAnalysis() {
+  useOnboardingGuard();
+  
   return (
     <div className="min-h-screen bg-background">
       <Navbar />

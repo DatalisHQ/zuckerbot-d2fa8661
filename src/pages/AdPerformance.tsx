@@ -1,7 +1,10 @@
 import { Navbar } from "@/components/Navbar";
 import { FacebookAdsPerformance } from "@/components/FacebookAdsPerformance";
+import { useOnboardingGuard } from "@/hooks/useOnboardingGuard";
 
 export default function AdPerformance() {
+  useOnboardingGuard();
+  
   return (
     <div className="min-h-screen bg-background">
       <Navbar />

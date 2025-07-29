@@ -22,6 +22,18 @@ const CampaignFlow = () => {
           return;
         }
 
+        // Check onboarding completion
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('onboarding_completed')
+          .eq('user_id', session.user.id)
+          .single();
+
+        if (!profile?.onboarding_completed) {
+          navigate("/onboarding");
+          return;
+        }
+
         // Load brand analysis data
         const { data: brandAnalysis, error } = await supabase
           .from('brand_analysis')

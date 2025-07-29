@@ -57,23 +57,30 @@ const Dashboard = () => {
   const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        navigate("/auth");
-        return;
-      }
+  const checkUser = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      navigate("/auth");
+      return;
+    }
 
-      setUser(session.user);
+    setUser(session.user);
 
-      // Get user profile
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .single();
+    // Get user profile
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .single();
 
-      setProfile(profileData);
+    setProfile(profileData);
+
+    // Block access if onboarding is not completed
+    if (!profileData?.onboarding_completed) {
+      console.log("Dashboard: User hasn't completed onboarding, redirecting");
+      navigate("/onboarding");
+      return;
+    }
 
       // Get user campaigns
       const { data: campaignData } = await supabase
@@ -98,28 +105,10 @@ const Dashboard = () => {
     const checkFacebookRecovery = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('facebook_recovery') === 'true') {
-        // Handle Facebook recovery callback
-        try {
-          const { data, error } = await supabase.functions.invoke('facebook-oauth-callback');
-          if (error) {
-            toast({
-              title: "Facebook Connection Failed",
-              description: "Could not complete Facebook connection.",
-              variant: "destructive",
-            });
-          } else {
-            toast({
-              title: "Facebook Reconnected",
-              description: "Your Facebook account has been successfully reconnected.",
-            });
-            // Reload page to reflect changes
-            window.location.reload();
-          }
-        } catch (error) {
-          console.error('Facebook recovery error:', error);
-        }
-        // Clean up URL
-        window.history.replaceState({}, document.title, window.location.pathname);
+        // This should not happen - Facebook recovery should redirect to onboarding
+        console.log("Dashboard: Facebook recovery detected, redirecting to onboarding");
+        navigate("/onboarding?step=2&facebook=connected");
+        return;
       }
     };
 

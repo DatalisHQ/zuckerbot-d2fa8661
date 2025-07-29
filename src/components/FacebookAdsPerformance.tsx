@@ -314,7 +314,7 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
         provider: 'facebook',
         options: {
           scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
-          redirectTo: `${window.location.origin}/?facebook=connected`
+          redirectTo: `${window.location.origin}/onboarding?step=2&facebook=connected`
         }
       });
 

@@ -38,7 +38,7 @@ export const OnboardingRecovery = ({ onComplete }: OnboardingRecoveryProps) => {
         provider: 'facebook',
         options: {
           scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
-          redirectTo: `${window.location.origin}/dashboard?facebook_recovery=true`
+          redirectTo: `${window.location.origin}/onboarding?step=2&facebook=connected`
         }
       });
 
