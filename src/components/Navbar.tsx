@@ -2,7 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
-import { LogOut } from "lucide-react";
+import { LogOut, User } from "lucide-react";
 
 export const Navbar = () => {
   const location = useLocation();
@@ -31,14 +31,22 @@ export const Navbar = () => {
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center space-x-8">
-            <Link to="/zuckerbot" className="font-bold text-xl">
+            <Link to="/dashboard" className="font-bold text-xl">
               ZuckerBot AI
             </Link>
           </div>
-          <Button variant="outline" onClick={handleSignOut}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Sign Out
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Button variant="ghost" asChild>
+              <Link to="/profile">
+                <User className="h-4 w-4 mr-2" />
+                Profile
+              </Link>
+            </Button>
+            <Button variant="outline" onClick={handleSignOut}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
+            </Button>
+          </div>
         </div>
       </div>
     </nav>
