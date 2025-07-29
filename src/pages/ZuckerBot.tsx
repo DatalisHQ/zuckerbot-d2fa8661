@@ -28,33 +28,33 @@ interface Message {
 const PREDEFINED_PROMPTS = [
   {
     icon: Plus,
-    title: "Create Campaign",
-    prompt: "Help me create a new Meta advertising campaign",
-    color: "from-green-500 to-emerald-600"
-  },
-  {
-    icon: Edit,
-    title: "Write Ad Copy", 
-    prompt: "I need help writing compelling ad copy for my campaign",
-    color: "from-blue-500 to-cyan-600"
+    title: "Run A Campaign",
+    prompt: "Help me create and launch a new Meta advertising campaign",
+    color: "from-green-500 to-emerald-600",
+    action: "create_campaign"
   },
   {
     icon: TrendingUp,
-    title: "Optimize Performance",
-    prompt: "Help me analyze and optimize my Meta ads performance",
-    color: "from-purple-500 to-violet-600"
+    title: "Monitor Performance",
+    prompt: "Take me to the dashboard to optimize my Meta ads performance",
+    color: "from-purple-500 to-violet-600",
+    action: "monitor_performance"
   },
   {
     icon: Target,
-    title: "Targeting Strategy",
-    prompt: "I want to improve my audience targeting strategy",
-    color: "from-yellow-500 to-amber-600"
+    title: "Spy on Competition",
+    prompt: "Analyze my competitors' advertising strategies",
+    color: "from-yellow-500 to-amber-600",
+    disabled: true,
+    comingSoon: true
   },
   {
-    icon: Image,
-    title: "Upload Creative",
-    prompt: "I want to upload an image for my ad creative",
-    color: "from-indigo-500 to-violet-600"
+    icon: Edit,
+    title: "Generate Ads",
+    prompt: "Generate ad creatives and copy automatically",
+    color: "from-blue-500 to-cyan-600", 
+    disabled: true,
+    comingSoon: true
   },
 ];
 
@@ -326,11 +326,18 @@ const ZuckerBot = () => {
     }
   };
 
-  const handlePredefinedPrompt = (prompt: string) => {
-    if (prompt.includes("upload an image")) {
-      fileInputRef.current?.click();
-    } else {
+  const handlePredefinedPrompt = (prompt: any) => {
+    if (typeof prompt === 'string') {
       sendMessage(prompt);
+    } else {
+      // Handle action-based prompts
+      if (prompt.action === 'create_campaign') {
+        sendMessage(prompt.prompt);
+      } else if (prompt.action === 'monitor_performance') {
+        navigate('/dashboard');
+      } else {
+        sendMessage(prompt.prompt);
+      }
     }
   };
 
@@ -404,19 +411,29 @@ const ZuckerBot = () => {
               {PREDEFINED_PROMPTS.map((prompt, index) => {
                 const IconComponent = prompt.icon;
                 return (
-                  <Button
-                    key={index}
-                    variant="outline"
-                    size="sm"
-                    className="h-auto px-3 py-2 flex items-center space-x-2 hover:shadow-md transition-all duration-200 border-border/50 hover:border-primary/30"
-                    onClick={() => handlePredefinedPrompt(prompt.prompt)}
-                    disabled={isLoading}
-                  >
-                    <div className={`w-5 h-5 rounded bg-gradient-to-r ${prompt.color} flex items-center justify-center`}>
-                      <IconComponent className="h-3 w-3 text-white" />
-                    </div>
-                    <span className="font-medium text-sm">{prompt.title}</span>
-                  </Button>
+                  <div key={index} className="relative">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`h-auto px-3 py-2 flex items-center space-x-2 transition-all duration-200 border-border/50 ${
+                        prompt.disabled 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'hover:shadow-md hover:border-primary/30'
+                      }`}
+                      onClick={() => handlePredefinedPrompt(prompt)}
+                      disabled={isLoading || prompt.disabled}
+                    >
+                      <div className={`w-5 h-5 rounded bg-gradient-to-r ${prompt.color} flex items-center justify-center`}>
+                        <IconComponent className="h-3 w-3 text-white" />
+                      </div>
+                      <span className="font-medium text-sm">{prompt.title}</span>
+                    </Button>
+                    {prompt.comingSoon && (
+                      <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs px-1 py-0.5 rounded-full">
+                        Soon
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
