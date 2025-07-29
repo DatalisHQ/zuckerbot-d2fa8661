@@ -95,6 +95,16 @@ const Dashboard = () => {
     }
   };
 
+  const getActualStatus = (currentStep: number, pipelineStatus: string) => {
+    if (currentStep >= 5 && pipelineStatus === 'completed') {
+      return 'completed';
+    }
+    if (currentStep < 5) {
+      return `in progress: Step ${currentStep}/5`;
+    }
+    return pipelineStatus;
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
@@ -378,7 +388,11 @@ const Dashboard = () => {
                     <h4 className="text-lg font-medium mb-3 text-purple-600">Pipeline Campaigns</h4>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                       {campaigns.map((campaign) => (
-                        <Card key={campaign.id} className="cursor-pointer hover:shadow-lg transition-all duration-200">
+                        <Card 
+                          key={campaign.id} 
+                          className="cursor-pointer hover:shadow-lg transition-all duration-200"
+                          onClick={() => navigate(`/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`)}
+                        >
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">
                               <div className="flex-1 min-w-0">
@@ -390,8 +404,8 @@ const Dashboard = () => {
                                   {formatDate(campaign.updated_at)}
                                 </CardDescription>
                               </div>
-                              <Badge variant={getStatusColor(campaign.pipeline_status)}>
-                                {campaign.pipeline_status}
+                              <Badge variant={getStatusColor(getActualStatus(campaign.current_step, campaign.pipeline_status))}>
+                                {getActualStatus(campaign.current_step, campaign.pipeline_status)}
                               </Badge>
                             </div>
                           </CardHeader>
@@ -401,6 +415,9 @@ const Dashboard = () => {
                               <div className="text-xs text-muted-foreground">
                                 Updated {formatDate(campaign.updated_at)}
                               </div>
+                            </div>
+                            <div className="text-xs text-blue-600 mt-2">
+                              Click to continue from step {campaign.current_step}
                             </div>
                           </CardContent>
                         </Card>

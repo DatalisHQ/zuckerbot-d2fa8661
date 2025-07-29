@@ -93,14 +93,15 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
       // Check profile for Facebook connection status
       const { data: profile } = await supabase
         .from('profiles')
-        .select('facebook_connected, facebook_access_token')
+        .select('facebook_connected, facebook_access_token, facebook_business_id')
         .eq('user_id', user.id)
         .single();
       
       const facebookConnected = profile?.facebook_connected || false;
-      setIsConnected(facebookConnected);
+      const hasValidToken = !!(profile?.facebook_access_token && profile?.facebook_business_id);
+      setIsConnected(facebookConnected && hasValidToken);
       
-      if (facebookConnected) {
+      if (facebookConnected && hasValidToken) {
         await loadAdMetrics();
       }
     } catch (error) {
@@ -150,8 +151,21 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // First sync the latest Facebook Ads data
-      await supabase.functions.invoke('sync-facebook-ads');
+      // Check if user has proper Facebook credentials before syncing
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('facebook_access_token, facebook_business_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profile?.facebook_access_token && profile?.facebook_business_id) {
+        // First sync the latest Facebook Ads data
+        const { error: syncError } = await supabase.functions.invoke('sync-facebook-ads');
+        if (syncError) {
+          console.error('Sync error:', syncError);
+          // Continue to try loading existing data even if sync fails
+        }
+      }
       
       // Then fetch the synced data from our database
       let campaignsQuery = supabase
