@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
@@ -17,6 +18,7 @@ import Files from "./pages/Files";
 import Profile from "./pages/Profile";
 import ConversationLayout from "./pages/ConversationLayout";
 import AdPerformance from "./pages/AdPerformance";
+import { CompetitorFlow } from "./pages/CompetitorFlow";
 import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
 import FAQ from "./pages/FAQ";
@@ -30,9 +32,12 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    console.log('[App] Initializing auth state');
+    
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        console.log('[App] Auth state change:', { event, hasSession: !!session, userId: session?.user?.id });
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
@@ -40,7 +45,12 @@ function App() {
     );
 
     // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('[App] Error getting session:', error);
+      } else {
+        console.log('[App] Initial session check:', { hasSession: !!session, userId: session?.user?.id });
+      }
       setSession(session);
       setUser(session?.user ?? null);
       setIsLoading(false);
@@ -58,12 +68,13 @@ function App() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/zuckerbot" />} />
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
@@ -74,15 +85,17 @@ function App() {
               <Route path="/files" element={user ? <ConversationLayout><Files /></ConversationLayout> : <Navigate to="/auth" />} />
               <Route path="/profile" element={user ? <ConversationLayout><Profile /></ConversationLayout> : <Navigate to="/auth" />} />
             <Route path="/ad-performance" element={user ? <AdPerformance /> : <Navigate to="/auth" />} />
+            <Route path="/competitor-flow" element={user ? <CompetitorFlow brandAnalysisId="" brandUrl="" onFlowComplete={() => {}} /> : <Navigate to="/auth" />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
             <Route path="/faq" element={<FAQ />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

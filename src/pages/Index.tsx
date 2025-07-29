@@ -19,46 +19,29 @@ const Index = () => {
   const [demoMessage, setDemoMessage] = useState("");
 
   useEffect(() => {
-    // Set up auth state listener with enhanced validation
+    console.log('[Index] Setting up auth state listener');
+    
+    // Simplified auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_OUT' || !session) {
-          // Handle logout or session loss gracefully
-          setSession(null);
-          setUser(null);
-          setIsLoading(false);
-          return;
-        }
-        
-        // Validate session for other events
-        const { session: validatedSession, user: validatedUser, isValid } = await validateSession();
-        
-        if (isValid) {
-          setSession(validatedSession);
-          setUser(validatedUser);
-        } else {
-          setSession(null);
-          setUser(null);
-        }
+      (event, session) => {
+        console.log('[Index] Auth state change:', { event, hasSession: !!session, userId: session?.user?.id });
+        setSession(session);
+        setUser(session?.user ?? null);
         setIsLoading(false);
       }
     );
 
-    // Check for existing session with enhanced validation
-    const checkInitialSession = async () => {
-      const { session, user, isValid } = await validateSession();
-      
-      if (isValid) {
-        setSession(session);
-        setUser(user);
+    // Simple initial session check
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('[Index] Error getting session:', error);
       } else {
-        setSession(null);
-        setUser(null);
+        console.log('[Index] Initial session check:', { hasSession: !!session, userId: session?.user?.id });
       }
+      setSession(session);
+      setUser(session?.user ?? null);
       setIsLoading(false);
-    };
-
-    checkInitialSession();
+    });
 
     // Check for Facebook connection parameter and store tokens
     const urlParams = new URLSearchParams(window.location.search);
