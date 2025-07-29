@@ -43,10 +43,31 @@ serve(async (req) => {
       );
     }
 
-    // Extract Facebook access token from user metadata
-    const accessToken = user.user_metadata?.provider_token;
+    // Extract Facebook access token from user metadata or session
+    let accessToken = user.user_metadata?.provider_token;
+    
+    // Try alternative locations for the access token
+    if (!accessToken) {
+      accessToken = user.app_metadata?.provider_token;
+    }
+    
+    // Try to get from the current session
+    if (!accessToken) {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      accessToken = session?.provider_token;
+    }
+    
+    // Get token from Facebook identity data
+    if (!accessToken && facebookIdentity.identity_data) {
+      accessToken = facebookIdentity.identity_data.provider_token;
+    }
     
     if (!accessToken) {
+      console.error('Facebook access token not found in any location');
+      console.log('User metadata:', JSON.stringify(user.user_metadata, null, 2));
+      console.log('App metadata:', JSON.stringify(user.app_metadata, null, 2));
+      console.log('Identity data:', JSON.stringify(facebookIdentity.identity_data, null, 2));
+      
       return new Response(
         JSON.stringify({ error: 'Facebook access token not available' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

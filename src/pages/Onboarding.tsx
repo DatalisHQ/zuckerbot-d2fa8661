@@ -53,6 +53,23 @@ const Onboarding = () => {
       return;
     }
 
+    // Check if we're on step 2 but still need to complete step 1 (Facebook connection validation)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('facebook_connected, facebook_access_token')
+      .eq('user_id', (await supabase.auth.getSession()).data.session?.user.id)
+      .single();
+
+    if (profile?.facebook_connected && !profile?.facebook_access_token) {
+      toast({
+        title: "Facebook Connection Incomplete",
+        description: "Please reconnect your Facebook account to complete setup.",
+        variant: "destructive",
+      });
+      setCurrentStep(1);
+      return;
+    }
+
     setIsLoading(true);
     setIsAnalyzing(true);
 
@@ -220,15 +237,19 @@ const Onboarding = () => {
       // Store Facebook tokens after successful OAuth
       const storeFacebookTokens = async () => {
         try {
+          setIsLoading(true);
           const { data, error } = await supabase.functions.invoke('facebook-oauth-callback');
           
           if (error) {
             console.error('Error storing Facebook tokens:', error);
             toast({
-              title: "Facebook Connection Warning",
-              description: "Connected to Facebook but couldn't store access tokens. Please try reconnecting if you have issues.",
+              title: "Couldn't Store Access Tokens",
+              description: "Connected to Facebook but couldn't store access tokens. This will prevent Facebook features from working properly.",
               variant: "destructive",
             });
+            // Don't allow progression if token storage fails
+            setCurrentStep(1);
+            return false;
           } else {
             console.log('Facebook tokens stored successfully:', data);
             
@@ -236,23 +257,41 @@ const Onboarding = () => {
             try {
               await supabase.functions.invoke('sync-facebook-ads');
               toast({
-                title: "Facebook Ads Synced",
-                description: "Your ad performance data has been imported.",
+                title: "Facebook Connected & Synced",
+                description: "Your Facebook account is connected and ad data has been imported.",
               });
             } catch (syncError) {
               console.error("Facebook sync failed:", syncError);
+              // Don't fail for sync issues, just log them
             }
+            return true;
           }
         } catch (error) {
           console.error('Error in Facebook callback:', error);
           toast({
-            title: "Facebook Connection Warning", 
-            description: "Connected to Facebook but couldn't store access tokens. Please try reconnecting if you have issues.",
+            title: "Couldn't Store Access Tokens", 
+            description: "Connected to Facebook but couldn't store access tokens. This will prevent Facebook features from working properly.",
+            variant: "destructive",
+          });
+          // Don't allow progression if token storage fails
+          setCurrentStep(1);
+          return false;
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      // Only proceed to step 2 if token storage was successful
+      storeFacebookTokens().then((success) => {
+        if (!success) {
+          // Stay on step 1 and show retry option
+          toast({
+            title: "Facebook Connection Incomplete",
+            description: "Please try connecting to Facebook again or skip this step.",
             variant: "destructive",
           });
         }
-      };
-      storeFacebookTokens();
+      });
     }
   }, [toast]);
 
