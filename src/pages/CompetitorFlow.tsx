@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button } from "@/components/ui/button";
 import { CompetitorInput } from '@/components/CompetitorInput';
 import { CompetitorInsights } from '@/components/CompetitorInsights';
 import { RawAssetCollector } from '@/components/RawAssetCollector';
@@ -186,13 +187,23 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
           </div>
           <div className="max-w-4xl mx-auto">
             <RawAssetCollector onAssetsChange={handleAssetsSelected} />
-            <div className="flex justify-center mt-6">
-              <button 
+            <div className="flex justify-center gap-4 mt-6">
+              <Button 
                 onClick={handleAssetsComplete}
-                className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+                className="px-6 py-2"
               >
                 Continue to Transform Assets
-              </button>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setRawAssets([]);
+                  handleAssetsComplete();
+                }}
+                className="px-6 py-2"
+              >
+                Skip This Step
+              </Button>
             </div>
           </div>
         </div>
@@ -213,14 +224,24 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
               competitorProfiles={competitorProfiles}
               onTransformComplete={handleTransformComplete}
             />
-            <div className="flex justify-center mt-6">
-              <button 
+            <div className="flex justify-center gap-4 mt-6">
+              <Button 
                 onClick={handleTransformFinished}
                 disabled={transformedAssets.length === 0}
-                className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2"
               >
                 Continue to Campaign Settings
-              </button>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setTransformedAssets([]);
+                  handleTransformFinished();
+                }}
+                className="px-6 py-2"
+              >
+                Skip This Step
+              </Button>
             </div>
           </div>
         </div>

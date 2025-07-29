@@ -11,6 +11,7 @@ import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import ZuckerBot from "./pages/ZuckerBot";
+import CampaignFlow from "./pages/CampaignFlow";
 import Conversations from "./pages/Conversations";
 import Files from "./pages/Files";
 import Profile from "./pages/Profile";
@@ -67,6 +68,7 @@ function App() {
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
               <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
               <Route path="/zuckerbot" element={user ? <ZuckerBot /> : <Navigate to="/auth" />} />
+              <Route path="/campaign-flow" element={user ? <CampaignFlow /> : <Navigate to="/auth" />} />
               <Route path="/conversations" element={user ? <ConversationLayout><Conversations /></ConversationLayout> : <Navigate to="/auth" />} />
               <Route path="/files" element={user ? <ConversationLayout><Files /></ConversationLayout> : <Navigate to="/auth" />} />
               <Route path="/profile" element={user ? <ConversationLayout><Profile /></ConversationLayout> : <Navigate to="/auth" />} />

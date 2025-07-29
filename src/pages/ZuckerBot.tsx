@@ -105,7 +105,7 @@ const ZuckerBot = () => {
 
     if (prompt.action === 'create_campaign') {
       // Navigate to campaign creation flow
-      navigate("/conversations");
+      navigate("/campaign-flow");
     } else if (prompt.action === 'monitor_performance') {
       // Navigate to dashboard
       navigate("/dashboard");
