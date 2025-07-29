@@ -133,13 +133,13 @@ export const AuthPage = () => {
     setIsLoading(true);
     
     try {
-      const redirectUrl = `${window.location.origin}/`;
+      const redirectUrl = `${window.location.origin}/?facebook=connected`;
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
           redirectTo: redirectUrl,
-          scopes: 'ads_read,pages_read_engagement,pages_show_list,business_management'
+          scopes: 'ads_management,ads_read,business_management,pages_read_engagement'
         }
       });
 

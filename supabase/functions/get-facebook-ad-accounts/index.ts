@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,13 +20,41 @@ serve(async (req) => {
   }
 
   try {
-    const graphApiToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
-    if (!graphApiToken) {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: { Authorization: req.headers.get('Authorization')! },
+        },
+      }
+    );
+
+    // Get the authenticated user
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+    
+    if (userError || !user) {
       return new Response(
-        JSON.stringify({ error: 'Facebook access token not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'User not authenticated' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Get user's Facebook access token from their profile
+    const { data: profile, error: profileError } = await supabaseClient
+      .from('profiles')
+      .select('facebook_access_token')
+      .eq('user_id', user.id)
+      .single();
+
+    if (profileError || !profile?.facebook_access_token) {
+      return new Response(
+        JSON.stringify({ error: 'Facebook access token not found. Please reconnect your Facebook account.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const graphApiToken = profile.facebook_access_token;
 
     console.log('Fetching Facebook ad accounts...');
 

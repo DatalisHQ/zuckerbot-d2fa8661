@@ -217,28 +217,42 @@ const Onboarding = () => {
         description: "Your Facebook Business account has been connected successfully.",
       });
       
-      // Update profile with Facebook connection status and sync ads data
-      const updateFacebookStatus = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await supabase
-            .from('profiles')
-            .update({ facebook_connected: true })
-            .eq('user_id', session.user.id);
+      // Store Facebook tokens after successful OAuth
+      const storeFacebookTokens = async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke('facebook-oauth-callback');
           
-          // Immediately sync Facebook Ads data
-          try {
-            await supabase.functions.invoke('sync-facebook-ads');
+          if (error) {
+            console.error('Error storing Facebook tokens:', error);
             toast({
-              title: "Facebook Ads Synced",
-              description: "Your ad performance data has been imported.",
+              title: "Facebook Connection Warning",
+              description: "Connected to Facebook but couldn't store access tokens. Please try reconnecting if you have issues.",
+              variant: "destructive",
             });
-          } catch (syncError) {
-            console.error("Facebook sync failed:", syncError);
+          } else {
+            console.log('Facebook tokens stored successfully:', data);
+            
+            // Immediately sync Facebook Ads data after storing tokens
+            try {
+              await supabase.functions.invoke('sync-facebook-ads');
+              toast({
+                title: "Facebook Ads Synced",
+                description: "Your ad performance data has been imported.",
+              });
+            } catch (syncError) {
+              console.error("Facebook sync failed:", syncError);
+            }
           }
+        } catch (error) {
+          console.error('Error in Facebook callback:', error);
+          toast({
+            title: "Facebook Connection Warning", 
+            description: "Connected to Facebook but couldn't store access tokens. Please try reconnecting if you have issues.",
+            variant: "destructive",
+          });
         }
       };
-      updateFacebookStatus();
+      storeFacebookTokens();
     }
   }, [toast]);
 

@@ -103,6 +103,9 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
       
       if (facebookConnected && hasValidToken) {
         await loadAdMetrics();
+      } else if (facebookConnected && !hasValidToken) {
+        // User is connected but tokens are missing - this shouldn't happen with new auth flow
+        console.warn('Facebook connected but tokens missing - may need to reconnect');
       }
     } catch (error) {
       console.error('Error checking Facebook connection:', error);

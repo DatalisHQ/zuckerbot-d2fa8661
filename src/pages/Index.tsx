@@ -32,8 +32,47 @@ const Index = () => {
       setIsLoading(false);
     });
 
+    // Check for Facebook connection parameter and store tokens
+    const urlParams = new URLSearchParams(window.location.search);
+    const facebookConnected = urlParams.get('facebook');
+    
+    if (facebookConnected === 'connected') {
+      // Store Facebook tokens after successful OAuth
+      const storeFacebookTokens = async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke('facebook-oauth-callback');
+          
+          if (error) {
+            console.error('Error storing Facebook tokens:', error);
+            toast({
+              title: "Facebook Connection Warning",
+              description: "Connected to Facebook but couldn't store access tokens. You may need to reconnect.",
+              variant: "destructive",
+            });
+          } else {
+            console.log('Facebook tokens stored successfully:', data);
+            toast({
+              title: "Facebook Connected!",
+              description: "Your Facebook account has been connected successfully.",
+            });
+          }
+        } catch (error) {
+          console.error('Error in Facebook callback:', error);
+        }
+      };
+      
+      // Only store tokens if user is authenticated
+      if (session?.user) {
+        storeFacebookTokens();
+      }
+      
+      // Clean up URL parameters
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+
     return () => subscription.unsubscribe();
-  }, []);
+  }, [toast]);
 
   const handleDemoSubmit = () => {
     if (!demoInput.trim()) return;
