@@ -11,7 +11,6 @@ import { Loader2, Bot, Sparkles, Facebook, Globe, Building, Target, LogOut } fro
 import { useEnhancedAuth, validateSession } from "@/utils/auth";
 
 const Onboarding = () => {
-  const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [businessName, setBusinessName] = useState("");
   const [businessUrl, setBusinessUrl] = useState("");
@@ -19,8 +18,7 @@ const Onboarding = () => {
   const [targetAudience, setTargetAudience] = useState("");
   const [products, setProducts] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [facebookCallbackProcessed, setFacebookCallbackProcessed] = useState(false);
-  const [showContinueButton, setShowContinueButton] = useState(false);
+  const [facebookConnected, setFacebookConnected] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { logout } = useEnhancedAuth();
@@ -62,23 +60,6 @@ const Onboarding = () => {
         description: "Please fill in your business name and website URL.",
         variant: "destructive",
       });
-      return;
-    }
-
-    // Check if we're on step 2 but still need to complete step 1 (Facebook connection validation)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('facebook_connected, facebook_access_token')
-      .eq('user_id', (await supabase.auth.getSession()).data.session?.user.id)
-      .single();
-
-    if (profile?.facebook_connected && !profile?.facebook_access_token) {
-      toast({
-        title: "Facebook Connection Incomplete",
-        description: "Please reconnect your Facebook account to complete setup.",
-        variant: "destructive",
-      });
-      setCurrentStep(1);
       return;
     }
 
@@ -192,7 +173,7 @@ const Onboarding = () => {
         provider: 'facebook',
         options: {
           scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
-          redirectTo: `${window.location.origin}/onboarding?step=2&facebook=connected`
+          redirectTo: `${window.location.origin}/onboarding?facebook=connected`
         }
       });
 
@@ -200,7 +181,7 @@ const Onboarding = () => {
         console.error('Facebook OAuth error:', error);
         toast({
           title: "Facebook Connection Failed",
-          description: error.message || "Could not connect to Facebook. Please try again or skip for now.",
+          description: error.message || "Could not connect to Facebook. Please try again later.",
           variant: "destructive",
         });
       }
@@ -208,16 +189,12 @@ const Onboarding = () => {
       console.error('Facebook connection error:', error);
       toast({
         title: "Facebook Connection Error",
-        description: "There was an error connecting to Facebook. You can skip this step for now.",
+        description: "There was an error connecting to Facebook. You can continue without it.",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const skipFacebook = () => {
-    setCurrentStep(2);
   };
 
   const handleSignOut = () => {
@@ -227,11 +204,10 @@ const Onboarding = () => {
   // Check for Facebook connection status on component mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const step = urlParams.get('step');
-    const facebookConnected = urlParams.get('facebook');
+    const facebookParam = urlParams.get('facebook');
     
-    if (step === '2' && facebookConnected === 'connected' && !facebookCallbackProcessed) {
-      // Store Facebook tokens after successful OAuth but DON'T auto-advance to step 2
+    if (facebookParam === 'connected') {
+      // Store Facebook tokens after successful OAuth
       const storeFacebookTokens = async () => {
         try {
           setIsLoading(true);
@@ -241,12 +217,9 @@ const Onboarding = () => {
             console.error('Error storing Facebook tokens:', error);
             toast({
               title: "Facebook Connection Issue",
-              description: "There was an issue with the Facebook connection. You can retry or continue to Step 2.",
+              description: "There was an issue with the Facebook connection. You can retry later.",
               variant: "destructive",
             });
-            setFacebookCallbackProcessed(true);
-            setShowContinueButton(true);
-            return false;
           } else {
             console.log('Facebook tokens stored successfully:', data);
             
@@ -254,44 +227,37 @@ const Onboarding = () => {
             if (data.incomplete) {
               toast({
                 title: "Facebook Connected (Incomplete)",
-                description: "Facebook identity linked but access token needs to be refreshed. You can continue to Step 2.",
+                description: "Facebook identity linked but access token needs to be refreshed.",
                 variant: "destructive",
               });
-              setFacebookCallbackProcessed(true);
-              setShowContinueButton(true);
-              return false;
+              setFacebookConnected(false);
+            } else {
+              // Immediately sync Facebook Ads data after storing tokens
+              try {
+                await supabase.functions.invoke('sync-facebook-ads');
+                toast({
+                  title: "Facebook Connected & Synced",
+                  description: "Your Facebook account is connected and ad data has been imported.",
+                });
+                setFacebookConnected(true);
+              } catch (syncError) {
+                console.error("Facebook sync failed:", syncError);
+                // Don't fail for sync issues, just log them
+                toast({
+                  title: "Facebook Connected",
+                  description: "Your Facebook account is connected.",
+                });
+                setFacebookConnected(true);
+              }
             }
-            
-            // Immediately sync Facebook Ads data after storing tokens
-            try {
-              await supabase.functions.invoke('sync-facebook-ads');
-              toast({
-                title: "Facebook Connected & Synced",
-                description: "Your Facebook account is connected and ad data has been imported. You can continue to Step 2.",
-              });
-            } catch (syncError) {
-              console.error("Facebook sync failed:", syncError);
-              // Don't fail for sync issues, just log them
-              toast({
-                title: "Facebook Connected",
-                description: "Your Facebook account is connected. You can continue to Step 2.",
-              });
-            }
-            
-            setFacebookCallbackProcessed(true);
-            setShowContinueButton(true);
-            return true;
           }
         } catch (error) {
           console.error('Error in Facebook callback:', error);
           toast({
             title: "Facebook Connection Error", 
-            description: "There was an error processing the Facebook connection. You can continue to Step 2.",
+            description: "There was an error processing the Facebook connection.",
             variant: "destructive",
           });
-          setFacebookCallbackProcessed(true);
-          setShowContinueButton(true);
-          return false;
         } finally {
           setIsLoading(false);
           // Clear URL parameters after processing
@@ -299,15 +265,9 @@ const Onboarding = () => {
         }
       };
       
-      // Process Facebook tokens without auto-advancing
       storeFacebookTokens();
     }
-  }, [toast, facebookCallbackProcessed]);
-
-  const handleContinueToStep2 = () => {
-    setCurrentStep(2);
-    setShowContinueButton(false);
-  };
+  }, [toast]);
 
   if (isAnalyzing) {
     return (
@@ -381,123 +341,118 @@ const Onboarding = () => {
         <Card className="shadow-lg border-0 bg-card/50 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center justify-center space-x-2">
-              <span>Step {currentStep} of 2</span>
+              <span>Complete Your Setup</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {currentStep === 1 && (
-              <div className="space-y-6">
-                <div className="text-center">
-                  <Facebook className="h-12 w-12 text-blue-600 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold mb-2">Connect Your Facebook Business Account</h3>
-                  <p className="text-muted-foreground mb-6">
-                    Connect your Facebook Business Manager to pull insights, past campaigns, and audience data
-                  </p>
-                  
-                  {!showContinueButton && (
-                    <>
-                      <Button onClick={connectFacebook} className="w-full" size="lg" disabled={isLoading}>
-                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        <Facebook className="mr-2 h-4 w-4" />
-                        Connect Facebook Business Account
-                      </Button>
-                      <Button variant="outline" onClick={() => setCurrentStep(2)} className="w-full mt-3">
-                        Skip for now
-                      </Button>
-                    </>
-                  )}
-                  
-                  {showContinueButton && (
-                    <div className="space-y-3">
-                      <p className="text-sm text-muted-foreground">
-                        Facebook connection processed. You can now continue to the next step.
-                      </p>
-                      <Button onClick={handleContinueToStep2} className="w-full" size="lg">
-                        Continue to Step 2
-                      </Button>
-                      <Button variant="outline" onClick={connectFacebook} className="w-full" disabled={isLoading}>
-                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Retry Facebook Connection
-                      </Button>
+          <CardContent className="space-y-8">
+            {/* Facebook Connection Section */}
+            <div className="space-y-6">
+              <div className="text-center">
+                <Facebook className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold mb-2">Connect Your Facebook Business Account</h3>
+                <p className="text-muted-foreground mb-6">
+                  Connect your Facebook Business Manager to pull insights, past campaigns, and audience data
+                </p>
+                
+                {facebookConnected ? (
+                  <div className="flex items-center justify-center space-x-2 text-green-600 mb-4">
+                    <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center">
+                      <span className="text-xs">✓</span>
                     </div>
-                  )}
+                    <span className="font-medium">Facebook Connected</span>
+                  </div>
+                ) : (
+                  <Button onClick={connectFacebook} className="w-full" size="lg" disabled={isLoading}>
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <Facebook className="mr-2 h-4 w-4" />
+                    Connect Facebook Business Account
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Business Information</span>
+              </div>
+            </div>
+
+            {/* Business Information Section */}
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <Building className="h-12 w-12 text-primary mx-auto mb-4" />
+                <h3 className="text-xl font-semibold mb-2">Tell Us About Your Business</h3>
+                <p className="text-muted-foreground">
+                  This helps ZuckerBot understand your brand and create better campaigns
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="businessName">Business Name *</Label>
+                  <Input
+                    id="businessName"
+                    placeholder="Your Business Name"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="businessUrl">Website URL *</Label>
+                  <Input
+                    id="businessUrl"
+                    placeholder="https://yourbusiness.com"
+                    value={businessUrl}
+                    onChange={(e) => setBusinessUrl(e.target.value)}
+                  />
                 </div>
               </div>
-            )}
 
-            {currentStep === 2 && (
-              <div className="space-y-6">
-                <div className="text-center mb-6">
-                  <Building className="h-12 w-12 text-primary mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold mb-2">Tell Us About Your Business</h3>
-                  <p className="text-muted-foreground">
-                    This helps ZuckerBot understand your brand and create better campaigns
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="businessName">Business Name *</Label>
-                    <Input
-                      id="businessName"
-                      placeholder="Your Business Name"
-                      value={businessName}
-                      onChange={(e) => setBusinessName(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="businessUrl">Website URL *</Label>
-                    <Input
-                      id="businessUrl"
-                      placeholder="https://yourbusiness.com"
-                      value={businessUrl}
-                      onChange={(e) => setBusinessUrl(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="businessDescription">Business Description</Label>
-                  <Textarea
-                    id="businessDescription"
-                    placeholder="Describe what your business does, your industry, and what makes you unique..."
-                    value={businessDescription}
-                    onChange={(e) => setBusinessDescription(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="targetAudience">Target Audience</Label>
-                  <Input
-                    id="targetAudience"
-                    placeholder="e.g., Small business owners, Young professionals, Parents..."
-                    value={targetAudience}
-                    onChange={(e) => setTargetAudience(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="products">Main Products/Services</Label>
-                  <Input
-                    id="products"
-                    placeholder="e.g., Software subscriptions, Handmade jewelry, Consulting services..."
-                    value={products}
-                    onChange={(e) => setProducts(e.target.value)}
-                  />
-                </div>
-
-                <Button 
-                  onClick={handleBusinessSetup} 
-                  className="w-full" 
-                  size="lg"
-                  disabled={isLoading}
-                >
-                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Create My ZuckerBot Assistant
-                </Button>
+              <div className="space-y-2">
+                <Label htmlFor="businessDescription">Business Description</Label>
+                <Textarea
+                  id="businessDescription"
+                  placeholder="Describe what your business does, your industry, and what makes you unique..."
+                  value={businessDescription}
+                  onChange={(e) => setBusinessDescription(e.target.value)}
+                  rows={3}
+                />
               </div>
-            )}
+
+              <div className="space-y-2">
+                <Label htmlFor="targetAudience">Target Audience</Label>
+                <Input
+                  id="targetAudience"
+                  placeholder="e.g., Small business owners, Young professionals, Parents..."
+                  value={targetAudience}
+                  onChange={(e) => setTargetAudience(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="products">Main Products/Services</Label>
+                <Input
+                  id="products"
+                  placeholder="e.g., Software subscriptions, Handmade jewelry, Consulting services..."
+                  value={products}
+                  onChange={(e) => setProducts(e.target.value)}
+                />
+              </div>
+
+              <Button 
+                onClick={handleBusinessSetup} 
+                className="w-full" 
+                size="lg"
+                disabled={isLoading}
+              >
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create My ZuckerBot Assistant
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
