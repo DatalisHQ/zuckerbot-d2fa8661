@@ -5,6 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Calendar, TrendingUp, AlertCircle, PlayCircle, PauseCircle, MoreVertical, Play, Pause, Edit, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
 import { FacebookAdsPerformance } from "@/components/FacebookAdsPerformance";
@@ -42,6 +53,7 @@ const Dashboard = () => {
   const [facebookCampaigns, setFacebookCampaigns] = useState<FacebookCampaign[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<FacebookCampaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -103,6 +115,48 @@ const Dashboard = () => {
       return `in progress: Step ${currentStep}/5`;
     }
     return pipelineStatus;
+  };
+
+  const deleteCampaign = async (campaignId: string) => {
+    if (!user) return;
+    
+    setDeletingCampaignId(campaignId);
+    
+    try {
+      const { error } = await supabase
+        .from('ad_campaigns')
+        .delete()
+        .eq('id', campaignId)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error deleting campaign:', error);
+        toast({
+          title: "Failed to Delete",
+          description: "Could not delete the campaign. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Remove the campaign from local state
+      setCampaigns(prev => prev.filter(campaign => campaign.id !== campaignId));
+      
+      toast({
+        title: "Campaign Deleted",
+        description: "The campaign has been successfully removed from your pipeline.",
+      });
+      
+    } catch (error) {
+      console.error('Error deleting campaign:', error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while deleting the campaign.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingCampaignId(null);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -387,16 +441,18 @@ const Dashboard = () => {
                   <div>
                     <h4 className="text-lg font-medium mb-3 text-purple-600">Pipeline Campaigns</h4>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                      {campaigns.map((campaign) => (
+                       {campaigns.map((campaign) => (
                         <Card 
                           key={campaign.id} 
-                          className="cursor-pointer hover:shadow-lg transition-all duration-200"
-                          onClick={() => navigate(`/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`)}
+                          className="cursor-pointer hover:shadow-lg transition-all duration-200 group"
                         >
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">
-                              <div className="flex-1 min-w-0">
-                                <CardTitle className="text-base truncate">
+                              <div 
+                                className="flex-1 min-w-0 cursor-pointer"
+                                onClick={() => navigate(`/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`)}
+                              >
+                                <CardTitle className="text-base truncate group-hover:text-blue-600 transition-colors">
                                   {campaign.campaign_name}
                                 </CardTitle>
                                 <CardDescription className="flex items-center gap-2 mt-1">
@@ -404,9 +460,41 @@ const Dashboard = () => {
                                   {formatDate(campaign.updated_at)}
                                 </CardDescription>
                               </div>
-                              <Badge variant={getStatusColor(getActualStatus(campaign.current_step, campaign.pipeline_status))}>
-                                {getActualStatus(campaign.current_step, campaign.pipeline_status)}
-                              </Badge>
+                              <div className="flex items-center gap-2 ml-2">
+                                <Badge variant={getStatusColor(getActualStatus(campaign.current_step, campaign.pipeline_status))}>
+                                  {getActualStatus(campaign.current_step, campaign.pipeline_status)}
+                                </Badge>
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-600"
+                                      disabled={deletingCampaignId === campaign.id}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Are you sure you want to delete "{campaign.campaign_name}"? This action cannot be undone and will permanently remove the campaign from your pipeline.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => deleteCampaign(campaign.id)}
+                                        className="bg-red-600 hover:bg-red-700"
+                                        disabled={deletingCampaignId === campaign.id}
+                                      >
+                                        {deletingCampaignId === campaign.id ? "Deleting..." : "Delete Campaign"}
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </div>
                             </div>
                           </CardHeader>
                           <CardContent className="pt-0">
@@ -416,7 +504,10 @@ const Dashboard = () => {
                                 Updated {formatDate(campaign.updated_at)}
                               </div>
                             </div>
-                            <div className="text-xs text-blue-600 mt-2">
+                            <div 
+                              className="text-xs text-blue-600 mt-2 cursor-pointer hover:text-blue-700"
+                              onClick={() => navigate(`/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`)}
+                            >
                               Click to continue from step {campaign.current_step}
                             </div>
                           </CardContent>
