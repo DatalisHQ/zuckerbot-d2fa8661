@@ -19,6 +19,8 @@ const Onboarding = () => {
   const [products, setProducts] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [facebookConnected, setFacebookConnected] = useState(false);
+  const [isUpdateMode, setIsUpdateMode] = useState(false);
+  const [existingAnalysisId, setExistingAnalysisId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { logout } = useEnhancedAuth();
@@ -33,16 +35,41 @@ const Onboarding = () => {
         return;
       }
 
-      // Check if already completed onboarding
+      // Check URL parameters for update mode
+      const urlParams = new URLSearchParams(window.location.search);
+      const mode = urlParams.get('mode');
+      const isUpdate = mode === 'update';
+      setIsUpdateMode(isUpdate);
+
+      // Check if already completed onboarding (but allow updates)
       try {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('onboarding_completed')
+          .select('onboarding_completed, business_name')
           .eq('user_id', user.id)
           .single();
 
-        if (profile?.onboarding_completed) {
+        if (profile?.onboarding_completed && !isUpdate) {
           navigate("/zuckerbot");
+          return;
+        }
+
+        // If in update mode, load existing brand analysis data
+        if (isUpdate) {
+          const { data: brandAnalysis } = await supabase
+            .from('brand_analysis')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (brandAnalysis) {
+            setExistingAnalysisId(brandAnalysis.id);
+            setBusinessName(brandAnalysis.brand_name || profile?.business_name || '');
+            setBusinessUrl(brandAnalysis.brand_url || '');
+            // Note: Other fields aren't stored in brand_analysis currently
+          } else if (profile?.business_name) {
+            setBusinessName(profile.business_name);
+          }
         }
       } catch (error) {
         console.error("Error checking onboarding status:", error);
@@ -104,25 +131,46 @@ const Onboarding = () => {
 
       console.log("Profile updated successfully:", updatedProfile);
 
-      // Run mandatory brand analysis
-      console.log("Starting mandatory brand analysis...");
-      const { data: brandAnalysisData, error: brandError } = await supabase.functions.invoke('analyze-brand', {
-        body: {
-          brandUrl: businessUrl,
-          userId: session.user.id
+      // Handle brand analysis - update existing or create new
+      if (isUpdateMode && existingAnalysisId) {
+        console.log("Updating existing brand analysis...");
+        const { error: updateError } = await supabase
+          .from('brand_analysis')
+          .update({
+            brand_url: businessUrl,
+            brand_name: businessName,
+            analysis_status: 'completed'
+          })
+          .eq('id', existingAnalysisId)
+          .eq('user_id', session.user.id);
+
+        if (updateError) {
+          console.error("Brand analysis update error:", updateError);
+          throw new Error("Failed to update your brand information. Please try again.");
         }
-      });
+        
+        console.log("Brand analysis updated successfully");
+      } else {
+        // Run mandatory brand analysis for new setups
+        console.log("Starting mandatory brand analysis...");
+        const { data: brandAnalysisData, error: brandError } = await supabase.functions.invoke('analyze-brand', {
+          body: {
+            brandUrl: businessUrl,
+            userId: session.user.id
+          }
+        });
 
-      if (brandError) {
-        console.error("Brand analysis error:", brandError);
-        throw new Error("Failed to analyze your brand. Please try again.");
+        if (brandError) {
+          console.error("Brand analysis error:", brandError);
+          throw new Error("Failed to analyze your brand. Please try again.");
+        }
+
+        if (!brandAnalysisData.success) {
+          throw new Error(brandAnalysisData.error || "Brand analysis failed");
+        }
+
+        console.log("Brand analysis completed:", brandAnalysisData.analysis);
       }
-
-      if (!brandAnalysisData.success) {
-        throw new Error(brandAnalysisData.error || "Brand analysis failed");
-      }
-
-      console.log("Brand analysis completed:", brandAnalysisData.analysis);
 
       // If Facebook is connected, sync ads data immediately
       if (existingProfile?.facebook_connected && existingProfile?.facebook_access_token) {
@@ -136,22 +184,29 @@ const Onboarding = () => {
         }
       }
 
-      // Mark onboarding as completed only after successful brand analysis
-      const { error: completionError } = await supabase
-        .from('profiles')
-        .update({ onboarding_completed: true })
-        .eq('user_id', session.user.id);
+      // Mark onboarding as completed or show update success
+      if (!isUpdateMode) {
+        const { error: completionError } = await supabase
+          .from('profiles')
+          .update({ onboarding_completed: true })
+          .eq('user_id', session.user.id);
 
-      if (completionError) {
-        throw new Error("Failed to complete onboarding");
+        if (completionError) {
+          throw new Error("Failed to complete onboarding");
+        }
+
+        toast({
+          title: "Setup Complete!",
+          description: `Your ZuckerBot assistant has analyzed ${businessName} and is ready to help.`,
+        });
+      } else {
+        toast({
+          title: "Brand Info Updated!",
+          description: `Your brand information for ${businessName} has been updated successfully.`,
+        });
       }
 
-      toast({
-        title: "Setup Complete!",
-        description: `Your ZuckerBot assistant has analyzed ${businessName} and is ready to help.`,
-      });
-
-      console.log("Onboarding completed successfully - navigating to ZuckerBot");
+      console.log(isUpdateMode ? "Brand info updated successfully" : "Onboarding completed successfully - navigating to ZuckerBot");
       navigate("/zuckerbot");
       
     } catch (error: any) {
@@ -450,7 +505,7 @@ const Onboarding = () => {
                 disabled={isLoading}
               >
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create My ZuckerBot Assistant
+                {isUpdateMode ? 'Update Brand Information' : 'Create My ZuckerBot Assistant'}
               </Button>
             </div>
           </CardContent>

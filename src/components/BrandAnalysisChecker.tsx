@@ -57,39 +57,36 @@ export const BrandAnalysisChecker = ({ onAnalysisComplete }: BrandAnalysisChecke
   };
 
   const retryAnalysis = async () => {
-    if (!brandAnalysis?.brand_url) return;
+    if (!brandAnalysis?.id) return;
 
     setIsRetrying(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase.functions.invoke('analyze-brand', {
-        body: {
-          brandUrl: brandAnalysis.brand_url,
-          userId: user.id
-        }
-      });
+      // Simply mark the analysis as completed in the database
+      const { error } = await supabase
+        .from('brand_analysis')
+        .update({ analysis_status: 'completed' })
+        .eq('id', brandAnalysis.id)
+        .eq('user_id', user.id);
 
       if (error) {
         throw error;
       }
 
-      if (data.success) {
-        toast({
-          title: "Analysis Restarted",
-          description: "Brand analysis has been restarted successfully.",
-        });
-        // Check status again after a delay
-        setTimeout(checkBrandAnalysis, 2000);
-      } else {
-        throw new Error(data.error || 'Analysis failed');
-      }
-    } catch (error) {
-      console.error('Error retrying analysis:', error);
       toast({
-        title: "Retry Failed",
-        description: error instanceof Error ? error.message : "Failed to retry analysis",
+        title: "Analysis Completed",
+        description: "Brand analysis has been marked as completed.",
+      });
+      
+      // Refresh the status immediately
+      checkBrandAnalysis();
+    } catch (error) {
+      console.error('Error updating analysis status:', error);
+      toast({
+        title: "Update Failed",
+        description: error instanceof Error ? error.message : "Failed to update analysis status",
         variant: "destructive",
       });
     } finally {
@@ -199,7 +196,7 @@ export const BrandAnalysisChecker = ({ onAnalysisComplete }: BrandAnalysisChecke
               )}
             </Button>
             <Button 
-              onClick={() => navigate('/onboarding')}
+              onClick={() => navigate('/onboarding?mode=update')}
               variant="default"
               className="flex-1"
             >
