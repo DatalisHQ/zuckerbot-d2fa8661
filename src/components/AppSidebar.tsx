@@ -2,8 +2,7 @@ import { useState } from "react";
 import { MessageCircle, History, FileText, User, Plus, Settings, LogOut } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { useEnhancedAuth } from "@/utils/auth";
 
 import {
   Sidebar,
@@ -29,7 +28,7 @@ export function AppSidebar({ user }: { user: any }) {
   const { state } = useSidebar();
   const location = useLocation();
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const { logout } = useEnhancedAuth();
   const currentPath = location.pathname;
 
   const isActive = (path: string) => currentPath === path;
@@ -38,23 +37,8 @@ export function AppSidebar({ user }: { user: any }) {
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
     isActive ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50";
 
-  const handleSignOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      
-      toast({
-        title: "Signed out successfully",
-        description: "You have been logged out of your account.",
-      });
-      navigate("/");
-    } catch (error: any) {
-      toast({
-        title: "Error signing out",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+  const handleSignOut = () => {
+    logout(navigate, false); // Don't show toast in sidebar
   };
 
   return (

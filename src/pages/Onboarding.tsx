@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Bot, Sparkles, Facebook, Globe, Building, Target, LogOut } from "lucide-react";
+import { useEnhancedAuth, validateSession } from "@/utils/auth";
 
 const Onboarding = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -20,24 +21,33 @@ const Onboarding = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { logout } = useEnhancedAuth();
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
+      // Use enhanced session validation
+      const { session, user, isValid } = await validateSession();
+      
+      if (!isValid || !user) {
         navigate("/auth");
         return;
       }
 
       // Check if already completed onboarding
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('onboarding_completed')
-        .eq('user_id', session.user.id)
-        .single();
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('onboarding_completed')
+          .eq('user_id', user.id)
+          .single();
 
-      if (profile?.onboarding_completed) {
-        navigate("/zuckerbot");
+        if (profile?.onboarding_completed) {
+          navigate("/zuckerbot");
+        }
+      } catch (error) {
+        console.error("Error checking onboarding status:", error);
+        // If profile check fails, user might need to re-authenticate
+        navigate("/auth");
       }
     };
     checkUser();
@@ -74,10 +84,11 @@ const Onboarding = () => {
     setIsAnalyzing(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) throw new Error("No user session");
+      // Use enhanced session validation
+      const { session, user, isValid } = await validateSession();
+      if (!isValid || !user) throw new Error("No valid user session");
 
-      console.log("Starting business setup for user:", session.user.id);
+      console.log("Starting business setup for user:", user.id);
 
       // First, verify the user exists in profiles table
       const { data: existingProfile, error: checkError } = await supabase
@@ -207,18 +218,8 @@ const Onboarding = () => {
     setCurrentStep(2);
   };
 
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      navigate("/auth");
-    } catch (error) {
-      console.error("Sign out error:", error);
-      toast({
-        title: "Sign Out Error",
-        description: "There was an error signing out. Please try again.",
-        variant: "destructive",
-      });
-    }
+  const handleSignOut = () => {
+    logout(navigate, false); // Don't show toast on onboarding page
   };
 
   // Check for Facebook connection status on component mount

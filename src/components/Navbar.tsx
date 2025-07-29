@@ -1,28 +1,15 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/components/ui/use-toast";
 import { LogOut, User } from "lucide-react";
 import { SlidingMenu } from "./SlidingMenu";
+import { useEnhancedAuth } from "@/utils/auth";
 
 export const Navbar = () => {
-  const { toast } = useToast();
+  const navigate = useNavigate();
+  const { logout } = useEnhancedAuth();
 
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      toast({
-        title: "Signed out successfully",
-        description: "You have been logged out of your account.",
-      });
-    } catch (error) {
-      console.error('Error signing out:', error);
-      toast({
-        title: "Error signing out",
-        description: "There was a problem signing you out. Please try again.",
-        variant: "destructive",
-      });
-    }
+  const handleSignOut = () => {
+    logout(navigate, true);
   };
 
 

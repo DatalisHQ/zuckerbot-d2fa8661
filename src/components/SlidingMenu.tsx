@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { 
   Sheet, 
@@ -19,30 +19,17 @@ import {
   User,
   LogOut 
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { useEnhancedAuth } from "@/utils/auth";
 
 export const SlidingMenu = () => {
   const [open, setOpen] = useState(false);
   const location = useLocation();
-  const { toast } = useToast();
+  const navigate = useNavigate();
+  const { logout } = useEnhancedAuth();
 
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      setOpen(false);
-      toast({
-        title: "Signed out successfully",
-        description: "You have been logged out of your account.",
-      });
-    } catch (error) {
-      console.error('Error signing out:', error);
-      toast({
-        title: "Error signing out",
-        description: "There was a problem signing you out. Please try again.",
-        variant: "destructive",
-      });
-    }
+  const handleSignOut = () => {
+    setOpen(false);
+    logout(navigate, true);
   };
 
   const navigationItems = [

@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from '@supabase/supabase-js';
 import { LogOut, User as UserIcon, Bot, MessageCircle, Sparkles, Zap, Target, Code, Facebook, Send } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { useEnhancedAuth, validateSession } from "@/utils/auth";
 
 const Index = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { logout } = useEnhancedAuth();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -16,21 +19,46 @@ const Index = () => {
   const [demoMessage, setDemoMessage] = useState("");
 
   useEffect(() => {
-    // Set up auth state listener
+    // Set up auth state listener with enhanced validation
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+      async (event, session) => {
+        if (event === 'SIGNED_OUT' || !session) {
+          // Handle logout or session loss gracefully
+          setSession(null);
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Validate session for other events
+        const { session: validatedSession, user: validatedUser, isValid } = await validateSession();
+        
+        if (isValid) {
+          setSession(validatedSession);
+          setUser(validatedUser);
+        } else {
+          setSession(null);
+          setUser(null);
+        }
         setIsLoading(false);
       }
     );
 
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    // Check for existing session with enhanced validation
+    const checkInitialSession = async () => {
+      const { session, user, isValid } = await validateSession();
+      
+      if (isValid) {
+        setSession(session);
+        setUser(user);
+      } else {
+        setSession(null);
+        setUser(null);
+      }
       setIsLoading(false);
-    });
+    };
+
+    checkInitialSession();
 
     // Check for Facebook connection parameter and store tokens
     const urlParams = new URLSearchParams(window.location.search);
@@ -74,6 +102,48 @@ const Index = () => {
     return () => subscription.unsubscribe();
   }, [toast]);
 
+  const checkProfile = async () => {
+    if (!user) return null;
+    
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('onboarding_completed, business_name')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error) {
+        console.error("Profile check error:", error);
+        return null;
+      }
+
+      return profile;
+    } catch (error) {
+      console.error("Unexpected profile check error:", error);
+      return null;
+    }
+  };
+
+  const handleGetStarted = async () => {
+    if (!user) {
+      navigate("/auth");
+      return;
+    }
+
+    const profile = await checkProfile();
+    
+    if (!profile) {
+      navigate("/auth");
+      return;
+    }
+
+    if (!profile.onboarding_completed) {
+      navigate("/onboarding");
+    } else {
+      navigate("/zuckerbot");
+    }
+  };
+
   const handleDemoSubmit = () => {
     if (!demoInput.trim()) return;
     
@@ -90,22 +160,8 @@ const Index = () => {
     }, 1500);
   };
 
-  const handleSignOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      
-      toast({
-        title: "Signed out successfully",
-        description: "You have been logged out of your account.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error signing out",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+  const handleSignOut = () => {
+    logout(navigate, true);
   };
 
   if (isLoading) {
