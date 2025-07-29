@@ -27,6 +27,8 @@ export const BrandAnalysisChecker = ({ onAnalysisComplete }: BrandAnalysisChecke
         .from('brand_analysis')
         .select('*')
         .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) {

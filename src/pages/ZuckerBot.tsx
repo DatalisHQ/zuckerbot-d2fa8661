@@ -73,12 +73,14 @@ const ZuckerBot = () => {
           return;
         }
 
-        // Load business context
+        // Load business context - get the most recent analysis
         const { data: brandAnalysis, error: brandError } = await supabase
           .from('brand_analysis')
           .select('*')
           .eq('user_id', session.user.id)
-          .single();
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         if (brandAnalysis) {
           setBusinessContext(brandAnalysis);
