@@ -19,6 +19,8 @@ const Onboarding = () => {
   const [targetAudience, setTargetAudience] = useState("");
   const [products, setProducts] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [facebookCallbackProcessed, setFacebookCallbackProcessed] = useState(false);
+  const [showContinueButton, setShowContinueButton] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { logout } = useEnhancedAuth();
@@ -228,8 +230,8 @@ const Onboarding = () => {
     const step = urlParams.get('step');
     const facebookConnected = urlParams.get('facebook');
     
-    if (step === '2' && facebookConnected === 'connected') {
-      // Store Facebook tokens after successful OAuth but don't auto-advance to step 2
+    if (step === '2' && facebookConnected === 'connected' && !facebookCallbackProcessed) {
+      // Store Facebook tokens after successful OAuth but DON'T auto-advance to step 2
       const storeFacebookTokens = async () => {
         try {
           setIsLoading(true);
@@ -242,8 +244,8 @@ const Onboarding = () => {
               description: "There was an issue with the Facebook connection. You can retry or continue to Step 2.",
               variant: "destructive",
             });
-            // Allow progression to step 2 even if Facebook fails
-            setCurrentStep(2);
+            setFacebookCallbackProcessed(true);
+            setShowContinueButton(true);
             return false;
           } else {
             console.log('Facebook tokens stored successfully:', data);
@@ -255,8 +257,8 @@ const Onboarding = () => {
                 description: "Facebook identity linked but access token needs to be refreshed. You can continue to Step 2.",
                 variant: "destructive",
               });
-              // Still allow progression to step 2
-              setCurrentStep(2);
+              setFacebookCallbackProcessed(true);
+              setShowContinueButton(true);
               return false;
             }
             
@@ -265,19 +267,19 @@ const Onboarding = () => {
               await supabase.functions.invoke('sync-facebook-ads');
               toast({
                 title: "Facebook Connected & Synced",
-                description: "Your Facebook account is connected and ad data has been imported. Please continue to Step 2.",
+                description: "Your Facebook account is connected and ad data has been imported. You can continue to Step 2.",
               });
             } catch (syncError) {
               console.error("Facebook sync failed:", syncError);
               // Don't fail for sync issues, just log them
               toast({
                 title: "Facebook Connected",
-                description: "Your Facebook account is connected. Please continue to Step 2.",
+                description: "Your Facebook account is connected. You can continue to Step 2.",
               });
             }
             
-            // Advance to step 2 after successful token storage
-            setCurrentStep(2);
+            setFacebookCallbackProcessed(true);
+            setShowContinueButton(true);
             return true;
           }
         } catch (error) {
@@ -287,27 +289,25 @@ const Onboarding = () => {
             description: "There was an error processing the Facebook connection. You can continue to Step 2.",
             variant: "destructive",
           });
-          // Allow progression to step 2 even on error
-          setCurrentStep(2);
+          setFacebookCallbackProcessed(true);
+          setShowContinueButton(true);
           return false;
         } finally {
           setIsLoading(false);
+          // Clear URL parameters after processing
+          window.history.replaceState({}, '', '/onboarding');
         }
       };
       
-      // Process Facebook tokens
-      storeFacebookTokens().then((success) => {
-        if (!success) {
-          // Stay on step 1 and show retry option
-          toast({
-            title: "Facebook Connection Incomplete",
-            description: "Please try connecting to Facebook again or continue to Step 2.",
-            variant: "destructive",
-          });
-        }
-      });
+      // Process Facebook tokens without auto-advancing
+      storeFacebookTokens();
     }
-  }, [toast]);
+  }, [toast, facebookCallbackProcessed]);
+
+  const handleContinueToStep2 = () => {
+    setCurrentStep(2);
+    setShowContinueButton(false);
+  };
 
   if (isAnalyzing) {
     return (
@@ -393,14 +393,34 @@ const Onboarding = () => {
                   <p className="text-muted-foreground mb-6">
                     Connect your Facebook Business Manager to pull insights, past campaigns, and audience data
                   </p>
-                  <Button onClick={connectFacebook} className="w-full" size="lg" disabled={isLoading}>
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    <Facebook className="mr-2 h-4 w-4" />
-                    Connect Facebook Business Account
-                  </Button>
-                  <Button variant="outline" onClick={() => setCurrentStep(2)} className="w-full mt-3">
-                    Skip for now
-                  </Button>
+                  
+                  {!showContinueButton && (
+                    <>
+                      <Button onClick={connectFacebook} className="w-full" size="lg" disabled={isLoading}>
+                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        <Facebook className="mr-2 h-4 w-4" />
+                        Connect Facebook Business Account
+                      </Button>
+                      <Button variant="outline" onClick={() => setCurrentStep(2)} className="w-full mt-3">
+                        Skip for now
+                      </Button>
+                    </>
+                  )}
+                  
+                  {showContinueButton && (
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Facebook connection processed. You can now continue to the next step.
+                      </p>
+                      <Button onClick={handleContinueToStep2} className="w-full" size="lg">
+                        Continue to Step 2
+                      </Button>
+                      <Button variant="outline" onClick={connectFacebook} className="w-full" disabled={isLoading}>
+                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Retry Facebook Connection
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
