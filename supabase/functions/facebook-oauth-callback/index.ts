@@ -62,15 +62,45 @@ serve(async (req) => {
       accessToken = facebookIdentity.identity_data.provider_token;
     }
     
+    // Try to get from provider_refresh_token (sometimes tokens are stored here)
+    if (!accessToken) {
+      accessToken = user.user_metadata?.provider_refresh_token;
+    }
+    
+    // For now, if no token is found, we'll use a placeholder approach
+    // and mark the connection as incomplete but still progress the onboarding
     if (!accessToken) {
       console.error('Facebook access token not found in any location');
       console.log('User metadata:', JSON.stringify(user.user_metadata, null, 2));
       console.log('App metadata:', JSON.stringify(user.app_metadata, null, 2));
       console.log('Identity data:', JSON.stringify(facebookIdentity.identity_data, null, 2));
       
+      // Mark Facebook as connected but without access token
+      // This allows onboarding to continue while flagging the incomplete connection
+      const { error: updateError } = await supabaseClient
+        .from('profiles')
+        .update({
+          facebook_connected: true,
+          facebook_access_token: null, // Explicitly set to null to indicate incomplete connection
+          facebook_business_id: null
+        })
+        .eq('user_id', user.id);
+
+      if (updateError) {
+        console.error('Error updating profile with incomplete connection:', updateError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to update user profile' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
       return new Response(
-        JSON.stringify({ error: 'Facebook access token not available' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          success: true, 
+          message: 'Facebook connected but access token not available - you can retry connecting later',
+          incomplete: true 
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

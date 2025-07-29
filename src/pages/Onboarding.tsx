@@ -238,15 +238,27 @@ const Onboarding = () => {
           if (error) {
             console.error('Error storing Facebook tokens:', error);
             toast({
-              title: "Couldn't Store Access Tokens",
-              description: "Connected to Facebook but couldn't store access tokens. This will prevent Facebook features from working properly.",
+              title: "Facebook Connection Issue",
+              description: "There was an issue with the Facebook connection. You can retry or continue to Step 2.",
               variant: "destructive",
             });
-            // Stay on step 1 for retry
-            setCurrentStep(1);
+            // Allow progression to step 2 even if Facebook fails
+            setCurrentStep(2);
             return false;
           } else {
             console.log('Facebook tokens stored successfully:', data);
+            
+            // Check if connection was incomplete
+            if (data.incomplete) {
+              toast({
+                title: "Facebook Connected (Incomplete)",
+                description: "Facebook identity linked but access token needs to be refreshed. You can continue to Step 2.",
+                variant: "destructive",
+              });
+              // Still allow progression to step 2
+              setCurrentStep(2);
+              return false;
+            }
             
             // Immediately sync Facebook Ads data after storing tokens
             try {
@@ -264,19 +276,19 @@ const Onboarding = () => {
               });
             }
             
-            // Only advance to step 2 after successful token storage
+            // Advance to step 2 after successful token storage
             setCurrentStep(2);
             return true;
           }
         } catch (error) {
           console.error('Error in Facebook callback:', error);
           toast({
-            title: "Couldn't Store Access Tokens", 
-            description: "Connected to Facebook but couldn't store access tokens. This will prevent Facebook features from working properly.",
+            title: "Facebook Connection Error", 
+            description: "There was an error processing the Facebook connection. You can continue to Step 2.",
             variant: "destructive",
           });
-          // Stay on step 1 for retry
-          setCurrentStep(1);
+          // Allow progression to step 2 even on error
+          setCurrentStep(2);
           return false;
         } finally {
           setIsLoading(false);
