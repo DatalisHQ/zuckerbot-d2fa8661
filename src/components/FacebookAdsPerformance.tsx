@@ -64,7 +64,7 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
   const [isConnected, setIsConnected] = useState(false);
   const [selectedTimeFrame, setSelectedTimeFrame] = useState('month');
   const [customDateRange, setCustomDateRange] = useState<{ from: Date | null; to: Date | null }>({ from: null, to: null });
-  const [selectedAdAccount, setSelectedAdAccount] = useState<string>('');
+  const [selectedAdAccount, setSelectedAdAccount] = useState<string>('all');
   
   const { data: adAccounts, isLoading: accountsLoading } = useGetFacebookAdAccounts();
 
@@ -382,7 +382,7 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
                 <SelectValue placeholder="Select Ad Account" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Ad Accounts</SelectItem>
+                <SelectItem value="all">All Ad Accounts</SelectItem>
                 {adAccounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
                     {account.name}
