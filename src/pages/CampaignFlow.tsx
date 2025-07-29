@@ -34,18 +34,27 @@ const CampaignFlow = () => {
           return;
         }
 
-        // Load brand analysis data
+        // Load brand analysis data - check for completed analysis
         const { data: brandAnalysis, error } = await supabase
           .from('brand_analysis')
           .select('*')
           .eq('user_id', session.user.id)
-          .single();
+          .eq('analysis_status', 'completed')
+          .maybeSingle();
 
-        if (brandAnalysis) {
-          setBrandAnalysisId(brandAnalysis.id);
-          setBrandUrl(brandAnalysis.brand_url || '');
+        if (!brandAnalysis) {
+          // No completed brand analysis found, redirect to onboarding or home
+          toast({
+            title: "Brand Analysis Required",
+            description: "Please complete your brand analysis first to start creating campaigns.",
+            variant: "destructive",
+          });
+          navigate("/onboarding");
+          return;
         }
 
+        setBrandAnalysisId(brandAnalysis.id);
+        setBrandUrl(brandAnalysis.brand_url || '');
         setIsLoading(false);
       } catch (error) {
         console.error('Error loading brand context:', error);

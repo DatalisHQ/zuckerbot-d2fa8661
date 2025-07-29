@@ -105,12 +105,25 @@ URL: ${brandUrl}
 
     // Analyze with OpenAI
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    
+    let analysis;
+    
     if (!openaiApiKey) {
-      throw new Error('OpenAI API key not configured');
-    }
-
-    console.log('Starting AI analysis...');
-    const analysisPrompt = `Analyze the following website content and extract key brand information. Return a JSON object with the following structure:
+      console.log('OpenAI API key not configured, using basic analysis');
+      // Extract basic info from URL and scraped content
+      const domain = new URL(brandUrl).hostname.replace('www.', '');
+      const brandName = domain.split('.')[0];
+      
+      analysis = {
+        brandName: brandName.charAt(0).toUpperCase() + brandName.slice(1),
+        businessCategory: "Digital Business",
+        niche: "Online Services",
+        mainProducts: ["Digital Services"],
+        valuePropositions: ["Online business solutions"]
+      };
+    } else {
+      console.log('Starting AI analysis...');
+      const analysisPrompt = `Analyze the following website content and extract key brand information. Return a JSON object with the following structure:
 
 {
   "brandName": "string",
@@ -123,58 +136,59 @@ URL: ${brandUrl}
 Website content:
 ${scrapedContent.slice(0, 8000)}`;
 
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a brand analysis expert. Analyze websites and extract key brand information. Always respond with valid JSON only, no additional text.'
+      try {
+        const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiApiKey}`,
+            'Content-Type': 'application/json',
           },
-          {
-            role: 'user',
-            content: analysisPrompt
-          }
-        ],
-        temperature: 0.3,
-      }),
-    });
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a brand analysis expert. Analyze websites and extract key brand information. Always respond with valid JSON only, no additional text.'
+              },
+              {
+                role: 'user',
+                content: analysisPrompt
+              }
+            ],
+            temperature: 0.3,
+          }),
+        });
 
-    if (!openaiResponse.ok) {
-      throw new Error(`OpenAI API error: ${openaiResponse.statusText}`);
-    }
+        if (!openaiResponse.ok) {
+          throw new Error(`OpenAI API error: ${openaiResponse.statusText}`);
+        }
 
-    const openaiData = await openaiResponse.json();
-    const analysisText = openaiData.choices[0].message.content;
-    
-    let analysis;
-    try {
-      // Clean the response text by removing markdown code blocks if present
-      let cleanedText = analysisText.trim();
-      if (cleanedText.startsWith('```json')) {
-        cleanedText = cleanedText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      } else if (cleanedText.startsWith('```')) {
-        cleanedText = cleanedText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        const openaiData = await openaiResponse.json();
+        const analysisText = openaiData.choices[0].message.content;
+        
+        // Clean the response text by removing markdown code blocks if present
+        let cleanedText = analysisText.trim();
+        if (cleanedText.startsWith('```json')) {
+          cleanedText = cleanedText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (cleanedText.startsWith('```')) {
+          cleanedText = cleanedText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+        
+        analysis = JSON.parse(cleanedText);
+      } catch (aiError) {
+        console.error('OpenAI analysis failed:', aiError);
+        // Fallback to basic analysis
+        const domain = new URL(brandUrl).hostname.replace('www.', '');
+        const brandName = domain.split('.')[0];
+        
+        analysis = {
+          brandName: brandName.charAt(0).toUpperCase() + brandName.slice(1),
+          businessCategory: "Digital Business",
+          niche: "Online Services",
+          mainProducts: ["Digital Services"],
+          valuePropositions: ["Online business solutions"]
+        };
       }
-      
-      analysis = JSON.parse(cleanedText);
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', analysisText);
-      console.error('Parse error details:', parseError);
-      
-      // Fallback analysis if parsing fails
-      analysis = {
-        brandName: "Brand Analysis",
-        businessCategory: "General Business",
-        niche: "To be determined",
-        mainProducts: ["Analysis in progress"],
-        valuePropositions: ["Competitive analysis available"]
-      };
     }
 
     console.log('Analysis completed:', analysis);
