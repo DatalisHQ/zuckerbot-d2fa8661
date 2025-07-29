@@ -76,64 +76,68 @@ const Onboarding = () => {
         throw new Error("Profile not found. Please sign out and sign back in.");
       }
 
-      // Update profile with business info and mark onboarding as completed
+      // Update profile with business info
       const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
         .update({
           business_name: businessName,
-          onboarding_completed: true
         })
         .eq('user_id', session.user.id)
         .select()
         .single();
-
-      console.log("Profile update result:", { updatedProfile, profileError });
 
       if (profileError) {
         console.error("Profile update error:", profileError);
         throw new Error(`Failed to update profile: ${profileError.message}`);
       }
 
-      if (!updatedProfile) {
-        throw new Error("Profile update returned no data");
-      }
-
       console.log("Profile updated successfully:", updatedProfile);
 
-      // Verify the update worked
-      if (!updatedProfile.onboarding_completed) {
-        throw new Error("Onboarding completion flag was not set properly");
-      }
-
-      // Create brand analysis entry for future use
-      const { data: brandData, error: brandError } = await supabase
-        .from('brand_analysis')
-        .insert({
-          user_id: session.user.id,
-          brand_name: businessName,
-          brand_url: businessUrl,
-          business_category: targetAudience || 'General',
-          niche: businessDescription || '',
-          main_products: products ? [products] : null,
-          analysis_status: 'pending'
-        })
-        .select()
-        .single();
+      // Run mandatory brand analysis
+      console.log("Starting mandatory brand analysis...");
+      const { data: brandAnalysisData, error: brandError } = await supabase.functions.invoke('analyze-brand', {
+        body: {
+          brandUrl: businessUrl,
+          userId: session.user.id
+        }
+      });
 
       if (brandError) {
-        console.error("Brand analysis creation error:", brandError);
-        // Don't throw here - this is not critical for onboarding
-        console.log("Continuing without brand analysis entry");
-      } else {
-        console.log("Brand analysis created successfully:", brandData);
+        console.error("Brand analysis error:", brandError);
+        throw new Error("Failed to analyze your brand. Please try again.");
       }
 
-      // Simulate analysis time
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (!brandAnalysisData.success) {
+        throw new Error(brandAnalysisData.error || "Brand analysis failed");
+      }
+
+      console.log("Brand analysis completed:", brandAnalysisData.analysis);
+
+      // If Facebook is connected, sync ads data immediately
+      if (existingProfile?.facebook_connected && existingProfile?.facebook_access_token) {
+        console.log("Syncing Facebook Ads data...");
+        try {
+          await supabase.functions.invoke('sync-facebook-ads');
+          console.log("Facebook Ads data synced successfully");
+        } catch (syncError) {
+          console.error("Facebook sync failed (non-critical):", syncError);
+          // Don't fail onboarding if Facebook sync fails
+        }
+      }
+
+      // Mark onboarding as completed only after successful brand analysis
+      const { error: completionError } = await supabase
+        .from('profiles')
+        .update({ onboarding_completed: true })
+        .eq('user_id', session.user.id);
+
+      if (completionError) {
+        throw new Error("Failed to complete onboarding");
+      }
 
       toast({
-        title: "Welcome aboard!",
-        description: `Your ZuckerBot assistant has learned about ${businessName} and is ready to help.`,
+        title: "Setup Complete!",
+        description: `Your ZuckerBot assistant has analyzed ${businessName} and is ready to help.`,
       });
 
       console.log("Onboarding completed successfully - navigating to ZuckerBot");
@@ -213,7 +217,7 @@ const Onboarding = () => {
         description: "Your Facebook Business account has been connected successfully.",
       });
       
-      // Update profile with Facebook connection status
+      // Update profile with Facebook connection status and sync ads data
       const updateFacebookStatus = async () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
@@ -221,6 +225,17 @@ const Onboarding = () => {
             .from('profiles')
             .update({ facebook_connected: true })
             .eq('user_id', session.user.id);
+          
+          // Immediately sync Facebook Ads data
+          try {
+            await supabase.functions.invoke('sync-facebook-ads');
+            toast({
+              title: "Facebook Ads Synced",
+              description: "Your ad performance data has been imported.",
+            });
+          } catch (syncError) {
+            console.error("Facebook sync failed:", syncError);
+          }
         }
       };
       updateFacebookStatus();

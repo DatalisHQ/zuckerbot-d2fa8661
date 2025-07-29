@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
+import { TimeFrameFilter } from "./TimeFrameFilter";
 
 interface AdMetrics {
   impressions: number;
@@ -41,20 +42,39 @@ export const FacebookAdsPerformance = () => {
   const [insights, setInsights] = useState<AdInsight[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [selectedTimeFrame, setSelectedTimeFrame] = useState('month');
+  const [customDateRange, setCustomDateRange] = useState<{ from: Date | null; to: Date | null }>({ from: null, to: null });
 
   useEffect(() => {
     checkFacebookConnection();
   }, []);
+
+  useEffect(() => {
+    if (isConnected) {
+      loadAdMetrics();
+    }
+  }, [selectedTimeFrame, customDateRange, isConnected]);
+
+  const handleTimeFrameChange = (timeFrame: string, customRange?: { from: Date | null; to: Date | null }) => {
+    setSelectedTimeFrame(timeFrame);
+    if (customRange) {
+      setCustomDateRange(customRange);
+    }
+  };
 
   const checkFacebookConnection = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // For now, check if user has completed OAuth (this would be stored in auth metadata)
-      // In a real implementation, you'd check user metadata or a separate table
-      const facebookConnected = user.user_metadata?.facebook_access_token || false;
+      // Check profile for Facebook connection status
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('facebook_connected, facebook_access_token')
+        .eq('user_id', user.id)
+        .single();
       
+      const facebookConnected = profile?.facebook_connected || false;
       setIsConnected(facebookConnected);
       
       if (facebookConnected) {
@@ -63,6 +83,31 @@ export const FacebookAdsPerformance = () => {
     } catch (error) {
       console.error('Error checking Facebook connection:', error);
     }
+  };
+
+  const getDateRange = () => {
+    if (selectedTimeFrame === 'custom' && customDateRange.from && customDateRange.to) {
+      return {
+        start: customDateRange.from.toISOString().split('T')[0],
+        end: customDateRange.to.toISOString().split('T')[0]
+      };
+    }
+    
+    const timeFrames: Record<string, number> = {
+      'today': 1,
+      'week': 7,
+      'month': 30,
+      'quarter': 90
+    };
+    
+    const days = timeFrames[selectedTimeFrame] || 30;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: new Date().toISOString().split('T')[0]
+    };
   };
 
   const loadAdMetrics = async () => {
@@ -79,12 +124,15 @@ export const FacebookAdsPerformance = () => {
       const { data: campaigns } = await supabase
         .from('facebook_campaigns')
         .select('*')
-        .eq('status', 'ACTIVE');
+        .eq('user_id', user.id);
 
+      const dateRange = getDateRange();
       const { data: recentMetrics } = await supabase
         .from('facebook_ad_metrics')
         .select('*')
-        .gte('date_start', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+        .eq('user_id', user.id)
+        .gte('date_start', dateRange.start)
+        .lte('date_start', dateRange.end)
         .order('date_start', { ascending: false });
 
       if (recentMetrics && recentMetrics.length > 0) {
@@ -105,7 +153,11 @@ export const FacebookAdsPerformance = () => {
           spend: totalSpend,
           reach: totalReach,
           conversions: totalConversions,
-          period: "Last 30 days"
+          period: selectedTimeFrame === 'custom' ? 
+            `${customDateRange.from?.toLocaleDateString()} - ${customDateRange.to?.toLocaleDateString()}` :
+            (['today', 'week', 'month', 'quarter'].find(tf => tf === selectedTimeFrame) ? 
+              ({ 'today': 'Today', 'week': 'Last 7 days', 'month': 'Last 30 days', 'quarter': 'Last 90 days' }[selectedTimeFrame]) : 
+              "Last 30 days")
         };
 
         setMetrics(metrics);
@@ -133,21 +185,21 @@ export const FacebookAdsPerformance = () => {
             value: `${currentWeekCTR.toFixed(2)}%`,
             change: parseFloat(ctrChange.toFixed(1)),
             trend: ctrChange >= 0 ? "up" : "down",
-            description: `Click-through rate ${ctrChange >= 0 ? 'improved' : 'decreased'} vs last week`
+            description: `Click-through rate ${ctrChange >= 0 ? 'improved' : 'decreased'} vs last period`
           },
           {
-            metric: "Active Campaigns", 
+            metric: "Total Campaigns", 
             value: campaigns?.length.toString() || "0",
             change: 0,
             trend: "up",
-            description: "Currently running campaigns"
+            description: "Facebook ad campaigns"
           },
           {
             metric: "Avg Daily Spend",
-            value: `$${(totalSpend / 30).toFixed(2)}`,
+            value: `$${(totalSpend / (selectedTimeFrame === 'today' ? 1 : ({ 'today': 1, 'week': 7, 'month': 30, 'quarter': 90 }[selectedTimeFrame] || 30))).toFixed(2)}`,
             change: 0,
             trend: "up", 
-            description: "Average daily spend over the last 30 days"
+            description: `Average daily spend for selected period`
           }
         ];
 
@@ -274,18 +326,30 @@ export const FacebookAdsPerformance = () => {
             {metrics?.period || "Loading..."}
           </p>
         </div>
-        <Button 
-          onClick={loadAdMetrics} 
-          variant="outline" 
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <RefreshCw className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={loadAdMetrics} 
+            variant="outline" 
+            disabled={isLoading}
+            size="sm"
+          >
+            {isLoading ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Time Frame Filter */}
+      <div className="flex flex-wrap items-center gap-4 p-4 bg-muted/50 rounded-lg">
+        <TimeFrameFilter
+          selectedTimeFrame={selectedTimeFrame}
+          customDateRange={customDateRange}
+          onTimeFrameChange={handleTimeFrameChange}
+        />
       </div>
 
       {/* Key Metrics Grid */}

@@ -112,7 +112,7 @@ const Dashboard = () => {
                 Create New Campaign
               </Button>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <Card 
                 className="cursor-pointer hover:shadow-md transition-shadow opacity-50" 
                 title="Coming Soon"
@@ -144,6 +144,21 @@ const Dashboard = () => {
                 </CardHeader>
                 <CardContent>
                   <Button className="w-full">Get Started</Button>
+                </CardContent>
+              </Card>
+
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/competitor-analysis")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <AlertCircle className="h-5 w-5" />
+                    Brand Analysis
+                  </CardTitle>
+                  <CardDescription>
+                    Analyze your brand and discover competitors
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">Analyze Brand</Button>
                 </CardContent>
               </Card>
             </div>
