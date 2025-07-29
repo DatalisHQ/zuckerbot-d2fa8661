@@ -124,13 +124,13 @@ export const BrandAnalysisChecker = ({ onAnalysisComplete }: BrandAnalysisChecke
 
   if (analysisStatus === 'completed') {
     return (
-      <Card className="border-green-200 bg-green-50">
+      <Card className="border-success/20 bg-success/5">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-green-800">
+          <CardTitle className="flex items-center gap-2 text-success">
             <CheckCircle className="h-5 w-5" />
             Brand Analysis Complete
           </CardTitle>
-          <CardDescription className="text-green-700">
+          <CardDescription className="text-success/80">
             Your brand analysis is ready. You can now proceed with campaign creation.
           </CardDescription>
         </CardHeader>
@@ -138,11 +138,11 @@ export const BrandAnalysisChecker = ({ onAnalysisComplete }: BrandAnalysisChecke
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-sm font-medium text-green-800">Brand Name</p>
+                <p className="text-sm font-medium text-success">Brand Name</p>
                 <Badge variant="outline" className="mt-1">{brandAnalysis?.brand_name}</Badge>
               </div>
               <div>
-                <p className="text-sm font-medium text-green-800">Category</p>
+                <p className="text-sm font-medium text-success">Category</p>
                 <Badge variant="secondary" className="mt-1">{brandAnalysis?.business_category}</Badge>
               </div>
             </div>
@@ -160,13 +160,13 @@ export const BrandAnalysisChecker = ({ onAnalysisComplete }: BrandAnalysisChecke
 
   if (analysisStatus === 'failed' || analysisStatus === 'pending') {
     return (
-      <Card className="border-amber-200 bg-amber-50">
+      <Card className="border-warning/20 bg-warning/5">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-amber-800">
+          <CardTitle className="flex items-center gap-2 text-warning">
             <AlertTriangle className="h-5 w-5" />
             Brand Analysis Required
           </CardTitle>
-          <CardDescription className="text-amber-700">
+          <CardDescription className="text-warning/80">
             {analysisStatus === 'pending' 
               ? 'Your brand analysis is still in progress. This may take a few minutes.'
               : 'Brand analysis failed or is incomplete. Please retry to proceed with campaign creation.'
@@ -175,7 +175,7 @@ export const BrandAnalysisChecker = ({ onAnalysisComplete }: BrandAnalysisChecke
         </CardHeader>
         <CardContent className="space-y-4">
           {brandAnalysis?.brand_url && (
-            <div className="flex items-center gap-2 text-sm text-amber-700">
+            <div className="flex items-center gap-2 text-sm text-warning/80">
               <Globe className="h-4 w-4" />
               {brandAnalysis.brand_url}
             </div>
