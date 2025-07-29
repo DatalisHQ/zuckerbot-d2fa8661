@@ -17,6 +17,7 @@ const TIME_FRAMES: TimeFrame[] = [
   { id: 'week', label: 'Last 7 days', days: 7 },
   { id: 'month', label: 'Last 30 days', days: 30 },
   { id: 'quarter', label: 'Last 90 days', days: 90 },
+  { id: 'all', label: 'All Time', days: 0 },
   { id: 'custom', label: 'Custom Range', days: 0 }
 ];
 
