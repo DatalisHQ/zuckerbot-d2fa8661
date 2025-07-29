@@ -229,13 +229,7 @@ const Onboarding = () => {
     const facebookConnected = urlParams.get('facebook');
     
     if (step === '2' && facebookConnected === 'connected') {
-      setCurrentStep(2);
-      toast({
-        title: "Facebook Connected!",
-        description: "Your Facebook Business account has been connected successfully.",
-      });
-      
-      // Store Facebook tokens after successful OAuth
+      // Store Facebook tokens after successful OAuth but don't auto-advance to step 2
       const storeFacebookTokens = async () => {
         try {
           setIsLoading(true);
@@ -248,7 +242,7 @@ const Onboarding = () => {
               description: "Connected to Facebook but couldn't store access tokens. This will prevent Facebook features from working properly.",
               variant: "destructive",
             });
-            // Don't allow progression if token storage fails
+            // Stay on step 1 for retry
             setCurrentStep(1);
             return false;
           } else {
@@ -259,12 +253,19 @@ const Onboarding = () => {
               await supabase.functions.invoke('sync-facebook-ads');
               toast({
                 title: "Facebook Connected & Synced",
-                description: "Your Facebook account is connected and ad data has been imported.",
+                description: "Your Facebook account is connected and ad data has been imported. Please continue to Step 2.",
               });
             } catch (syncError) {
               console.error("Facebook sync failed:", syncError);
               // Don't fail for sync issues, just log them
+              toast({
+                title: "Facebook Connected",
+                description: "Your Facebook account is connected. Please continue to Step 2.",
+              });
             }
+            
+            // Only advance to step 2 after successful token storage
+            setCurrentStep(2);
             return true;
           }
         } catch (error) {
@@ -274,7 +275,7 @@ const Onboarding = () => {
             description: "Connected to Facebook but couldn't store access tokens. This will prevent Facebook features from working properly.",
             variant: "destructive",
           });
-          // Don't allow progression if token storage fails
+          // Stay on step 1 for retry
           setCurrentStep(1);
           return false;
         } finally {
@@ -282,13 +283,13 @@ const Onboarding = () => {
         }
       };
       
-      // Only proceed to step 2 if token storage was successful
+      // Process Facebook tokens
       storeFacebookTokens().then((success) => {
         if (!success) {
           // Stay on step 1 and show retry option
           toast({
             title: "Facebook Connection Incomplete",
-            description: "Please try connecting to Facebook again or skip this step.",
+            description: "Please try connecting to Facebook again or continue to Step 2.",
             variant: "destructive",
           });
         }
