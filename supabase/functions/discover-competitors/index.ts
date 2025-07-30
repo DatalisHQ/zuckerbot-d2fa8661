@@ -271,7 +271,7 @@ function extractCompetitorsFromText(text: string, brandAnalysis: any) {
 
 // Provide realistic fallback competitors based on the business category
 function getFallbackCompetitors(brandAnalysis: any) {
-  console.log('Using fallback competitors for category:', brandAnalysis.business_category);
+  console.log('Using fallback competitors for brand:', brandAnalysis.brand_name, 'category:', brandAnalysis.business_category, 'niche:', brandAnalysis.niche);
   
   const categoryCompetitors = {
     'ai chatbot': [
@@ -288,30 +288,74 @@ function getFallbackCompetitors(brandAnalysis: any) {
       { name: 'HubSpot', website: 'https://hubspot.com', description: 'Inbound marketing and sales platform' },
       { name: 'Mailchimp', website: 'https://mailchimp.com', description: 'Email marketing and automation' },
       { name: 'ActiveCampaign', website: 'https://activecampaign.com', description: 'Customer experience automation' }
+    ],
+    'saas': [
+      { name: 'Slack', website: 'https://slack.com', description: 'Business communication platform' },
+      { name: 'Zoom', website: 'https://zoom.us', description: 'Video conferencing solution' },
+      { name: 'Dropbox', website: 'https://dropbox.com', description: 'Cloud storage and collaboration' }
+    ],
+    'ecommerce': [
+      { name: 'Shopify', website: 'https://shopify.com', description: 'E-commerce platform' },
+      { name: 'WooCommerce', website: 'https://woocommerce.com', description: 'WordPress e-commerce plugin' },
+      { name: 'BigCommerce', website: 'https://bigcommerce.com', description: 'E-commerce software' }
+    ],
+    'fintech': [
+      { name: 'Stripe', website: 'https://stripe.com', description: 'Online payment processing' },
+      { name: 'Square', website: 'https://squareup.com', description: 'Point of sale and payment solutions' },
+      { name: 'PayPal', website: 'https://paypal.com', description: 'Digital payment platform' }
+    ],
+    'productivity': [
+      { name: 'Notion', website: 'https://notion.so', description: 'All-in-one workspace' },
+      { name: 'Trello', website: 'https://trello.com', description: 'Project management tool' },
+      { name: 'Asana', website: 'https://asana.com', description: 'Team collaboration and project management' }
+    ],
+    'default': [
+      { name: 'Competitor A', website: 'https://example.com', description: 'Industry competitor' },
+      { name: 'Competitor B', website: 'https://example.org', description: 'Market leader' },
+      { name: 'Competitor C', website: 'https://example.net', description: 'Emerging player' }
     ]
   };
 
   // Try to match based on niche or category
   const niche = brandAnalysis.niche?.toLowerCase() || '';
   const category = brandAnalysis.business_category?.toLowerCase() || '';
+  const brandName = brandAnalysis.brand_name?.toLowerCase() || '';
+  
+  console.log('Matching against:', { niche, category, brandName });
   
   let fallbackCompetitors = [];
   
-  if (niche.includes('chatbot') || niche.includes('bot')) {
+  // More comprehensive matching logic
+  if (niche.includes('chatbot') || niche.includes('bot') || category.includes('chatbot') || category.includes('bot')) {
     fallbackCompetitors = categoryCompetitors['ai chatbot'];
-  } else if (niche.includes('facebook') || niche.includes('fb') || niche.includes('ads')) {
+  } else if (niche.includes('facebook') || niche.includes('fb') || niche.includes('ads') || category.includes('advertising')) {
     fallbackCompetitors = categoryCompetitors['facebook ads'];
-  } else if (category.includes('marketing') || niche.includes('marketing')) {
+  } else if (category.includes('marketing') || niche.includes('marketing') || niche.includes('automation')) {
     fallbackCompetitors = categoryCompetitors['marketing automation'];
+  } else if (category.includes('saas') || category.includes('software') || niche.includes('saas')) {
+    fallbackCompetitors = categoryCompetitors['saas'];
+  } else if (category.includes('ecommerce') || category.includes('e-commerce') || niche.includes('retail') || niche.includes('shop')) {
+    fallbackCompetitors = categoryCompetitors['ecommerce'];
+  } else if (category.includes('fintech') || category.includes('finance') || niche.includes('payment') || niche.includes('banking')) {
+    fallbackCompetitors = categoryCompetitors['fintech'];
+  } else if (category.includes('productivity') || niche.includes('productivity') || niche.includes('project') || niche.includes('management')) {
+    fallbackCompetitors = categoryCompetitors['productivity'];
   } else {
-    // Default to chatbot competitors since this is ZuckerBot
-    fallbackCompetitors = categoryCompetitors['ai chatbot'];
+    // Use generic competitors instead of defaulting to chatbot
+    console.log('No specific category match found, using generic competitors');
+    fallbackCompetitors = categoryCompetitors['default'].map(comp => ({
+      ...comp,
+      name: `${brandAnalysis.business_category || 'Industry'} Competitor ${comp.name.slice(-1)}`,
+      description: `${brandAnalysis.business_category || 'Industry'} competitor offering similar services`
+    }));
   }
+
+  console.log('Selected fallback competitors:', fallbackCompetitors.map(c => c.name));
 
   return fallbackCompetitors.map(comp => ({
     ...comp,
     category: brandAnalysis.business_category,
-    similarity_score: 85
+    similarity_score: 75
   }));
 }
 
