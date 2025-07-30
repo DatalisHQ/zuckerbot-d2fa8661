@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useOnboardingGuard } from "@/hooks/useOnboardingGuard";
+import { BusinessProfileManager } from "@/components/BusinessProfileManager";
 
 interface Profile {
   id: string;
@@ -263,77 +264,21 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* Business Information Card */}
-          {brandAnalysis && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Building className="w-5 h-5" />
-                  Business Information
-                </CardTitle>
-                <CardDescription>
-                  Information from your onboarding
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Brand Name</Label>
-                    <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center">
-                      {brandAnalysis.brand_name || "Not provided"}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Website</Label>
-                    <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center">
-                      {brandAnalysis.brand_url || "Not provided"}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Business Category</Label>
-                    <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center">
-                      {brandAnalysis.business_category || "Not provided"}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Niche</Label>
-                    <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center">
-                      {brandAnalysis.niche || "Not provided"}
-                    </div>
-                  </div>
-
-                  {brandAnalysis.value_propositions && brandAnalysis.value_propositions.length > 0 && (
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Value Propositions</Label>
-                      <div className="p-3 border rounded-md bg-muted/50">
-                        <div className="flex flex-wrap gap-2">
-                          {brandAnalysis.value_propositions.map((prop, index) => (
-                            <Badge key={index} variant="secondary">{prop}</Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {competitors.length > 0 && (
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Tracked Competitors</Label>
-                      <div className="p-3 border rounded-md bg-muted/50">
-                        <div className="flex flex-wrap gap-2">
-                          {competitors.map((comp, index) => (
-                            <Badge key={index} variant="outline">{comp}</Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {/* Business Profile Manager */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="w-5 h-5" />
+                Business Profiles
+              </CardTitle>
+              <CardDescription>
+                Manage your business profiles and switch between them
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <BusinessProfileManager subscriptionTier={profile.subscription_tier} />
+            </CardContent>
+          </Card>
         </div>
 
         {/* Sidebar with Stats */}

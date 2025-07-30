@@ -40,8 +40,7 @@ const CampaignFlow = () => {
           .select('*')
           .eq('user_id', session.user.id)
           .eq('analysis_status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(1)
+          .eq('is_active', true)
           .maybeSingle();
 
         if (!brandAnalysis) {

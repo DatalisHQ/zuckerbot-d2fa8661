@@ -115,8 +115,10 @@ export type Database = {
           brand_name: string | null
           brand_url: string
           business_category: string | null
+          business_display_name: string | null
           created_at: string
           id: string
+          is_active: boolean | null
           main_products: Json | null
           niche: string | null
           scraped_content: string | null
@@ -129,8 +131,10 @@ export type Database = {
           brand_name?: string | null
           brand_url: string
           business_category?: string | null
+          business_display_name?: string | null
           created_at?: string
           id?: string
+          is_active?: boolean | null
           main_products?: Json | null
           niche?: string | null
           scraped_content?: string | null
@@ -143,8 +147,10 @@ export type Database = {
           brand_name?: string | null
           brand_url?: string
           business_category?: string | null
+          business_display_name?: string | null
           created_at?: string
           id?: string
+          is_active?: boolean | null
           main_products?: Json | null
           niche?: string | null
           scraped_content?: string | null
