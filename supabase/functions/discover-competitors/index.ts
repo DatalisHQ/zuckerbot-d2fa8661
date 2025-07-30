@@ -45,14 +45,15 @@ serve(async (req) => {
 
     console.log('Found brand analysis:', brandAnalysis.brand_name);
 
-    // Create search queries based on brand analysis
+    // Create enhanced search queries based on brand analysis
     const searchQueries = [
-      `${brandAnalysis.business_category} companies`,
+      `${brandAnalysis.brand_name} competitors`,
+      `alternatives to ${brandAnalysis.brand_name}`,
+      `${brandAnalysis.business_category} companies like ${brandAnalysis.brand_name}`,
       `${brandAnalysis.niche} competitors`,
-      `${brandAnalysis.business_category} ${brandAnalysis.niche}`,
-      `best ${brandAnalysis.business_category} tools`,
-      `${brandAnalysis.niche} market leaders`
-    ];
+      `best ${brandAnalysis.business_category} platforms`,
+      `${brandAnalysis.business_category} ${brandAnalysis.niche} market leaders`
+    ].filter(query => query && !query.includes('undefined') && !query.includes('null'));
 
     console.log('Generated search queries:', searchQueries);
 
@@ -150,6 +151,41 @@ async function discoverCompetitorsWithAI(query: string, brandAnalysis: any) {
   try {
     console.log(`Using AI to discover competitors for: ${query}`);
     
+    // Enhanced prompt with better instructions for competitor discovery
+    const prompt = `You are a business intelligence analyst. I need you to find REAL competitor companies based on this information:
+
+BRAND TO ANALYZE:
+- Name: ${brandAnalysis.brand_name}
+- Website: ${brandAnalysis.brand_url}
+- Category: ${brandAnalysis.business_category}
+- Niche: ${brandAnalysis.niche}
+- Value Props: ${Array.isArray(brandAnalysis.value_propositions) ? brandAnalysis.value_propositions.join(', ') : brandAnalysis.value_propositions || 'Not specified'}
+
+SEARCH CONTEXT: "${query}"
+
+INSTRUCTIONS:
+1. Find 3-5 REAL companies that compete directly with this brand
+2. Focus on companies with actual websites and current business operations
+3. Look for companies that serve similar customers or solve similar problems
+4. DO NOT include the original brand (${brandAnalysis.brand_name}) in results
+5. Prioritize well-known, established competitors first
+6. Include newer/smaller competitors if relevant
+
+RESPONSE FORMAT - Return ONLY valid JSON (no markdown, no code blocks):
+{
+  "competitors": [
+    {
+      "name": "Exact Company Name",
+      "website": "https://actualwebsite.com",
+      "description": "What they do and how they compete",
+      "category": "${brandAnalysis.business_category}",
+      "similarity_score": 85
+    }
+  ]
+}
+
+Respond with valid JSON only, no other text.`;
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -160,38 +196,16 @@ async function discoverCompetitorsWithAI(query: string, brandAnalysis: any) {
         model: 'gpt-4o-mini',
         messages: [
           {
+            role: 'system',
+            content: 'You are a business intelligence analyst who finds real competitor companies. Always respond with valid JSON only, no markdown or code blocks.'
+          },
+          {
             role: 'user',
-            content: `You are a business analyst. Find real competitor companies for this search query: "${query}"
-
-Brand details:
-- Name: ${brandAnalysis.brand_name}
-- Category: ${brandAnalysis.business_category}
-- Niche: ${brandAnalysis.niche}
-- URL: ${brandAnalysis.brand_url}
-
-Return JSON with an array of real competitor companies (not the original brand):
-{
-  "competitors": [
-    {
-      "name": "Real Company Name",
-      "website": "https://realcompany.com",
-      "description": "Brief description",
-      "category": "${brandAnalysis.business_category}",
-      "similarity_score": 85
-    }
-  ]
-}
-
-Requirements:
-- Find 2-3 REAL companies that compete in this space
-- Include actual websites (not example.com)
-- Focus on companies that offer similar services/products
-- Don't include the original brand: ${brandAnalysis.brand_name}
-- For AI chatbot/marketing tools, include companies like ManyChat, Chatfuel, MobileMonkey, etc.`
+            content: prompt
           }
         ],
-        max_tokens: 1000,
-        temperature: 0.3
+        max_tokens: 1500,
+        temperature: 0.2
       })
     });
 
@@ -207,8 +221,11 @@ Requirements:
       return getFallbackCompetitors(brandAnalysis);
     }
 
-    const content = data.choices[0].message.content;
+    let content = data.choices[0].message.content.trim();
     console.log('Raw AI response:', content);
+    
+    // Fix common JSON parsing issues
+    content = cleanJsonResponse(content);
     
     let result;
     try {
@@ -225,18 +242,68 @@ Requirements:
     const competitors = result.competitors || [];
     console.log(`AI found ${competitors.length} competitors for "${query}"`);
     
-    // If AI returned no competitors, use fallback
-    if (competitors.length === 0) {
-      console.log('AI returned no competitors, using fallback');
+    // Validate and filter competitors
+    const validCompetitors = validateCompetitors(competitors, brandAnalysis);
+    
+    // If AI returned no valid competitors, use fallback
+    if (validCompetitors.length === 0) {
+      console.log('AI returned no valid competitors, using fallback');
       return getFallbackCompetitors(brandAnalysis);
     }
     
-    return competitors;
+    return validCompetitors;
     
   } catch (error) {
     console.error(`Error using AI for competitor discovery:`, error);
     return getFallbackCompetitors(brandAnalysis);
   }
+}
+
+// Clean and fix common JSON response issues
+function cleanJsonResponse(content: string): string {
+  // Remove markdown code blocks if present
+  content = content.replace(/```json\s*/gi, '').replace(/```\s*$/gi, '');
+  
+  // Remove any text before the first { or after the last }
+  const firstBrace = content.indexOf('{');
+  const lastBrace = content.lastIndexOf('}');
+  
+  if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+    content = content.substring(firstBrace, lastBrace + 1);
+  }
+  
+  return content.trim();
+}
+
+// Validate and score competitors
+function validateCompetitors(competitors: any[], brandAnalysis: any): any[] {
+  const originalBrandLower = brandAnalysis.brand_name?.toLowerCase() || '';
+  
+  return competitors
+    .filter(comp => {
+      // Basic validation
+      if (!comp.name || !comp.description) return false;
+      
+      // Don't include the original brand
+      if (comp.name.toLowerCase().includes(originalBrandLower)) return false;
+      
+      // Don't include obviously fake competitors
+      if (comp.name.includes('Example') || comp.name.includes('Competitor')) return false;
+      
+      // Ensure website looks real
+      if (comp.website && (comp.website.includes('example.') || comp.website.includes('test.'))) {
+        comp.website = `https://${comp.name.toLowerCase().replace(/\s+/g, '')}.com`;
+      }
+      
+      return true;
+    })
+    .map(comp => ({
+      ...comp,
+      category: comp.category || brandAnalysis.business_category,
+      similarity_score: comp.similarity_score || 80,
+      website: comp.website || `https://${comp.name.toLowerCase().replace(/\s+/g, '')}.com`
+    }))
+    .slice(0, 5); // Limit to 5 competitors per search
 }
 
 // Extract competitors from non-JSON AI responses
