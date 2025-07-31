@@ -207,23 +207,6 @@ const ZuckerBot = () => {
         </div>
 
         {/* Quick Stats */}
-        {businessContext && (
-          <div className="max-w-4xl mx-auto mt-16 p-6 bg-muted/30 rounded-xl border border-border/50">
-            <h3 className="text-lg font-semibold mb-4">Your Business Profile</h3>
-            <div className="grid md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Business:</span>
-                <span className="ml-2 font-medium">{businessContext.business_name}</span>
-              </div>
-              {businessContext.target_audience && (
-                <div>
-                  <span className="text-muted-foreground">Target Audience:</span>
-                  <span className="ml-2 font-medium">{businessContext.target_audience}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
