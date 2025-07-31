@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { CompetitorFlow } from '@/pages/CompetitorFlow';
@@ -8,14 +8,22 @@ import { useToast } from "@/hooks/use-toast";
 
 const CampaignFlow = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const [brandAnalysisId, setBrandAnalysisId] = useState<string>('');
   const [brandUrl, setBrandUrl] = useState<string>('');
+  const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadBrandContext = async () => {
       try {
+        // Check for draft resume parameter
+        const draftId = searchParams.get('resumeDraft');
+        if (draftId) {
+          setResumeDraftId(draftId);
+        }
+
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) {
           navigate("/auth");
@@ -64,9 +72,15 @@ const CampaignFlow = () => {
     };
 
     loadBrandContext();
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
-  const handleFlowComplete = () => {
+  const handleFlowComplete = (competitorInsights?: any, selectedAngle?: any) => {
+    // Handle different completion types
+    if (selectedAngle?.type === 'save_and_exit') {
+      navigate('/dashboard');
+      return;
+    }
+
     toast({
       title: "🎉 Campaign Complete!",
       description: "Your campaign has been successfully created and launched.",
@@ -116,6 +130,7 @@ const CampaignFlow = () => {
       <CompetitorFlow
         brandAnalysisId={brandAnalysisId}
         brandUrl={brandUrl}
+        resumeDraftId={resumeDraftId}
         onFlowComplete={handleFlowComplete}
       />
     </div>

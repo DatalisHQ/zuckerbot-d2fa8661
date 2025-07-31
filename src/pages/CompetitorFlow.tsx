@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { CompetitorInput } from '@/components/CompetitorInput';
 import { CompetitorInsights } from '@/components/CompetitorInsights';
@@ -9,16 +9,18 @@ import { CampaignLauncher } from '@/components/CampaignLauncher';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useBuildCampaign } from '@/hooks/useBuildCampaign';
+import { useCampaignDrafts } from '@/hooks/useCampaignDrafts';
 import { type AudienceSegment } from '@/components/AudienceSegments';
 import { type TransformedAsset } from '@/hooks/useTransformAssets';
 
 interface CompetitorFlowProps {
   brandAnalysisId?: string;
   brandUrl?: string;
+  resumeDraftId?: string;
   onFlowComplete: (competitorInsights: any, selectedAngle: any, audienceSegments?: AudienceSegment[], campaignSettings?: CampaignSettingsType, rawAssets?: string[], transformedAssets?: TransformedAsset[], campaignConfig?: any) => void;
 }
 
-export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: CompetitorFlowProps) => {
+export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlowComplete }: CompetitorFlowProps) => {
   const [currentStep, setCurrentStep] = useState<'input' | 'insights' | 'assets' | 'transform' | 'campaign-settings' | 'launch'>('input');
   const [competitorListId, setCompetitorListId] = useState<string>('');
   const [selectedAudienceSegments, setSelectedAudienceSegments] = useState<AudienceSegment[]>([]);
@@ -29,10 +31,131 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
   const [transformedAssets, setTransformedAssets] = useState<TransformedAsset[]>([]);
   const [campaignSettings, setCampaignSettings] = useState<CampaignSettingsType | null>(null);
   const [campaignConfig, setCampaignConfig] = useState<any>(null);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(resumeDraftId || null);
+  const [campaignName, setCampaignName] = useState<string>('');
   const buildCampaignMutation = useBuildCampaign();
+  const { saveDraft } = useCampaignDrafts();
   const { toast } = useToast();
 
-  const handleCompetitorListCreated = (listId: string) => {
+  // Load draft data on mount if resuming
+  useEffect(() => {
+    if (resumeDraftId) {
+      loadDraftData(resumeDraftId);
+    }
+  }, [resumeDraftId]);
+
+  const loadDraftData = async (draftId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('ad_campaigns')
+        .select('*')
+        .eq('id', draftId)
+        .single();
+
+      if (error) throw error;
+
+      // Restore state from draft
+      setCampaignName(data.campaign_name);
+      setCurrentStep(getStepFromNumber(data.current_step));
+      
+      if (data.draft_data && typeof data.draft_data === 'object') {
+        const draftData = data.draft_data as any;
+        setCompetitorListId(draftData.competitorListId || '');
+        setSelectedAudienceSegments(draftData.selectedAudienceSegments || []);
+        setCompetitorInsights(draftData.competitorInsights);
+        setSelectedAngle(draftData.selectedAngle);
+        setCompetitorProfiles(draftData.competitorProfiles || []);
+        setRawAssets(draftData.rawAssets || []);
+        setTransformedAssets(draftData.transformedAssets || []);
+        setCampaignSettings(draftData.campaignSettings);
+        setCampaignConfig(draftData.campaignConfig);
+      }
+
+      toast({
+        title: "Draft loaded",
+        description: `Resuming "${data.campaign_name}" from ${getStepName(data.current_step)}.`,
+      });
+    } catch (error) {
+      console.error('Error loading draft:', error);
+      toast({
+        title: "Error loading draft",
+        description: "Failed to load draft data. Starting fresh.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getStepFromNumber = (stepNumber: number): 'input' | 'insights' | 'assets' | 'transform' | 'campaign-settings' | 'launch' => {
+    const stepMap: Record<number, 'input' | 'insights' | 'assets' | 'transform' | 'campaign-settings' | 'launch'> = {
+      1: 'input',
+      2: 'insights', 
+      3: 'assets',
+      4: 'transform',
+      5: 'campaign-settings',
+      6: 'launch'
+    };
+    return stepMap[stepNumber] || 'input';
+  };
+
+  const getStepNumber = (step: string): number => {
+    const stepMap = {
+      'input': 1,
+      'insights': 2,
+      'assets': 3,
+      'transform': 4,
+      'campaign-settings': 5,
+      'launch': 6
+    };
+    return stepMap[step as keyof typeof stepMap] || 1;
+  };
+
+  const getStepName = (stepNumber: number): string => {
+    const stepNames = {
+      1: "Competitor Research",
+      2: "Insights Analysis",
+      3: "Asset Collection", 
+      4: "Asset Transform",
+      5: "Campaign Settings",
+      6: "Ready to Launch"
+    };
+    return stepNames[stepNumber as keyof typeof stepNames] || `Step ${stepNumber}`;
+  };
+
+  const autoSaveDraft = async (stepOverride?: string) => {
+    const step = stepOverride || currentStep;
+    const stepNumber = getStepNumber(step);
+    const name = campaignName || `Campaign ${new Date().toLocaleDateString()}`;
+    
+    const draftData = {
+      competitorListId,
+      selectedAudienceSegments,
+      competitorInsights,
+      selectedAngle,
+      competitorProfiles,
+      rawAssets,
+      transformedAssets,
+      campaignSettings,
+      campaignConfig,
+    };
+
+    const stepData = { currentStep: step };
+
+    const savedDraftId = await saveDraft(name, stepNumber, draftData, stepData, currentDraftId);
+    if (savedDraftId && !currentDraftId) {
+      setCurrentDraftId(savedDraftId);
+    }
+  };
+
+  const handleContinueLater = async () => {
+    await autoSaveDraft();
+    toast({
+      title: "Progress saved!",
+      description: "You can continue building this campaign anytime from your dashboard.",
+    });
+    onFlowComplete(null, { type: 'save_and_exit' });
+  };
+
+  const handleCompetitorListCreated = async (listId: string) => {
     if (listId === 'skip') {
       // User chose to skip competitor research
       onFlowComplete(null, { type: 'skip', description: 'User chose to skip competitor research' }, []);
@@ -41,6 +164,7 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
     
     setCompetitorListId(listId);
     setCurrentStep('insights');
+    await autoSaveDraft('insights');
   };
 
   const handleAudienceSelected = (segments: AudienceSegment[]) => {
@@ -59,32 +183,35 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
     });
     
     setCurrentStep('assets');
+    await autoSaveDraft('assets');
   };
 
   const handleAssetsSelected = (assets: string[]) => {
     setRawAssets(assets);
   };
 
-  const handleAssetsComplete = () => {
+  const handleAssetsComplete = async () => {
     toast({
       title: "Assets collected!",
       description: "Now let's transform them with AI.",
     });
     
     setCurrentStep('transform');
+    await autoSaveDraft('transform');
   };
 
   const handleTransformComplete = (assets: TransformedAsset[]) => {
     setTransformedAssets(assets);
   };
 
-  const handleTransformFinished = () => {
+  const handleTransformFinished = async () => {
     toast({
       title: "Assets transformed!",
       description: "Now let's configure your campaign settings.",
     });
     
     setCurrentStep('campaign-settings');
+    await autoSaveDraft('campaign-settings');
   };
 
   const handleCampaignSettingsComplete = async (settings: CampaignSettingsType) => {
@@ -112,6 +239,7 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
       });
 
       setCurrentStep('launch');
+      await autoSaveDraft('launch');
     } catch (error) {
       console.error('Error building campaign:', error);
       toast({
@@ -204,6 +332,13 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
               >
                 Skip This Step
               </Button>
+              <Button
+                variant="ghost"
+                onClick={handleContinueLater}
+                className="px-6 py-2"
+              >
+                Continue Later
+              </Button>
             </div>
           </div>
         </div>
@@ -241,6 +376,13 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, onFlowComplete }: Co
                 className="px-6 py-2"
               >
                 Skip This Step
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={handleContinueLater}
+                className="px-6 py-2"
+              >
+                Continue Later
               </Button>
             </div>
           </div>

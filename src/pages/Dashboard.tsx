@@ -21,6 +21,8 @@ import { Navbar } from "@/components/Navbar";
 import { FacebookAdsPerformance } from "@/components/FacebookAdsPerformance";
 import { OnboardingRecovery } from "@/components/OnboardingRecovery";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useCampaignDrafts } from "@/hooks/useCampaignDrafts";
+import { DraftCampaignCard } from "@/components/DraftCampaignCard";
 
 interface Campaign {
   id: string;
@@ -55,6 +57,7 @@ const Dashboard = () => {
   const [selectedCampaign, setSelectedCampaign] = useState<FacebookCampaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
+  const { drafts, isLoading: draftsLoading, deleteDraft, finalizeDraft } = useCampaignDrafts();
 
   useEffect(() => {
   const checkUser = async () => {
@@ -248,6 +251,24 @@ const Dashboard = () => {
     setSelectedCampaign(campaign);
   };
 
+  const handleContinueDraft = (draft: any) => {
+    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
+  };
+
+  const handleEditDraft = (draft: any) => {
+    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
+  };
+
+  const handleDeleteDraft = async (draftId: string) => {
+    await deleteDraft(draftId);
+  };
+
+  const handleLaunchDraft = async (draft: any) => {
+    await finalizeDraft(draft.id);
+    // Navigate to the launch step
+    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
+  };
+
 
   if (isLoading) {
     return (
@@ -341,9 +362,28 @@ const Dashboard = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-semibold">Your Campaigns</h3>
               <Badge variant="outline" className="text-xs">
-                {facebookCampaigns.length + campaigns.length} Total
+                {facebookCampaigns.length + campaigns.length + drafts.length} Total
               </Badge>
             </div>
+
+            {/* Draft Campaigns */}
+            {drafts.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-medium mb-3 text-orange-600">Draft Campaigns</h4>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {drafts.map((draft) => (
+                    <DraftCampaignCard
+                      key={draft.id}
+                      draft={draft}
+                      onContinue={handleContinueDraft}
+                      onEdit={handleEditDraft}
+                      onDelete={handleDeleteDraft}
+                      onLaunch={handleLaunchDraft}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             
             {/* Facebook Campaigns */}
             {facebookCampaigns.length > 0 && (
@@ -443,7 +483,7 @@ const Dashboard = () => {
             )}
 
             {/* Local Pipeline Campaigns */}
-            {campaigns.length === 0 && facebookCampaigns.length === 0 ? (
+            {campaigns.length === 0 && facebookCampaigns.length === 0 && drafts.length === 0 ? (
               <Card className="text-center py-12">
                 <CardContent>
                   <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
