@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, TrendingUp, Target, Lightbulb, ExternalLink } from "lucide-react";
+import { Loader2, TrendingUp, Target, Lightbulb, ExternalLink, AlertCircle, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AudienceSegments, type AudienceSegment } from './AudienceSegments';
@@ -191,48 +191,71 @@ export const CompetitorInsights = ({
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Overall Insights */}
-      {overallInsights && (
-        <Card>
+      {/* Market Intelligence Summary */}
+      {overallInsights && overallInsights.trending_hooks?.length > 0 && (
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
+              <BarChart3 className="h-5 w-5" />
               Market Intelligence Summary
             </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Based on analysis of {overallInsights.data_quality?.competitors_analyzed} competitor(s) with active advertising data
+            </p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <h4 className="font-medium mb-2">Trending Hooks</h4>
-                <div className="flex flex-wrap gap-1">
-                  {overallInsights.trending_hooks?.map((hook: string, index: number) => (
-                    <Badge key={index} variant="secondary" className="text-xs">
-                      {hook}
-                    </Badge>
-                  ))}
+              {overallInsights.trending_hooks?.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Trending Hooks ({overallInsights.trending_hooks.length})</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {overallInsights.trending_hooks.map((hook: string, index: number) => (
+                      <Badge key={index} variant="secondary" className="text-xs">
+                        {hook}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <h4 className="font-medium mb-2">Popular CTAs</h4>
-                <div className="flex flex-wrap gap-1">
-                  {overallInsights.trending_ctas?.map((cta: string, index: number) => (
-                    <Badge key={index} variant="outline" className="text-xs">
-                      {cta}
-                    </Badge>
-                  ))}
+              )}
+              {overallInsights.trending_ctas?.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Popular CTAs ({overallInsights.trending_ctas.length})</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {overallInsights.trending_ctas.map((cta: string, index: number) => (
+                      <Badge key={index} variant="outline" className="text-xs">
+                        {cta}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <h4 className="font-medium mb-2">Key Patterns</h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  {overallInsights.key_patterns?.slice(0, 2).map((pattern: string, index: number) => (
-                    <li key={index} className="flex items-start gap-1">
-                      <span className="text-primary">•</span>
-                      {pattern}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              )}
+              {overallInsights.key_patterns?.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Key Patterns</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    {overallInsights.key_patterns.map((pattern: string, index: number) => (
+                      <li key={index} className="flex items-start gap-1">
+                        <span className="text-primary">•</span>
+                        {pattern}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      {/* No Data Message */}
+      {(!overallInsights || !overallInsights.trending_hooks?.length) && (
+        <Card className="mb-6 border-dashed">
+          <CardContent className="pt-6">
+            <div className="text-center text-muted-foreground">
+              <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+              <p className="text-sm">
+                Insufficient data for market intelligence summary. This could mean competitors aren't running active Facebook ads or their websites couldn't be analyzed.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -335,31 +358,45 @@ export const CompetitorInsights = ({
                 </div>
 
                 {/* Website Analysis Section */}
-                {competitor.websiteAnalysis && (
+                {competitor.websiteAnalysis ? (
                   <Card className="bg-muted/30">
                     <CardHeader>
                       <CardTitle className="text-sm">Website Analysis</CardTitle>
                     </CardHeader>
-                    <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div>
-                        <h5 className="font-medium text-sm">Niche</h5>
-                        <p className="text-xs text-muted-foreground">{competitor.websiteAnalysis.niche}</p>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <h5 className="font-medium text-sm mb-1">Market Niche</h5>
+                          <p className="text-sm text-foreground">{competitor.websiteAnalysis.niche}</p>
+                        </div>
+                        <div>
+                          <h5 className="font-medium text-sm mb-1">Target Audience</h5>
+                          <p className="text-sm text-foreground">{competitor.websiteAnalysis.audience}</p>
+                        </div>
                       </div>
                       <div>
-                        <h5 className="font-medium text-sm">Audience</h5>
-                        <p className="text-xs text-muted-foreground">{competitor.websiteAnalysis.audience}</p>
+                        <h5 className="font-medium text-sm mb-1">Brand Tone & Style</h5>
+                        <p className="text-sm text-foreground">{competitor.websiteAnalysis.tone}</p>
                       </div>
                       <div>
-                        <h5 className="font-medium text-sm">Tone</h5>
-                        <p className="text-xs text-muted-foreground">{competitor.websiteAnalysis.tone}</p>
-                      </div>
-                      <div>
-                        <h5 className="font-medium text-sm">Value Props</h5>
-                        <div className="flex flex-wrap gap-1">
-                          {competitor.websiteAnalysis.value_props?.slice(0, 2).map((prop: string, i: number) => (
-                            <Badge key={i} variant="secondary" className="text-xs">{prop}</Badge>
+                        <h5 className="font-medium text-sm mb-2">Key Value Propositions</h5>
+                        <div className="space-y-1">
+                          {competitor.websiteAnalysis.value_props?.map((prop: string, i: number) => (
+                            <div key={i} className="p-2 bg-secondary/20 rounded text-sm border-l-2 border-primary/30">
+                              {prop}
+                            </div>
                           ))}
                         </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="bg-muted/30 border-dashed">
+                    <CardContent className="pt-6">
+                      <div className="text-center text-muted-foreground">
+                        <AlertCircle className="h-6 w-6 mx-auto mb-2" />
+                        <p className="text-sm">Website analysis unavailable</p>
+                        <p className="text-xs">The competitor's website couldn't be properly analyzed or scraped.</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -369,6 +406,39 @@ export const CompetitorInsights = ({
                 {competitor.total_ads_found > 0 ? (
                   <div className="space-y-4">
                     <h4 className="font-semibold">Meta Ads Analysis ({competitor.total_ads_found} ads found)</h4>
+                    
+                    {/* Individual Ad Creatives */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      {competitor.ads?.slice(0, 4).map((ad: any, adIndex: number) => (
+                        <Card key={adIndex} className="bg-background border">
+                          <CardContent className="p-4">
+                            <div className="flex gap-3">
+                              {ad.image_url && (
+                                <img 
+                                  src={ad.image_url} 
+                                  alt="Ad Creative" 
+                                  className="w-16 h-16 object-cover rounded border flex-shrink-0"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between mb-1">
+                                  <h6 className="font-medium text-sm truncate">{ad.headline}</h6>
+                                  <Badge variant="outline" className="text-xs ml-2">{ad.cta}</Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">{ad.primary_text}</p>
+                                <div className="flex gap-2 text-xs text-muted-foreground">
+                                  <span>📊 {ad.impressions}</span>
+                                  <span>💰 {ad.spend_estimate}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
                     
                     {/* Ad Insights Summary */}
                     <Card className="bg-primary/5 border-primary/20">
@@ -439,11 +509,18 @@ export const CompetitorInsights = ({
                     </div>
                   </div>
                 ) : (
-                  <Card className="bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800">
-                    <CardContent className="pt-4">
-                      <p className="text-sm">
-                        {competitor.no_ads_message || "No active ads found for this competitor. Would you like to try another competitor or proceed?"}
-                      </p>
+                  <Card className="bg-muted/30 border-dashed">
+                    <CardContent className="pt-6">
+                      <div className="text-center text-muted-foreground space-y-2">
+                        <AlertCircle className="h-6 w-6 mx-auto" />
+                        <p className="text-sm font-medium">No Facebook ads found for {competitor.name}</p>
+                        {competitor.no_ads_message && (
+                          <p className="text-xs">{competitor.no_ads_message}</p>
+                        )}
+                        <p className="text-xs">
+                          This competitor may not be running Facebook ads currently, or their ads aren't publicly visible in Meta's Ad Library.
+                        </p>
+                      </div>
                     </CardContent>
                   </Card>
                 )}

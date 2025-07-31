@@ -119,24 +119,22 @@ serve(async (req) => {
         };
       }
 
-      // Compile competitor insights with fallback data
+      // Only use fallback data when absolutely necessary
+      const hasValidWebsiteData = websiteData?.analysis && 
+        websiteData.analysis.niche !== "Unknown" && 
+        websiteData.analysis.audience !== "General";
+      
+      const hasValidAdsData = adsData?.ads && adsData.ads.length > 0;
+      
       competitorInsights.push({
         name: competitor.name,
         url: competitor.url,
-        websiteAnalysis: websiteData?.analysis || {
-          value_propositions: [`Leading ${competitor.name} platform for business growth`],
-          tone: 'professional',
-          audience: 'business owners'
-        },
+        websiteAnalysis: hasValidWebsiteData ? websiteData.analysis : null,
         ads: adsData?.ads || [],
-        insights: adsData?.insights || { 
-          common_hooks: ['Transform Your Business', 'Get Results Fast'],
-          common_ctas: ['Learn More', 'Get Started'],
-          dominant_tones: ['professional', 'results-focused'],
-          avg_text_length: 150
-        },
+        insights: hasValidAdsData ? adsData.insights : null,
         total_ads_found: adsData?.total_ads_found || 0,
-        no_ads_message: adsData?.message || null
+        no_ads_message: adsData?.error || (!hasValidAdsData ? `No active ads found for ${competitor.name}. They may not be running Facebook ads currently, or their ads are not publicly visible in the Ad Library.` : null),
+        analysis_error: (!hasValidWebsiteData && !hasValidAdsData) ? `Limited data available for ${competitor.name}. This could indicate the website couldn't be properly analyzed or they're not running Facebook ads.` : null
       });
     }
 
@@ -226,19 +224,61 @@ function analyzeCompetitorAds(ads: any[]) {
 }
 
 function generateOverallInsights(competitorInsights: any[]) {
-  const allHooks = competitorInsights.flatMap(c => c.insights.common_hooks);
-  const allTones = competitorInsights.flatMap(c => c.insights.dominant_tones);
-  const allCtas = competitorInsights.flatMap(c => c.insights.common_ctas);
-
+  // Only include competitors with actual insights data
+  const validInsights = competitorInsights.filter(c => c.insights && 
+    (c.insights.common_hooks?.length > 0 || c.insights.hooks?.length > 0 || 
+     c.insights.common_ctas?.length > 0 || c.insights.ctas?.length > 0));
+  
+  if (validInsights.length === 0) {
+    return null; // Return null if no meaningful data
+  }
+  
+  const allHooks = validInsights.flatMap(c => 
+    c.insights.common_hooks || c.insights.hooks || []
+  ).filter(Boolean);
+  
+  const allTones = validInsights.flatMap(c => 
+    c.insights.dominant_tones || c.insights.creative_trends || []
+  ).filter(Boolean);
+  
+  const allCtas = validInsights.flatMap(c => 
+    c.insights.common_ctas || c.insights.ctas || []
+  ).filter(Boolean);
+  
+  // Only show insights if we have substantial data
+  const minDataThreshold = 3;
+  if (allHooks.length < minDataThreshold && allCtas.length < minDataThreshold) {
+    return null;
+  }
+  
+  const trendingHooks = getMostCommon(allHooks, 5).slice(0, Math.min(5, allHooks.length));
+  const trendingCtas = getMostCommon(allCtas, 4).slice(0, Math.min(4, allCtas.length));
+  const trendingTones = getMostCommon(allTones, 3).slice(0, Math.min(3, allTones.length));
+  
+  // Generate dynamic patterns based on actual data
+  const patterns = [];
+  if (trendingTones.length > 0) {
+    patterns.push(`Market leans towards ${trendingTones.slice(0, 2).join(' and ')} messaging approaches`);
+  }
+  if (trendingHooks.length >= 3) {
+    patterns.push(`Top performing hooks focus on transformation, results, and value delivery`);
+  }
+  if (trendingCtas.length >= 2) {
+    patterns.push(`Most effective CTAs use direct action language: ${trendingCtas.slice(0, 2).join(', ')}`);
+  }
+  
   return {
-    trending_hooks: getMostCommon(allHooks, 3),
-    trending_tones: getMostCommon(allTones, 3),
-    trending_ctas: getMostCommon(allCtas, 3),
-    key_patterns: [
-      'Competitors heavily use urgency and scarcity tactics',
-      'Social proof and testimonials are commonly featured',
-      'Aspirational language focuses on transformation and results'
-    ]
+    trending_hooks: trendingHooks,
+    trending_tones: trendingTones,
+    trending_ctas: trendingCtas,
+    key_patterns: patterns.length > 0 ? patterns : [
+      `Analysis based on ${validInsights.length} competitor${validInsights.length > 1 ? 's' : ''} with active advertising`
+    ],
+    data_quality: {
+      competitors_analyzed: validInsights.length,
+      total_hooks: allHooks.length,
+      total_ctas: allCtas.length
+    }
   };
 }
 

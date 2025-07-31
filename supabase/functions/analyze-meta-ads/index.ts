@@ -193,13 +193,13 @@ serve(async (req) => {
       if (allAds.length >= 5) break; // Stop when we have enough ads
 
       try {
-        const adLibraryUrl = new URL('https://graph.facebook.com/v18.0/ads_archive');
+        const adLibraryUrl = new URL('https://graph.facebook.com/v19.0/ads_archive');
         adLibraryUrl.searchParams.set('access_token', facebookAccessToken);
         adLibraryUrl.searchParams.set('search_terms', query);
-        adLibraryUrl.searchParams.set('ad_reached_countries', 'ALL');
+        adLibraryUrl.searchParams.set('ad_reached_countries', '["US"]');
         adLibraryUrl.searchParams.set('ad_active_status', 'ALL');
-        adLibraryUrl.searchParams.set('limit', '15'); // Increased limit
-        adLibraryUrl.searchParams.set('fields', 'id,page_name,page_id,funding_entity,currency,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_descriptions,ad_creative_link_titles,ad_snapshot_url,ad_delivery_start_time,impressions,spend,demographic_distribution');
+        adLibraryUrl.searchParams.set('limit', '20');
+        adLibraryUrl.searchParams.set('fields', 'id,page_name,page_id,funding_entity,currency,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_descriptions,ad_creative_link_titles,ad_snapshot_url,ad_delivery_start_time,impressions,spend');
 
         console.log('Querying Meta Ad Library with:', query);
         
@@ -292,16 +292,23 @@ serve(async (req) => {
         model: 'gpt-4o-mini',
         messages: [
           {
+            role: 'system',
+            content: 'You are a marketing analyst. Analyze competitor ads and provide detailed insights. Always respond with valid JSON only.'
+          },
+          {
             role: 'user',
-            content: `You are a marketing analyst. Analyze the competitor ads and return JSON:
+            content: `Analyze these Facebook ads from ${competitorName} and extract key patterns. Return detailed JSON:
+
 {
-  "hooks": ["Hook 1", "Hook 2", "Hook 3"],
-  "ctas": ["Most common CTA"],
-  "creative_trends": ["Creative trend 1", "Creative trend 2"]
+  "hooks": ["Specific hook phrase 1", "Specific hook phrase 2", "Specific hook phrase 3", "Hook phrase 4", "Hook phrase 5"],
+  "ctas": ["Most common CTA", "Second most common CTA", "Third CTA"],
+  "creative_trends": ["Specific creative pattern 1", "Creative pattern 2", "Pattern 3"]
 }
 
-Analyze these ads from ${competitorName}:
-${adTexts}`
+Focus on extracting actual phrases and patterns from these ads:
+${adTexts}
+
+Extract specific headlines, opening phrases, and emotional triggers used across the ads. Be detailed and specific.`
           }
         ],
         max_tokens: 800,
@@ -316,16 +323,39 @@ ${adTexts}`
     const analysisData = await analysisResponse.json();
     let insights;
     try {
-      insights = JSON.parse(analysisData.choices[0].message.content);
+      let content = analysisData.choices[0].message.content;
+      
+      // Clean up the response if it contains markdown code blocks
+      content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      
+      insights = JSON.parse(content);
+      
+      // Validate that we got meaningful data
+      if (!insights.hooks || insights.hooks.length === 0) {
+        throw new Error("No hooks extracted from AI analysis");
+      }
+      
     } catch (parseError) {
-      // Fallback insights based on actual ad data
+      console.error('Failed to parse OpenAI response:', parseError);
+      console.log('Raw OpenAI response:', analysisData.choices[0].message.content);
+      
+      // Enhanced fallback based on actual ad data
       const extractedCTAs = allAds.map(ad => ad.cta).filter(Boolean);
       const uniqueCTAs = [...new Set(extractedCTAs)];
+      const extractedHeadlines = allAds.map(ad => ad.headline).filter(Boolean);
+      const extractedPrimaryTexts = allAds.map(ad => ad.primary_text).filter(Boolean);
+      
+      // Extract hooks from headlines and primary text
+      const hooks = [...new Set([...extractedHeadlines.slice(0, 3), ...extractedPrimaryTexts.slice(0, 2)])];
       
       insights = {
-        hooks: allAds.slice(0, 3).map(ad => ad.headline),
+        hooks: hooks.length > 0 ? hooks : [`${competitorName} advertising patterns`],
         ctas: uniqueCTAs.length > 0 ? uniqueCTAs : ["Learn More", "Get Started"],
-        creative_trends: allAds.length > 0 ? ["Data-driven insights", "Performance-focused"] : ["No active campaigns"]
+        creative_trends: allAds.length > 0 ? [
+          `${competitorName} focuses on direct response advertising`,
+          "Uses performance-driven creative strategies",
+          "Emphasizes clear value propositions"
+        ] : ["No active campaigns found"]
       };
     }
 
