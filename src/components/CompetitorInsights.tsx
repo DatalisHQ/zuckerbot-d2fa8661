@@ -311,18 +311,6 @@ export const CompetitorInsights = ({
             ))}
           </div>
           
-          {selectedAngle && (
-            <div className="mt-6 p-4 bg-muted rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <Lightbulb className="h-4 w-4 text-primary" />
-                <span className="font-medium">Selected: {selectedAngle.title}</span>
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">{selectedAngle.strategy}</p>
-              <Button onClick={() => handleAngleSelection(selectedAngle)} className="w-full">
-                {brandUrl && onAudienceSelected ? 'Continue to Audience Selection' : 'Generate Ads with This Angle'}
-              </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
 
