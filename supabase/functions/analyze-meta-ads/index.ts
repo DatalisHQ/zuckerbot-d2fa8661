@@ -363,141 +363,142 @@ serve(async (req) => {
           clearTimeout(timeoutId);
           
           console.log(`Response status: ${response.status} ${response.statusText}`);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`=== API ERROR FOR "${query}" ===`);
-          console.error(`Status: ${response.status} ${response.statusText}`);
-          console.error('Full error response:', errorText);
           
-          // Try to parse error for specific issues
-          try {
-            const errorData = JSON.parse(errorText);
-            if (errorData.error) {
-              console.error('Error details:', {
-                message: errorData.error.message,
-                type: errorData.error.type,
-                code: errorData.error.code,
-                subcode: errorData.error.error_subcode
-              });
-              
-              // Handle specific error types
-              if (errorData.error.code === 10 && errorData.error.error_subcode === 2332002) {
-                console.error('CRITICAL: App does not have Ad Library API access. Check app permissions and verification status.');
-                return new Response(JSON.stringify({
-                  success: false,
-                  error: 'Facebook App does not have permission to access Ad Library API. Please verify your app has been approved for Ad Library access.',
-                  error_details: errorData.error
-                }), {
-                  status: 403,
-                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`=== API ERROR FOR "${query}" ===`);
+            console.error(`Status: ${response.status} ${response.statusText}`);
+            console.error('Full error response:', errorText);
+            
+            // Try to parse error for specific issues
+            try {
+              const errorData = JSON.parse(errorText);
+              if (errorData.error) {
+                console.error('Error details:', {
+                  message: errorData.error.message,
+                  type: errorData.error.type,
+                  code: errorData.error.code,
+                  subcode: errorData.error.error_subcode
                 });
+                
+                // Handle specific error types
+                if (errorData.error.code === 10 && errorData.error.error_subcode === 2332002) {
+                  console.error('CRITICAL: App does not have Ad Library API access. Check app permissions and verification status.');
+                  return new Response(JSON.stringify({
+                    success: false,
+                    error: 'Facebook App does not have permission to access Ad Library API. Please verify your app has been approved for Ad Library access.',
+                    error_details: errorData.error
+                  }), {
+                    status: 403,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                  });
+                }
+              }
+            } catch (parseError) {
+              console.error('Could not parse error response:', parseError);
+            }
+            
+            // If it's a rate limit error, wait and continue
+            if (response.status === 429) {
+              console.log('Rate limited, waiting 2 seconds...');
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              continue;
+            }
+            
+            // For 400 errors, try alternative search approaches
+            if (response.status === 400) {
+              console.log('Bad request - trying alternative search approach for:', query);
+              
+              // Try a simpler search with fewer parameters
+              const simpleUrl = new URL(`https://graph.facebook.com/v21.0/ads_archive`);
+              simpleUrl.searchParams.set('access_token', facebookAccessToken);
+              simpleUrl.searchParams.set('search_terms', query);
+              simpleUrl.searchParams.set('ad_reached_countries', '["US"]');
+              simpleUrl.searchParams.set('limit', '10');
+              simpleUrl.searchParams.set('fields', 'id,page_name,ad_creative_bodies,ad_creative_link_titles,ad_snapshot_url');
+              
+              const simpleResponse = await fetch(simpleUrl.toString());
+              if (simpleResponse.ok) {
+                const simpleData = await simpleResponse.json();
+                if (simpleData.data && simpleData.data.length > 0) {
+                  console.log(`Found ${simpleData.data.length} ads with simple search for "${query}"`);
+                  
+                  const processedAds = simpleData.data.slice(0, 5 - allAds.length).map((ad: any) => ({
+                    id: ad.id,
+                    headline: ad.ad_creative_link_titles?.[0] || 'No headline available',
+                    primary_text: ad.ad_creative_bodies?.[0] || 'No description available',
+                    cta: 'Learn More',
+                    image_url: ad.ad_snapshot_url || 'https://via.placeholder.com/400x300?text=Ad+Creative',
+                    impressions: 'Data not available',
+                    spend_estimate: 'Data not available',
+                    date_created: new Date().toISOString(),
+                    page_name: ad.page_name,
+                    relevance_score: 'medium'
+                  }));
+                  
+                  allAds.push(...processedAds);
+                  continue;
+                }
               }
             }
-          } catch (parseError) {
-            console.error('Could not parse error response:', parseError);
-          }
-          
-          // If it's a rate limit error, wait and continue
-          if (response.status === 429) {
-            console.log('Rate limited, waiting 2 seconds...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            
             continue;
           }
+
+          const data = await response.json();
           
-          // For 400 errors, try alternative search approaches
-          if (response.status === 400) {
-            console.log('Bad request - trying alternative search approach for:', query);
+          if (data.data && data.data.length > 0) {
+            console.log(`Found ${data.data.length} ads for "${query}"`);
             
-            // Try a simpler search with fewer parameters
-            const simpleUrl = new URL(`https://graph.facebook.com/v21.0/ads_archive`);
-            simpleUrl.searchParams.set('access_token', facebookAccessToken);
-            simpleUrl.searchParams.set('search_terms', query);
-            simpleUrl.searchParams.set('ad_reached_countries', '["US"]');
-            simpleUrl.searchParams.set('limit', '10');
-            simpleUrl.searchParams.set('fields', 'id,page_name,ad_creative_bodies,ad_creative_link_titles,ad_snapshot_url');
+            // Filter ads to find the most relevant ones
+            const relevantAds = data.data.filter((ad: any) => {
+              const pageName = ad.page_name?.toLowerCase() || '';
+              const competitorLower = competitorName.toLowerCase();
+              
+              // Check if page name contains competitor name or vice versa
+              return pageName.includes(competitorLower) || 
+                     competitorLower.includes(pageName) ||
+                     // Check for partial matches
+                     pageName.split(' ').some((word: string) => 
+                       competitorLower.includes(word) && word.length > 3
+                     ) ||
+                     competitorLower.split(' ').some((word: string) => 
+                       pageName.includes(word) && word.length > 3
+                     );
+            });
             
-            const simpleResponse = await fetch(simpleUrl.toString());
-            if (simpleResponse.ok) {
-              const simpleData = await simpleResponse.json();
-              if (simpleData.data && simpleData.data.length > 0) {
-                console.log(`Found ${simpleData.data.length} ads with simple search for "${query}"`);
-                
-                const processedAds = simpleData.data.slice(0, 5 - allAds.length).map((ad: any) => ({
-                  id: ad.id,
-                  headline: ad.ad_creative_link_titles?.[0] || 'No headline available',
-                  primary_text: ad.ad_creative_bodies?.[0] || 'No description available',
-                  cta: 'Learn More',
-                  image_url: ad.ad_snapshot_url || 'https://via.placeholder.com/400x300?text=Ad+Creative',
-                  impressions: 'Data not available',
-                  spend_estimate: 'Data not available',
-                  date_created: new Date().toISOString(),
-                  page_name: ad.page_name,
-                  relevance_score: 'medium'
-                }));
-                
-                allAds.push(...processedAds);
-                continue;
-              }
+            // Use relevant ads first, then fall back to all ads
+            const adsToProcess = relevantAds.length > 0 ? relevantAds : data.data;
+            
+            // Process and format the ads
+            const processedAds = adsToProcess.slice(0, 5 - allAds.length).map((ad: any) => ({
+              id: ad.id,
+              headline: ad.ad_creative_link_titles?.[0] || ad.ad_creative_link_captions?.[0] || 'No headline',
+              primary_text: ad.ad_creative_bodies?.[0] || ad.ad_creative_link_descriptions?.[0] || 'No description',
+              cta: extractCallToAction(ad.ad_creative_link_captions?.[0] || ad.ad_creative_link_titles?.[0] || ''),
+              image_url: ad.ad_snapshot_url || 'https://via.placeholder.com/400x300?text=Ad+Creative',
+              impressions: formatImpressions(ad.impressions),
+              spend_estimate: formatSpend(ad.spend, ad.currency),
+              date_created: ad.ad_delivery_start_time || new Date().toISOString(),
+              page_name: ad.page_name,
+              page_id: ad.page_id,
+              funding_entity: ad.funding_entity,
+              relevance_score: relevantAds.includes(ad) ? 'high' : 'medium'
+            }));
+            
+            allAds.push(...processedAds);
+            
+            // If we found relevant ads, store the page info for future use
+            if (relevantAds.length > 0 && !facebookPageId) {
+              facebookPageId = relevantAds[0].page_id;
+              facebookPageName = relevantAds[0].page_name;
+              console.log('Found Facebook page:', facebookPageName, 'ID:', facebookPageId);
             }
           }
-          
-          continue;
         } catch (timeoutError) {
           clearTimeout(timeoutId);
           console.log(`API timeout for "${query}", moving to scraper fallback`);
           break; // Exit API attempts and go to scraper
-        }
-
-        const data = await response.json();
-        
-        if (data.data && data.data.length > 0) {
-          console.log(`Found ${data.data.length} ads for "${query}"`);
-          
-          // Filter ads to find the most relevant ones
-          const relevantAds = data.data.filter((ad: any) => {
-            const pageName = ad.page_name?.toLowerCase() || '';
-            const competitorLower = competitorName.toLowerCase();
-            
-            // Check if page name contains competitor name or vice versa
-            return pageName.includes(competitorLower) || 
-                   competitorLower.includes(pageName) ||
-                   // Check for partial matches
-                   pageName.split(' ').some((word: string) => 
-                     competitorLower.includes(word) && word.length > 3
-                   ) ||
-                   competitorLower.split(' ').some((word: string) => 
-                     pageName.includes(word) && word.length > 3
-                   );
-          });
-          
-          // Use relevant ads first, then fall back to all ads
-          const adsToProcess = relevantAds.length > 0 ? relevantAds : data.data;
-          
-          // Process and format the ads
-          const processedAds = adsToProcess.slice(0, 5 - allAds.length).map((ad: any) => ({
-            id: ad.id,
-            headline: ad.ad_creative_link_titles?.[0] || ad.ad_creative_link_captions?.[0] || 'No headline',
-            primary_text: ad.ad_creative_bodies?.[0] || ad.ad_creative_link_descriptions?.[0] || 'No description',
-            cta: extractCallToAction(ad.ad_creative_link_captions?.[0] || ad.ad_creative_link_titles?.[0] || ''),
-            image_url: ad.ad_snapshot_url || 'https://via.placeholder.com/400x300?text=Ad+Creative',
-            impressions: formatImpressions(ad.impressions),
-            spend_estimate: formatSpend(ad.spend, ad.currency),
-            date_created: ad.ad_delivery_start_time || new Date().toISOString(),
-            page_name: ad.page_name,
-            page_id: ad.page_id,
-            funding_entity: ad.funding_entity,
-            relevance_score: relevantAds.includes(ad) ? 'high' : 'medium'
-          }));
-          
-          allAds.push(...processedAds);
-          
-          // If we found relevant ads, store the page info for future use
-          if (relevantAds.length > 0 && !facebookPageId) {
-            facebookPageId = relevantAds[0].page_id;
-            facebookPageName = relevantAds[0].page_name;
-            console.log('Found Facebook page:', facebookPageName, 'ID:', facebookPageId);
-          }
         }
       } catch (error) {
         console.error(`Error fetching ads for "${query}":`, error);
