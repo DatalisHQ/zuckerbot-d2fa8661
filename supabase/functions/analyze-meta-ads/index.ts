@@ -193,29 +193,106 @@ serve(async (req) => {
       if (allAds.length >= 5) break; // Stop when we have enough ads
 
       try {
-        // Validate access token first
-        const tokenValidationUrl = `https://graph.facebook.com/v21.0/me?access_token=${facebookAccessToken}`;
-        const tokenResponse = await fetch(tokenValidationUrl);
+        // Try multiple API approaches for better success rate
+        const apiVersions = ['v21.0', 'v20.0', 'v19.0'];
+        let apiSuccess = false;
+        let adLibraryUrl;
         
-        if (!tokenResponse.ok) {
-          console.error('Facebook access token validation failed:', tokenResponse.status, tokenResponse.statusText);
-          throw new Error('Invalid Facebook access token - please check credentials');
+        for (const version of apiVersions) {
+          try {
+            // First validate token for this API version
+            const tokenValidationUrl = `https://graph.facebook.com/${version}/me?access_token=${facebookAccessToken}`;
+            const tokenResponse = await fetch(tokenValidationUrl);
+            
+            if (tokenResponse.ok) {
+              // Build Ad Library API URL with enhanced parameters
+              adLibraryUrl = new URL(`https://graph.facebook.com/${version}/ads_archive`);
+              adLibraryUrl.searchParams.set('access_token', facebookAccessToken);
+              adLibraryUrl.searchParams.set('search_terms', query);
+              adLibraryUrl.searchParams.set('ad_reached_countries', '["US","CA","GB","AU"]'); // Multiple countries for better coverage
+              adLibraryUrl.searchParams.set('ad_active_status', 'ALL'); // Include both active and inactive ads
+              adLibraryUrl.searchParams.set('ad_type', 'ALL'); // All ad types
+              adLibraryUrl.searchParams.set('media_type', 'ALL'); // All media types
+              adLibraryUrl.searchParams.set('limit', '50'); // Increased limit for more data
+              adLibraryUrl.searchParams.set('fields', 'id,page_name,page_id,funding_entity,currency,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_descriptions,ad_creative_link_titles,ad_snapshot_url,ad_delivery_start_time,ad_delivery_stop_time,impressions,spend,demographic_distribution,region_distribution');
+              
+              console.log(`Using Facebook API ${version} for query:`, query);
+              apiSuccess = true;
+              break;
+            } else {
+              console.log(`API ${version} token validation failed, trying next version`);
+            }
+          } catch (versionError) {
+            console.log(`API ${version} failed:`, versionError.message);
+            continue;
+          }
+        }
+        
+        if (!apiSuccess) {
+          console.error('All Facebook API versions failed token validation');
+          continue; // Skip this query and try the next one
         }
 
-        const adLibraryUrl = new URL('https://graph.facebook.com/v21.0/ads_archive');
-        adLibraryUrl.searchParams.set('access_token', facebookAccessToken);
-        adLibraryUrl.searchParams.set('search_terms', query);
-        adLibraryUrl.searchParams.set('ad_reached_countries', 'US'); // Fixed: string instead of JSON array
-        adLibraryUrl.searchParams.set('ad_active_status', 'ALL');
-        adLibraryUrl.searchParams.set('limit', '20');
-        adLibraryUrl.searchParams.set('fields', 'id,page_name,page_id,funding_entity,currency,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_descriptions,ad_creative_link_titles,ad_snapshot_url,ad_delivery_start_time,impressions,spend');
-
         console.log('Querying Meta Ad Library with:', query);
+        console.log('Full API URL:', adLibraryUrl.toString().replace(facebookAccessToken, '[REDACTED]'));
         
-        const response = await fetch(adLibraryUrl.toString());
+        const response = await fetch(adLibraryUrl.toString(), {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; FacebookBot/1.0)',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9'
+          }
+        });
         
         if (!response.ok) {
+          const errorText = await response.text();
           console.error(`Ad Library API error for "${query}":`, response.status, response.statusText);
+          console.error('Error response body:', errorText);
+          
+          // If it's a rate limit error, wait and continue
+          if (response.status === 429) {
+            console.log('Rate limited, waiting 2 seconds...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            continue;
+          }
+          
+          // For 400 errors, try alternative search approaches
+          if (response.status === 400) {
+            console.log('Bad request - trying alternative search approach for:', query);
+            
+            // Try a simpler search with fewer parameters
+            const simpleUrl = new URL(`https://graph.facebook.com/v21.0/ads_archive`);
+            simpleUrl.searchParams.set('access_token', facebookAccessToken);
+            simpleUrl.searchParams.set('search_terms', query);
+            simpleUrl.searchParams.set('ad_reached_countries', '["US"]');
+            simpleUrl.searchParams.set('limit', '10');
+            simpleUrl.searchParams.set('fields', 'id,page_name,ad_creative_bodies,ad_creative_link_titles,ad_snapshot_url');
+            
+            const simpleResponse = await fetch(simpleUrl.toString());
+            if (simpleResponse.ok) {
+              const simpleData = await simpleResponse.json();
+              if (simpleData.data && simpleData.data.length > 0) {
+                console.log(`Found ${simpleData.data.length} ads with simple search for "${query}"`);
+                
+                const processedAds = simpleData.data.slice(0, 5 - allAds.length).map((ad: any) => ({
+                  id: ad.id,
+                  headline: ad.ad_creative_link_titles?.[0] || 'No headline available',
+                  primary_text: ad.ad_creative_bodies?.[0] || 'No description available',
+                  cta: 'Learn More',
+                  image_url: ad.ad_snapshot_url || 'https://via.placeholder.com/400x300?text=Ad+Creative',
+                  impressions: 'Data not available',
+                  spend_estimate: 'Data not available',
+                  date_created: new Date().toISOString(),
+                  page_name: ad.page_name,
+                  relevance_score: 'medium'
+                }));
+                
+                allAds.push(...processedAds);
+                continue;
+              }
+            }
+          }
+          
           continue;
         }
 
@@ -275,10 +352,30 @@ serve(async (req) => {
       }
     }
 
-    // If no ads found, provide fallback
+    // If no ads found, return structured response instead of throwing error
     if (allAds.length === 0) {
       console.log('No ads found in Meta Ad Library for:', competitorName);
-      throw new Error(`No active ads found for "${competitorName}" in Facebook Ad Library. This could mean: 1) The competitor is not running Facebook ads, 2) Their page name doesn't match the search terms, or 3) Their ads are not publicly visible in the Ad Library.`);
+      
+      // Return successful response with empty data but clear messaging
+      const result = {
+        success: true,
+        data: {
+          competitor: competitorName,
+          ads: [],
+          insights: {
+            hooks: [],
+            ctas: [],
+            creative_trends: []
+          },
+          total_ads_found: 0,
+          no_ads_message: `No active or recent ads found for "${competitorName}" in Facebook Ad Library. This could mean: 1) The competitor is not running Facebook ads, 2) Their page name doesn't match our search terms, or 3) Their ads are not publicly visible in the Ad Library.`,
+          analysis_date: new Date().toISOString()
+        }
+      };
+
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     console.log(`Total ads collected: ${allAds.length}`);

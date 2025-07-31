@@ -138,8 +138,18 @@ serve(async (req) => {
       });
     }
 
-    // Generate overall patterns and trends
-    const overallInsights = generateOverallInsights(competitorInsights);
+    // Generate overall patterns and trends  
+    const overallInsights = generateOverallInsights(competitorInsights) || {
+      trending_hooks: [],
+      trending_tones: [],
+      trending_ctas: [],
+      key_patterns: ["Not enough competitor ad data to generate intelligence summary"],
+      data_quality: {
+        competitors_analyzed: 0,
+        total_hooks: 0,
+        total_ctas: 0
+      }
+    };
     
     // Step 4: Generate angle suggestions for user selection
     const suggestedAngles = [
