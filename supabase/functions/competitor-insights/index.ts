@@ -143,9 +143,10 @@ serve(async (req) => {
       trending_hooks: [],
       trending_tones: [],
       trending_ctas: [],
-      key_patterns: ["Not enough competitor ad data to generate intelligence summary"],
+      key_patterns: ["Not enough competitor ad data to generate intelligence summary. Most competitors either don't have active Facebook ads or couldn't be accessed due to API limitations."],
       data_quality: {
-        competitors_analyzed: 0,
+        competitors_analyzed: competitorInsights.length,
+        competitors_with_ad_data: competitorInsights.filter(c => c.total_ads_found > 0).length,
         total_hooks: 0,
         total_ctas: 0
       }

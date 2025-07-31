@@ -175,79 +175,124 @@ serve(async (req) => {
     }
 
     
-    // Search for ads using Meta Ad Library API with enhanced queries
-    const searchQueries = [
+    // Known Page IDs for testing - hardcode Tarte for now
+    const knownPageIds = {
+      'Tarte Cosmetics': '82403561928',
+      'tarte cosmetics': '82403561928',
+      'Tarte': '82403561928'
+    };
+    
+    // Build search queries with Page ID prioritized first
+    const searchQueries = [];
+    
+    // 1. Try known Page ID first (highest priority)
+    const knownPageId = knownPageIds[competitorName] || knownPageIds[competitorName.toLowerCase()];
+    if (knownPageId) {
+      searchQueries.push(`page_id:${knownPageId}`);
+      console.log(`Using known Page ID for ${competitorName}: ${knownPageId}`);
+    }
+    
+    // 2. Try Facebook page name if found from web search
+    if (facebookPageName && facebookPageName !== competitorName) {
+      searchQueries.push(facebookPageName);
+    }
+    
+    // 3. Try exact brand name variations
+    searchQueries.push(
       competitorName,
       competitorName.replace(/\s+/g, ''),
       competitorName.toLowerCase(),
       competitorName.replace(/[^a-zA-Z0-9\s]/g, ''), // Remove special characters
       competitorName.split(' ')[0], // First word only
-      competitorName.split(' ').slice(-1)[0], // Last word only
-      competitorUrl ? new URL(competitorUrl).hostname.replace('www.', '').split('.')[0] : '',
-      facebookPageName
-    ].filter(Boolean).slice(0, 6); // Limit to 6 queries to avoid rate limits
+      competitorName.split(' ').slice(-1)[0] // Last word only
+    );
+    
+    // 4. Try domain-based search
+    if (competitorUrl) {
+      const domain = new URL(competitorUrl).hostname.replace('www.', '').split('.')[0];
+      if (domain && domain !== competitorName.toLowerCase()) {
+        searchQueries.push(domain);
+      }
+    }
+    
+    // Remove duplicates and limit queries
+    const uniqueQueries = [...new Set(searchQueries.filter(Boolean))].slice(0, 8);
 
     let allAds = [];
 
-    for (const query of searchQueries) {
+    for (const query of uniqueQueries) {
       if (allAds.length >= 5) break; // Stop when we have enough ads
 
       try {
-        // Try multiple API approaches for better success rate
-        const apiVersions = ['v21.0', 'v20.0', 'v19.0'];
-        let apiSuccess = false;
-        let adLibraryUrl;
+        console.log(`\n=== ATTEMPTING SEARCH FOR: "${query}" ===`);
         
-        for (const version of apiVersions) {
-          try {
-            // First validate token for this API version
-            const tokenValidationUrl = `https://graph.facebook.com/${version}/me?access_token=${facebookAccessToken}`;
-            const tokenResponse = await fetch(tokenValidationUrl);
-            
-            if (tokenResponse.ok) {
-              // Build Ad Library API URL with enhanced parameters
-              adLibraryUrl = new URL(`https://graph.facebook.com/${version}/ads_archive`);
-              adLibraryUrl.searchParams.set('access_token', facebookAccessToken);
-              adLibraryUrl.searchParams.set('search_terms', query);
-              adLibraryUrl.searchParams.set('ad_reached_countries', '["US","CA","GB","AU"]'); // Multiple countries for better coverage
-              adLibraryUrl.searchParams.set('ad_active_status', 'ALL'); // Include both active and inactive ads
-              adLibraryUrl.searchParams.set('ad_type', 'ALL'); // All ad types
-              adLibraryUrl.searchParams.set('media_type', 'ALL'); // All media types
-              adLibraryUrl.searchParams.set('limit', '50'); // Increased limit for more data
-              adLibraryUrl.searchParams.set('fields', 'id,page_name,page_id,funding_entity,currency,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_descriptions,ad_creative_link_titles,ad_snapshot_url,ad_delivery_start_time,ad_delivery_stop_time,impressions,spend,demographic_distribution,region_distribution');
-              
-              console.log(`Using Facebook API ${version} for query:`, query);
-              apiSuccess = true;
-              break;
-            } else {
-              console.log(`API ${version} token validation failed, trying next version`);
-            }
-          } catch (versionError) {
-            console.log(`API ${version} failed:`, versionError.message);
-            continue;
-          }
+        // Use latest stable API version with comprehensive error handling
+        const adLibraryUrl = new URL('https://graph.facebook.com/v21.0/ads_archive');
+        adLibraryUrl.searchParams.set('access_token', facebookAccessToken);
+        
+        // Handle Page ID search differently
+        if (query.startsWith('page_id:')) {
+          const pageId = query.replace('page_id:', '');
+          adLibraryUrl.searchParams.set('search_page_ids', `["${pageId}"]`);
+          console.log(`Searching by Page ID: ${pageId}`);
+        } else {
+          adLibraryUrl.searchParams.set('search_terms', query);
+          console.log(`Searching by terms: ${query}`);
         }
         
-        if (!apiSuccess) {
-          console.error('All Facebook API versions failed token validation');
-          continue; // Skip this query and try the next one
-        }
-
-        console.log('Querying Meta Ad Library with:', query);
+        // Set comprehensive search parameters
+        adLibraryUrl.searchParams.set('ad_reached_countries', '["US","CA","GB","AU","FR","DE","IT","ES","NL","SE","NO","DK","FI"]');
+        adLibraryUrl.searchParams.set('ad_active_status', 'ALL');
+        adLibraryUrl.searchParams.set('ad_type', 'ALL');
+        adLibraryUrl.searchParams.set('media_type', 'ALL');
+        adLibraryUrl.searchParams.set('limit', '100');
+        adLibraryUrl.searchParams.set('fields', 'id,page_name,page_id,funding_entity,currency,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_descriptions,ad_creative_link_titles,ad_snapshot_url,ad_delivery_start_time,ad_delivery_stop_time,impressions,spend,demographic_distribution,region_distribution');
+        
         console.log('Full API URL:', adLibraryUrl.toString().replace(facebookAccessToken, '[REDACTED]'));
         
         const response = await fetch(adLibraryUrl.toString(), {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; FacebookBot/1.0)',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'application/json',
             'Accept-Language': 'en-US,en;q=0.9'
           }
         });
         
+        console.log(`Response status: ${response.status} ${response.statusText}`);
+        
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`Ad Library API error for "${query}":`, response.status, response.statusText);
-          console.error('Error response body:', errorText);
+          console.error(`=== API ERROR FOR "${query}" ===`);
+          console.error(`Status: ${response.status} ${response.statusText}`);
+          console.error('Full error response:', errorText);
+          
+          // Try to parse error for specific issues
+          try {
+            const errorData = JSON.parse(errorText);
+            if (errorData.error) {
+              console.error('Error details:', {
+                message: errorData.error.message,
+                type: errorData.error.type,
+                code: errorData.error.code,
+                subcode: errorData.error.error_subcode
+              });
+              
+              // Handle specific error types
+              if (errorData.error.code === 10 && errorData.error.error_subcode === 2332002) {
+                console.error('CRITICAL: App does not have Ad Library API access. Check app permissions and verification status.');
+                return new Response(JSON.stringify({
+                  success: false,
+                  error: 'Facebook App does not have permission to access Ad Library API. Please verify your app has been approved for Ad Library access.',
+                  error_details: errorData.error
+                }), {
+                  status: 403,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+              }
+            }
+          } catch (parseError) {
+            console.error('Could not parse error response:', parseError);
+          }
           
           // If it's a rate limit error, wait and continue
           if (response.status === 429) {
