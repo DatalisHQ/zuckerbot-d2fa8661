@@ -193,10 +193,19 @@ serve(async (req) => {
       if (allAds.length >= 5) break; // Stop when we have enough ads
 
       try {
-        const adLibraryUrl = new URL('https://graph.facebook.com/v19.0/ads_archive');
+        // Validate access token first
+        const tokenValidationUrl = `https://graph.facebook.com/v21.0/me?access_token=${facebookAccessToken}`;
+        const tokenResponse = await fetch(tokenValidationUrl);
+        
+        if (!tokenResponse.ok) {
+          console.error('Facebook access token validation failed:', tokenResponse.status, tokenResponse.statusText);
+          throw new Error('Invalid Facebook access token - please check credentials');
+        }
+
+        const adLibraryUrl = new URL('https://graph.facebook.com/v21.0/ads_archive');
         adLibraryUrl.searchParams.set('access_token', facebookAccessToken);
         adLibraryUrl.searchParams.set('search_terms', query);
-        adLibraryUrl.searchParams.set('ad_reached_countries', '["US"]');
+        adLibraryUrl.searchParams.set('ad_reached_countries', 'US'); // Fixed: string instead of JSON array
         adLibraryUrl.searchParams.set('ad_active_status', 'ALL');
         adLibraryUrl.searchParams.set('limit', '20');
         adLibraryUrl.searchParams.set('fields', 'id,page_name,page_id,funding_entity,currency,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_descriptions,ad_creative_link_titles,ad_snapshot_url,ad_delivery_start_time,impressions,spend');
