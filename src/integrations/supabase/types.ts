@@ -20,10 +20,14 @@ export type Database = {
           campaign_name: string
           created_at: string
           current_step: number
+          draft_data: Json | null
           framework_selection: Json | null
           generated_ads: Json | null
           id: string
+          is_draft: boolean | null
+          last_saved_at: string | null
           pipeline_status: string
+          step_data: Json | null
           updated_at: string
           user_id: string
         }
@@ -32,10 +36,14 @@ export type Database = {
           campaign_name?: string
           created_at?: string
           current_step?: number
+          draft_data?: Json | null
           framework_selection?: Json | null
           generated_ads?: Json | null
           id?: string
+          is_draft?: boolean | null
+          last_saved_at?: string | null
           pipeline_status?: string
+          step_data?: Json | null
           updated_at?: string
           user_id: string
         }
@@ -44,10 +52,14 @@ export type Database = {
           campaign_name?: string
           created_at?: string
           current_step?: number
+          draft_data?: Json | null
           framework_selection?: Json | null
           generated_ads?: Json | null
           id?: string
+          is_draft?: boolean | null
+          last_saved_at?: string | null
           pipeline_status?: string
+          step_data?: Json | null
           updated_at?: string
           user_id?: string
         }
