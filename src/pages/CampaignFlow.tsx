@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { CompetitorFlow } from '@/pages/CompetitorFlow';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { Navbar } from "@/components/Navbar";
 
 const CampaignFlow = () => {
   const navigate = useNavigate();
@@ -107,6 +108,8 @@ const CampaignFlow = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <Navbar />
+      
       {/* Header with back button */}
       <div className="border-b border-border/50">
         <div className="container mx-auto px-4 py-4">
