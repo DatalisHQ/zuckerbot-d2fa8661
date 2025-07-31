@@ -30,7 +30,7 @@ interface CompetitorInsight {
     tone: string;
     value_props: string[];
   };
-  insights: {
+  insights?: {
     hooks?: string[];
     ctas?: string[];
     creative_trends?: string[];
@@ -38,7 +38,7 @@ interface CompetitorInsight {
     common_ctas?: string[];
     dominant_tones?: string[];
     avg_text_length?: number;
-  };
+  } | null;
   total_ads_found?: number;
   no_ads_message?: string;
 }
@@ -153,7 +153,7 @@ export const CompetitorInsights = ({
   // Transform competitor insights for audience analysis
   const competitorProfiles = competitorInsights.map(competitor => ({
     name: competitor.name,
-    valueProps: competitor.websiteAnalysis?.value_props || competitor.insights.hooks || [],
+    valueProps: competitor.websiteAnalysis?.value_props || competitor.insights?.hooks || [],
     toneProfile: competitor.websiteAnalysis?.tone || 'professional'
   }));
 
@@ -444,36 +444,36 @@ export const CompetitorInsights = ({
                     <Card className="bg-primary/5 border-primary/20">
                       <CardContent className="pt-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <h5 className="font-medium text-sm mb-2 text-foreground">Top Hooks</h5>
-                            <div className="space-y-1">
-                              {(competitor.insights.common_hooks || competitor.insights.hooks || []).slice(0, 3).map((hook: string, i: number) => (
-                                <Badge key={i} variant="secondary" className="text-xs block w-fit bg-secondary/80 text-secondary-foreground border border-border">
-                                  {hook}
-                                </Badge>
-                              ))}
+                            <div>
+                              <h5 className="font-medium text-sm mb-2 text-foreground">Top Hooks</h5>
+                              <div className="space-y-1">
+                                {(competitor.insights?.common_hooks || competitor.insights?.hooks || []).slice(0, 3).map((hook: string, i: number) => (
+                                  <Badge key={i} variant="secondary" className="text-xs block w-fit bg-secondary/80 text-secondary-foreground border border-border">
+                                    {hook}
+                                  </Badge>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                          <div>
-                            <h5 className="font-medium text-sm mb-2 text-foreground">Common CTAs</h5>
-                            <div className="space-y-1">
-                              {(competitor.insights.common_ctas || competitor.insights.ctas || []).map((cta: string, i: number) => (
-                                <Badge key={i} className="text-xs block w-fit bg-primary text-primary-foreground">
-                                  {cta}
-                                </Badge>
-                              ))}
+                            <div>
+                              <h5 className="font-medium text-sm mb-2 text-foreground">Common CTAs</h5>
+                              <div className="space-y-1">
+                                {(competitor.insights?.common_ctas || competitor.insights?.ctas || []).map((cta: string, i: number) => (
+                                  <Badge key={i} className="text-xs block w-fit bg-primary text-primary-foreground">
+                                    {cta}
+                                  </Badge>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                          <div>
-                            <h5 className="font-medium text-sm mb-2 text-foreground">Dominant Tones</h5>
-                            <div className="space-y-1">
-                              {(competitor.insights.dominant_tones || competitor.insights.creative_trends || []).slice(0, 2).map((tone: string, i: number) => (
-                                <Badge key={i} variant="outline" className="text-xs block w-fit bg-background border-2 border-primary/30 text-foreground">
-                                  {tone}
-                                </Badge>
-                              ))}
+                            <div>
+                              <h5 className="font-medium text-sm mb-2 text-foreground">Dominant Tones</h5>
+                              <div className="space-y-1">
+                                {(competitor.insights?.dominant_tones || competitor.insights?.creative_trends || []).slice(0, 2).map((tone: string, i: number) => (
+                                  <Badge key={i} variant="outline" className="text-xs block w-fit bg-background border-2 border-primary/30 text-foreground">
+                                    {tone}
+                                  </Badge>
+                                ))}
+                              </div>
                             </div>
-                          </div>
                         </div>
                       </CardContent>
                     </Card>
