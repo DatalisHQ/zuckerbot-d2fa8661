@@ -342,9 +342,13 @@ export const CompetitorInsights = ({
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="0" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+            <TabsList className="w-full h-auto p-1 flex overflow-x-auto gap-1 bg-muted rounded-md">
               {competitorInsights.map((competitor, index) => (
-                <TabsTrigger key={index} value={index.toString()} className="text-xs">
+                <TabsTrigger 
+                  key={index} 
+                  value={index.toString()} 
+                  className="text-xs whitespace-nowrap px-3 py-2 flex-shrink-0 min-w-fit data-[state=active]:bg-background data-[state=active]:text-foreground"
+                >
                   {competitor.name}
                 </TabsTrigger>
               ))}
