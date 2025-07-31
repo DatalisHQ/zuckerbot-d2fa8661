@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { chromium } from "npm:playwright@1.40.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,6 +43,100 @@ function formatSpend(spend: any, currency: string = 'USD'): string {
   const upper = spend.upper_bound ? parseInt(spend.upper_bound) : lower * 2;
   
   return `$${lower}-$${upper}`;
+}
+
+// Fallback scraper using Playwright
+async function scrapeFacebookAdsLibrary(pageId: string): Promise<any[]> {
+  let browser = null;
+  try {
+    console.log(`Starting Facebook Ads Library scraper for page ID: ${pageId}`);
+    
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    
+    // Set user agent to avoid detection
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    
+    const url = `https://www.facebook.com/ads/library/?view_all_page_id=${pageId}`;
+    console.log(`Navigating to: ${url}`);
+    
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 10000 });
+    
+    // Wait for ads to load
+    await page.waitForTimeout(3000);
+    
+    // Try to find ad containers
+    const adSelectors = [
+      '[data-testid="ad-item"]',
+      '[data-testid="ad_snapshot"]',
+      '.x1i10hfl.xjbqb8w.x6umtig.x1b1mbwd.xaqea5y.xav7gou.x9f619.x1ypdohk.xt0psk2.xe8uvvx.xdj266r.x11i5rnm.xat24cr.x1mh8g0r.xexx8yu.x4uap5.x18d9i69.xkhd6sd.x16tdsg8.x1hl2dhg.xggy1nq.x1a2a7pz.x1sur9pj.xkrqix3.x1fey0fg.x1s688f',
+      '.x1yztbdb.x1n2onr6.xh8yej3.x1ja2u2z'
+    ];
+    
+    let ads = [];
+    
+    for (const selector of adSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 5000 });
+        
+        ads = await page.evaluate((sel) => {
+          const adElements = document.querySelectorAll(sel);
+          const results = [];
+          
+          for (let i = 0; i < Math.min(5, adElements.length); i++) {
+            const adElement = adElements[i];
+            
+            // Extract text content
+            const textElements = adElement.querySelectorAll('span, div, p');
+            const texts = Array.from(textElements)
+              .map(el => el.textContent?.trim())
+              .filter(text => text && text.length > 5);
+            
+            // Extract images
+            const images = Array.from(adElement.querySelectorAll('img'))
+              .map(img => img.src)
+              .filter(src => src && !src.includes('data:'));
+            
+            if (texts.length > 0) {
+              results.push({
+                id: `scraped_${Date.now()}_${i}`,
+                headline: texts[0] || 'No headline available',
+                primary_text: texts[1] || texts[0] || 'No description available',
+                cta: texts.find(t => ['Learn More', 'Shop Now', 'Sign Up', 'Get Started'].some(cta => t.includes(cta))) || 'Learn More',
+                image_url: images[0] || 'https://via.placeholder.com/400x300?text=Ad+Creative',
+                impressions: 'Data not available via scraper',
+                spend_estimate: 'Data not available via scraper',
+                date_created: new Date().toISOString(),
+                page_name: 'Scraped from Facebook Ads Library',
+                relevance_score: 'high'
+              });
+            }
+          }
+          
+          return results;
+        }, selector);
+        
+        if (ads.length > 0) {
+          console.log(`Found ${ads.length} ads using selector: ${selector}`);
+          break;
+        }
+      } catch (error) {
+        console.log(`Selector ${selector} failed:`, error.message);
+        continue;
+      }
+    }
+    
+    console.log(`Scraper completed. Found ${ads.length} ads.`);
+    return ads;
+    
+  } catch (error) {
+    console.error('Facebook Ads Library scraper error:', error);
+    return [];
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
 }
 
 // Simple web search function (placeholder for real search API)
@@ -220,11 +315,12 @@ serve(async (req) => {
 
     let allAds = [];
 
+    // Try API first with 5-second timeout
     for (const query of uniqueQueries) {
       if (allAds.length >= 5) break; // Stop when we have enough ads
 
       try {
-        console.log(`\n=== ATTEMPTING SEARCH FOR: "${query}" ===`);
+        console.log(`\n=== ATTEMPTING API SEARCH FOR: "${query}" ===`);
         
         // Use latest stable API version with comprehensive error handling
         const adLibraryUrl = new URL('https://graph.facebook.com/v21.0/ads_archive');
@@ -250,13 +346,21 @@ serve(async (req) => {
         
         console.log('Full API URL:', adLibraryUrl.toString().replace(facebookAccessToken, '[REDACTED]'));
         
-        const response = await fetch(adLibraryUrl.toString(), {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9'
-          }
-        });
+        // 5-second timeout for API call
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        try {
+          const response = await fetch(adLibraryUrl.toString(), {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Accept': 'application/json',
+              'Accept-Language': 'en-US,en;q=0.9'
+            },
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
         
         console.log(`Response status: ${response.status} ${response.statusText}`);
         
@@ -339,6 +443,10 @@ serve(async (req) => {
           }
           
           continue;
+        } catch (timeoutError) {
+          clearTimeout(timeoutId);
+          console.log(`API timeout for "${query}", moving to scraper fallback`);
+          break; // Exit API attempts and go to scraper
         }
 
         const data = await response.json();
@@ -394,6 +502,20 @@ serve(async (req) => {
       } catch (error) {
         console.error(`Error fetching ads for "${query}":`, error);
         continue;
+      }
+    }
+
+    // If API failed to get ads, try scraper fallback
+    if (allAds.length === 0 && knownPageId) {
+      console.log(`\n=== ATTEMPTING SCRAPER FALLBACK FOR PAGE ID: ${knownPageId} ===`);
+      try {
+        const scrapedAds = await scrapeFacebookAdsLibrary(knownPageId);
+        if (scrapedAds.length > 0) {
+          allAds.push(...scrapedAds);
+          console.log(`Scraper found ${scrapedAds.length} ads`);
+        }
+      } catch (scraperError) {
+        console.error('Scraper fallback failed:', scraperError);
       }
     }
 

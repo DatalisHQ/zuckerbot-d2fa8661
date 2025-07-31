@@ -402,8 +402,8 @@ export const CompetitorInsights = ({
                   </Card>
                 )}
 
-                {/* Ad Analysis Section */}
-                {competitor.total_ads_found > 0 ? (
+                {/* Ad Analysis Section - Only show if ads found */}
+                {competitor.total_ads_found > 0 && (
                   <div className="space-y-4">
                     <h4 className="font-semibold">Meta Ads Analysis ({competitor.total_ads_found} ads found)</h4>
                     
@@ -508,21 +508,6 @@ export const CompetitorInsights = ({
                       ))}
                     </div>
                   </div>
-                ) : (
-                  <Card className="bg-muted/30 border-dashed">
-                    <CardContent className="pt-6">
-                      <div className="text-center text-muted-foreground space-y-2">
-                        <AlertCircle className="h-6 w-6 mx-auto" />
-                        <p className="text-sm font-medium">No Facebook ads found for {competitor.name}</p>
-                        {competitor.no_ads_message && (
-                          <p className="text-xs">{competitor.no_ads_message}</p>
-                        )}
-                        <p className="text-xs">
-                          This competitor may not be running Facebook ads currently, or their ads aren't publicly visible in Meta's Ad Library.
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
                 )}
               </TabsContent>
             ))}
