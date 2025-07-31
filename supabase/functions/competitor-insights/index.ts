@@ -235,15 +235,38 @@ function analyzeCompetitorAds(ads: any[]) {
 }
 
 function generateOverallInsights(competitorInsights: any[]) {
-  // Only include competitors with actual insights data
-  const validInsights = competitorInsights.filter(c => c.insights && 
+  // Check for ad insights first
+  const validAdInsights = competitorInsights.filter(c => c.insights && 
     (c.insights.common_hooks?.length > 0 || c.insights.hooks?.length > 0 || 
      c.insights.common_ctas?.length > 0 || c.insights.ctas?.length > 0));
   
-  if (validInsights.length === 0) {
-    return null; // Return null if no meaningful data
+  // Check for website analysis data as fallback
+  const validWebsiteInsights = competitorInsights.filter(c => 
+    c.websiteAnalysis && c.websiteAnalysis.value_props?.length > 0);
+  
+  // If we have ad data, use it. Otherwise try website data
+  if (validAdInsights.length > 0) {
+    return generateAdBasedInsights(validAdInsights, competitorInsights.length);
+  } else if (validWebsiteInsights.length > 0) {
+    return generateWebsiteBasedInsights(validWebsiteInsights, competitorInsights.length);
   }
   
+  // Return minimal fallback message if no actionable data
+  return {
+    trending_hooks: [],
+    trending_ctas: [],
+    key_patterns: ["Not enough data to generate market intelligence summary for these competitors."],
+    data_quality: {
+      competitors_analyzed: competitorInsights.length,
+      competitors_with_ad_data: 0,
+      competitors_with_website_data: 0,
+      total_hooks: 0,
+      total_ctas: 0
+    }
+  };
+}
+
+function generateAdBasedInsights(validInsights: any[], totalCompetitors: number) {
   const allHooks = validInsights.flatMap(c => 
     c.insights.common_hooks || c.insights.hooks || []
   ).filter(Boolean);
@@ -286,9 +309,49 @@ function generateOverallInsights(competitorInsights: any[]) {
       `Analysis based on ${validInsights.length} competitor${validInsights.length > 1 ? 's' : ''} with active advertising`
     ],
     data_quality: {
-      competitors_analyzed: validInsights.length,
+      competitors_analyzed: totalCompetitors,
+      competitors_with_ad_data: validInsights.length,
+      competitors_with_website_data: 0,
       total_hooks: allHooks.length,
       total_ctas: allCtas.length
+    }
+  };
+}
+
+function generateWebsiteBasedInsights(validWebsiteInsights: any[], totalCompetitors: number) {
+  const allValueProps = validWebsiteInsights.flatMap(c => 
+    c.websiteAnalysis.value_props || []
+  ).filter(Boolean);
+  
+  const allTones = validWebsiteInsights.map(c => 
+    c.websiteAnalysis.tone || ''
+  ).filter(Boolean);
+  
+  // Extract common themes from value propositions
+  const trendingHooks = getMostCommon(allValueProps, 5).slice(0, Math.min(5, allValueProps.length));
+  const trendingTones = getMostCommon(allTones, 3).slice(0, Math.min(3, allTones.length));
+  
+  // Generate patterns based on website analysis
+  const patterns = [];
+  if (trendingTones.length > 0) {
+    patterns.push(`Market messaging is predominantly ${trendingTones[0].toLowerCase()}`);
+  }
+  if (trendingHooks.length >= 2) {
+    patterns.push(`Common value propositions focus on customer benefits and differentiation`);
+  }
+  patterns.push(`Analysis based on ${validWebsiteInsights.length} competitor website${validWebsiteInsights.length > 1 ? 's' : ''}`);
+  
+  return {
+    trending_hooks: trendingHooks,
+    trending_tones: trendingTones,
+    trending_ctas: [],
+    key_patterns: patterns,
+    data_quality: {
+      competitors_analyzed: totalCompetitors,
+      competitors_with_ad_data: 0,
+      competitors_with_website_data: validWebsiteInsights.length,
+      total_hooks: allValueProps.length,
+      total_ctas: 0
     }
   };
 }

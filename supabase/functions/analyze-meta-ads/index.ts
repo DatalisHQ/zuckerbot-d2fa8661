@@ -45,96 +45,215 @@ function formatSpend(spend: any, currency: string = 'USD'): string {
   return `$${lower}-$${upper}`;
 }
 
-// Fallback scraper using Playwright
+// Enhanced fallback scraper using Playwright with detailed logging
 async function scrapeFacebookAdsLibrary(pageId: string): Promise<any[]> {
   let browser = null;
   try {
-    console.log(`Starting Facebook Ads Library scraper for page ID: ${pageId}`);
+    console.log(`\n=== FACEBOOK ADS LIBRARY SCRAPER STARTING ===`);
+    console.log(`Target Page ID: ${pageId}`);
     
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
     const page = await browser.newPage();
     
-    // Set user agent to avoid detection
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    // Set comprehensive headers to avoid detection
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+    });
     
     const url = `https://www.facebook.com/ads/library/?view_all_page_id=${pageId}`;
     console.log(`Navigating to: ${url}`);
     
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 10000 });
+    // Navigate with longer timeout
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 });
+    console.log(`✓ Page loaded successfully`);
     
-    // Wait for ads to load
-    await page.waitForTimeout(3000);
+    // Log current URL to confirm we're on the right page
+    const currentUrl = await page.url();
+    console.log(`Current URL: ${currentUrl}`);
     
-    // Try to find ad containers
+    // Wait for page to fully load and then log full HTML for inspection
+    await page.waitForTimeout(5000);
+    console.log(`✓ Waited for page to stabilize`);
+    
+    // Get page title to verify we're on the right page
+    const pageTitle = await page.title();
+    console.log(`Page title: ${pageTitle}`);
+    
+    // Check if we hit any error pages or redirects
+    if (currentUrl.includes('login') || pageTitle.includes('Log in')) {
+      console.log(`❌ REDIRECTED TO LOGIN PAGE - This indicates access restrictions`);
+      return [];
+    }
+    
+    // Log full page HTML for debugging (first 2000 chars)
+    const fullHTML = await page.content();
+    console.log(`\n=== PAGE HTML SAMPLE (first 2000 chars) ===`);
+    console.log(fullHTML.substring(0, 2000));
+    console.log(`\n=== END HTML SAMPLE ===`);
+    
+    // Updated selectors for 2024 Facebook Ad Library
     const adSelectors = [
+      // Primary selectors (most likely to work)
+      '[data-testid="AdLibraryResultCard"]',
       '[data-testid="ad-item"]',
       '[data-testid="ad_snapshot"]',
-      '.x1i10hfl.xjbqb8w.x6umtig.x1b1mbwd.xaqea5y.xav7gou.x9f619.x1ypdohk.xt0psk2.xe8uvvx.xdj266r.x11i5rnm.xat24cr.x1mh8g0r.xexx8yu.x4uap5.x18d9i69.xkhd6sd.x16tdsg8.x1hl2dhg.xggy1nq.x1a2a7pz.x1sur9pj.xkrqix3.x1fey0fg.x1s688f',
-      '.x1yztbdb.x1n2onr6.xh8yej3.x1ja2u2z'
+      '[role="article"]',
+      // Alternative structural selectors
+      '[data-pagelet="AdLibraryResultCard"]',
+      '.x1yztbdb.x1n2onr6.xh8yej3.x1ja2u2z',
+      '.x9f619.x1n2onr6.x1ja2u2z.x78zum5.xdt5ytf.x193iq5w.xeuugli.x1r8uery.x1iyjqo2.xs83m0k.xamitd3.xsyo7zv.x16hj40l.x10b6aqq.x1yutycm',
+      // Fallback generic selectors
+      '[class*="ad"], [class*="AdLibrary"], [class*="result"]'
     ];
     
     let ads = [];
+    let selectorUsed = null;
     
-    for (const selector of adSelectors) {
+    console.log(`\n=== TESTING AD SELECTORS ===`);
+    
+    for (let i = 0; i < adSelectors.length; i++) {
+      const selector = adSelectors[i];
+      console.log(`Testing selector ${i + 1}/${adSelectors.length}: ${selector}`);
+      
       try {
-        await page.waitForSelector(selector, { timeout: 5000 });
+        // Check if elements exist
+        const elementCount = await page.$$eval(selector, elements => elements.length);
+        console.log(`  Found ${elementCount} elements with this selector`);
         
-        ads = await page.evaluate((sel) => {
-          const adElements = document.querySelectorAll(sel);
-          const results = [];
+        if (elementCount > 0) {
+          // Wait a bit more for content to load
+          await page.waitForTimeout(2000);
           
-          for (let i = 0; i < Math.min(5, adElements.length); i++) {
-            const adElement = adElements[i];
+          console.log(`  ✓ Extracting ad data...`);
+          
+          ads = await page.evaluate((sel) => {
+            const adElements = document.querySelectorAll(sel);
+            const results = [];
             
-            // Extract text content
-            const textElements = adElement.querySelectorAll('span, div, p');
-            const texts = Array.from(textElements)
-              .map(el => el.textContent?.trim())
-              .filter(text => text && text.length > 5);
+            console.log(`Found ${adElements.length} ad elements to process`);
             
-            // Extract images
-            const images = Array.from(adElement.querySelectorAll('img'))
-              .map(img => img.src)
-              .filter(src => src && !src.includes('data:'));
-            
-            if (texts.length > 0) {
-              results.push({
-                id: `scraped_${Date.now()}_${i}`,
-                headline: texts[0] || 'No headline available',
-                primary_text: texts[1] || texts[0] || 'No description available',
-                cta: texts.find(t => ['Learn More', 'Shop Now', 'Sign Up', 'Get Started'].some(cta => t.includes(cta))) || 'Learn More',
-                image_url: images[0] || 'https://via.placeholder.com/400x300?text=Ad+Creative',
-                impressions: 'Data not available via scraper',
-                spend_estimate: 'Data not available via scraper',
-                date_created: new Date().toISOString(),
-                page_name: 'Scraped from Facebook Ads Library',
-                relevance_score: 'high'
-              });
+            for (let i = 0; i < Math.min(5, adElements.length); i++) {
+              const adElement = adElements[i];
+              
+              try {
+                // Extract all text content more comprehensively
+                const allTextElements = adElement.querySelectorAll('span, div, p, h1, h2, h3, h4, a');
+                const allTexts = Array.from(allTextElements)
+                  .map(el => el.textContent?.trim())
+                  .filter(text => text && text.length > 2 && text.length < 200);
+                
+                // Extract images
+                const imageElements = adElement.querySelectorAll('img');
+                const images = Array.from(imageElements)
+                  .map(img => img.src)
+                  .filter(src => src && !src.includes('data:') && !src.includes('static'));
+                
+                // Extract links for CTAs
+                const linkElements = adElement.querySelectorAll('a');
+                const links = Array.from(linkElements)
+                  .map(a => a.textContent?.trim())
+                  .filter(text => text && text.length < 50);
+                
+                // Find headline (usually first substantial text or in a heading)
+                const headline = allTexts.find(t => t.length > 10 && t.length < 100) || 
+                                allTexts[0] || 'No headline found';
+                
+                // Find body text (longer text that's not the headline)
+                const bodyText = allTexts.find(t => t !== headline && t.length > 20) || 
+                                allTexts.find(t => t !== headline) || 'No description found';
+                
+                // Find CTA (look for action words)
+                const ctaKeywords = ['learn more', 'shop now', 'sign up', 'get started', 'book now', 'download', 'subscribe', 'contact us', 'buy now', 'try free'];
+                const cta = [...allTexts, ...links]
+                  .find(text => text && ctaKeywords.some(keyword => text.toLowerCase().includes(keyword))) || 'Learn More';
+                
+                if (headline && headline !== 'No headline found') {
+                  results.push({
+                    id: `scraped_${Date.now()}_${i}`,
+                    headline: headline,
+                    primary_text: bodyText,
+                    cta: cta,
+                    image_url: images[0] || 'https://via.placeholder.com/400x300?text=Ad+Creative',
+                    impressions: 'Data not available via scraper',
+                    spend_estimate: 'Data not available via scraper',
+                    date_created: new Date().toISOString(),
+                    page_name: 'Scraped from Facebook Ads Library',
+                    relevance_score: 'high',
+                    raw_texts: allTexts.slice(0, 5) // For debugging
+                  });
+                }
+              } catch (elementError) {
+                console.log(`Error processing ad element ${i}:`, elementError.message);
+              }
             }
-          }
+            
+            return results;
+          }, selector);
           
-          return results;
-        }, selector);
-        
-        if (ads.length > 0) {
-          console.log(`Found ${ads.length} ads using selector: ${selector}`);
-          break;
+          console.log(`  ✓ Extracted ${ads.length} ads using selector: ${selector}`);
+          
+          if (ads.length > 0) {
+            selectorUsed = selector;
+            break;
+          }
         }
       } catch (error) {
-        console.log(`Selector ${selector} failed:`, error.message);
+        console.log(`  ❌ Selector failed: ${error.message}`);
         continue;
       }
     }
     
-    console.log(`Scraper completed. Found ${ads.length} ads.`);
+    // If no ads found, take a screenshot for debugging
+    if (ads.length === 0) {
+      console.log(`\n❌ NO ADS FOUND - Taking screenshot for debugging`);
+      try {
+        await page.screenshot({ path: '/tmp/facebook_ads_debug.png', fullPage: true });
+        console.log(`Screenshot saved to /tmp/facebook_ads_debug.png`);
+      } catch (screenshotError) {
+        console.log(`Failed to take screenshot: ${screenshotError.message}`);
+      }
+      
+      // Log any error messages on the page
+      const errorTexts = await page.$$eval('*', elements => 
+        Array.from(elements)
+          .map(el => el.textContent)
+          .filter(text => text && (
+            text.includes('error') || 
+            text.includes('not found') || 
+            text.includes('unavailable') ||
+            text.includes('restricted')
+          ))
+          .slice(0, 5)
+      );
+      
+      if (errorTexts.length > 0) {
+        console.log(`Potential error messages found on page:`, errorTexts);
+      }
+    }
+    
+    console.log(`\n=== SCRAPER COMPLETED ===`);
+    console.log(`Selector used: ${selectorUsed || 'None worked'}`);
+    console.log(`Total ads found: ${ads.length}`);
+    
+    if (ads.length > 0) {
+      console.log(`Sample ad data:`, JSON.stringify(ads[0], null, 2));
+    }
+    
     return ads;
     
   } catch (error) {
-    console.error('Facebook Ads Library scraper error:', error);
+    console.error('❌ Facebook Ads Library scraper error:', error);
+    console.error('Error stack:', error.stack);
     return [];
   } finally {
     if (browser) {
       await browser.close();
+      console.log(`✓ Browser closed`);
     }
   }
 }

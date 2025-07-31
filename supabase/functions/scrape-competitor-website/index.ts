@@ -27,7 +27,7 @@ serve(async (req) => {
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Use Firecrawl API for website scraping
+    // Use Firecrawl API for website scraping + screenshot
     const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!firecrawlApiKey) {
       throw new Error('Firecrawl API key not configured');
@@ -62,6 +62,45 @@ serve(async (req) => {
     const content = scrapeData.data.markdown || scrapeData.data.html || '';
     const metadata = scrapeData.data.metadata || {};
 
+    // Take screenshot of the homepage using Playwright
+    let screenshotUrl = null;
+    try {
+      const { chromium } = await import("npm:playwright@1.40.0");
+      const browser = await chromium.launch({ headless: true });
+      const page = await browser.newPage();
+      
+      await page.setViewportSize({ width: 1200, height: 800 });
+      await page.goto(competitorUrl, { waitUntil: 'networkidle', timeout: 10000 });
+      
+      const screenshotBuffer = await page.screenshot({ 
+        type: 'png',
+        fullPage: false 
+      });
+      
+      await browser.close();
+      
+      // Upload screenshot to Supabase storage
+      const fileName = `competitor-screenshots/${competitorName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.png`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('user-files')
+        .upload(fileName, screenshotBuffer, {
+          contentType: 'image/png',
+          upsert: true
+        });
+      
+      if (!uploadError && uploadData) {
+        const { data: urlData } = supabase.storage
+          .from('user-files')
+          .getPublicUrl(fileName);
+        screenshotUrl = urlData.publicUrl;
+        console.log('Screenshot saved:', screenshotUrl);
+      }
+    } catch (screenshotError) {
+      console.error('Failed to take screenshot:', screenshotError);
+      // Continue without screenshot
+    }
+
     // Use OpenAI to analyze the scraped content
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAIApiKey) {
@@ -83,13 +122,13 @@ serve(async (req) => {
           },
           {
             role: 'user',
-            content: `Analyze this competitor's website and return detailed insights as JSON:
+            content: `Analyze this competitor's website and return CONCISE insights as JSON (2-3 sentences max per field):
 
 {
-  "niche": "Detailed description of their specific market niche and positioning (2-3 sentences)",
-  "audience": "Comprehensive description of their target audience demographics, psychographics, and needs (2-3 sentences)", 
-  "value_props": ["First key value proposition (specific and detailed)", "Second value proposition", "Third value proposition"],
-  "tone": "Detailed description of their brand voice and communication style (professional, casual, technical, etc.) with examples"
+  "niche": "Brief description of their specific market niche (max 2 sentences)",
+  "audience": "Brief description of their target audience (max 2 sentences)", 
+  "value_props": ["Concise value prop 1", "Concise value prop 2", "Concise value prop 3"],
+  "tone": "Brief description of their brand voice and style (max 2 sentences)"
 }
 
 Company: ${competitorName}
@@ -97,7 +136,7 @@ Website: ${competitorUrl}
 Content Analysis:
 ${content.substring(0, 6000)}
 
-Focus on extracting specific, actionable insights that differentiate this brand from competitors. No generic responses.`
+Be specific but concise. Focus on what makes them unique in 2-3 sentences max per field.`
           }
         ],
         max_tokens: 1200,
@@ -175,7 +214,8 @@ Focus on extracting specific, actionable insights that differentiate this brand 
         niche: analysis.niche,
         audience: analysis.audience,
         value_props: analysis.value_props,
-        tone: analysis.tone
+        tone: analysis.tone,
+        screenshot_url: screenshotUrl
       })
       .select()
       .single();
@@ -190,7 +230,10 @@ Focus on extracting specific, actionable insights that differentiate this brand 
         competitor_profile_id: profileData?.id,
         url: competitorUrl,
         name: competitorName,
-        analysis,
+        analysis: {
+          ...analysis,
+          screenshot_url: screenshotUrl
+        },
         scraped_at: new Date().toISOString()
       }
     };

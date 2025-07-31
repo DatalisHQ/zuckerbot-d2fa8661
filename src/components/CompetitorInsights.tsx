@@ -29,6 +29,7 @@ interface CompetitorInsight {
     audience: string;
     tone: string;
     value_props: string[];
+    screenshot_url?: string;
   };
   insights?: {
     hooks?: string[];
@@ -191,8 +192,8 @@ export const CompetitorInsights = ({
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Market Intelligence Summary */}
-      {overallInsights && overallInsights.trending_hooks?.length > 0 && (
+      {/* Market Intelligence Summary - Only show if we have actionable data */}
+      {overallInsights && (overallInsights.trending_hooks?.length > 0 || overallInsights.key_patterns?.some((p: string) => !p.includes("Not enough data"))) && (
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -200,14 +201,20 @@ export const CompetitorInsights = ({
               Market Intelligence Summary
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Based on analysis of {overallInsights.data_quality?.competitors_analyzed} competitor(s) with active advertising data
+              {overallInsights.data_quality?.competitors_with_ad_data > 0 
+                ? `Based on analysis of ${overallInsights.data_quality?.competitors_with_ad_data} competitor(s) with active advertising data`
+                : `Based on website analysis of ${overallInsights.data_quality?.competitors_with_website_data} competitor(s)`
+              }
             </p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {overallInsights.trending_hooks?.length > 0 && (
                 <div>
-                  <h4 className="font-medium mb-2">Trending Hooks ({overallInsights.trending_hooks.length})</h4>
+                  <h4 className="font-medium mb-2">
+                    {overallInsights.data_quality?.competitors_with_ad_data > 0 ? 'Trending Hooks' : 'Common Value Props'} 
+                    ({overallInsights.trending_hooks.length})
+                  </h4>
                   <div className="flex flex-wrap gap-1">
                     {overallInsights.trending_hooks.map((hook: string, index: number) => (
                       <Badge key={index} variant="secondary" className="text-xs">
@@ -247,14 +254,14 @@ export const CompetitorInsights = ({
         </Card>
       )}
       
-      {/* No Data Message */}
-      {(!overallInsights || !overallInsights.trending_hooks?.length) && (
+      {/* Fallback message only if truly no data */}
+      {overallInsights && overallInsights.key_patterns?.some((p: string) => p.includes("Not enough data")) && (
         <Card className="mb-6 border-dashed">
           <CardContent className="pt-6">
             <div className="text-center text-muted-foreground">
               <AlertCircle className="h-8 w-8 mx-auto mb-2" />
               <p className="text-sm">
-                Insufficient data for market intelligence summary. This could mean competitors aren't running active Facebook ads or their websites couldn't be analyzed.
+                Not enough data to generate market intelligence summary for these competitors.
               </p>
             </div>
           </CardContent>
@@ -363,29 +370,44 @@ export const CompetitorInsights = ({
                     <CardHeader>
                       <CardTitle className="text-sm">Website Analysis</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <h5 className="font-medium text-sm mb-1">Market Niche</h5>
-                          <p className="text-sm text-foreground">{competitor.websiteAnalysis.niche}</p>
-                        </div>
-                        <div>
-                          <h5 className="font-medium text-sm mb-1">Target Audience</h5>
-                          <p className="text-sm text-foreground">{competitor.websiteAnalysis.audience}</p>
-                        </div>
-                      </div>
-                      <div>
-                        <h5 className="font-medium text-sm mb-1">Brand Tone & Style</h5>
-                        <p className="text-sm text-foreground">{competitor.websiteAnalysis.tone}</p>
-                      </div>
-                      <div>
-                        <h5 className="font-medium text-sm mb-2">Key Value Propositions</h5>
-                        <div className="space-y-1">
-                          {competitor.websiteAnalysis.value_props?.map((prop: string, i: number) => (
-                            <div key={i} className="p-2 bg-secondary/20 rounded text-sm border-l-2 border-primary/30">
-                              {prop}
+                    <CardContent>
+                      <div className="flex gap-4">
+                        {/* Screenshot */}
+                        {competitor.websiteAnalysis.screenshot_url && (
+                          <div className="flex-shrink-0">
+                            <img 
+                              src={competitor.websiteAnalysis.screenshot_url} 
+                              alt={`${competitor.name} homepage`}
+                              className="w-48 h-32 object-cover rounded border shadow-sm"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        )}
+                        
+                        {/* Analysis Text */}
+                        <div className="flex-1 space-y-3">
+                          <div>
+                            <h5 className="font-medium text-sm mb-1">Niche & Audience</h5>
+                            <p className="text-sm text-foreground">
+                              <strong>Focus:</strong> {competitor.websiteAnalysis.niche}
+                            </p>
+                            <p className="text-sm text-foreground mt-1">
+                              <strong>Audience:</strong> {competitor.websiteAnalysis.audience}
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <h5 className="font-medium text-sm mb-1">Value Propositions</h5>
+                            <div className="space-y-1">
+                              {competitor.websiteAnalysis.value_props?.slice(0, 3).map((prop: string, i: number) => (
+                                <div key={i} className="text-xs bg-secondary/20 rounded px-2 py-1 border-l-2 border-primary/30">
+                                  {prop}
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          </div>
                         </div>
                       </div>
                     </CardContent>
