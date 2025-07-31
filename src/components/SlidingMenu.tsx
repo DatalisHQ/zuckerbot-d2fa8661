@@ -17,7 +17,9 @@ import {
   Users, 
   CreditCard, 
   User,
-  LogOut 
+  LogOut,
+  FileText,
+  BarChart3
 } from "lucide-react";
 import { useEnhancedAuth } from "@/utils/auth";
 
@@ -44,6 +46,18 @@ export const SlidingMenu = () => {
       href: "/zuckerbot",
       icon: Zap,
       description: "Create and manage ad campaigns"
+    },
+    {
+      title: "Files",
+      href: "/files",
+      icon: FileText,
+      description: "Manage your files and assets"
+    },
+    {
+      title: "Ad Performance",
+      href: "/ad-performance",
+      icon: BarChart3,
+      description: "View campaign performance metrics"
     },
     {
       title: "Brand Analysis",
