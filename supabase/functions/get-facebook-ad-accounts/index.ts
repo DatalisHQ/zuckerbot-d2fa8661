@@ -77,22 +77,84 @@ serve(async (req) => {
     console.log('Token length:', graphApiToken.length);
     console.log('Token expires at:', profile.facebook_token_expires_at);
     
+    // Log full token value (redacted for security)
+    console.log('Full token (redacted):', graphApiToken.substring(0, 20) + '...' + graphApiToken.substring(graphApiToken.length - 10));
+    
     // Check if token is expired
+    let isExpiredByTimestamp = false;
     if (profile.facebook_token_expires_at) {
       const expiresAt = new Date(profile.facebook_token_expires_at);
       const now = new Date();
-      const isExpired = now >= expiresAt;
+      isExpiredByTimestamp = now >= expiresAt;
       
       console.log('Token expiry check:', {
         expires_at: expiresAt.toISOString(),
         current_time: now.toISOString(),
-        is_expired: isExpired,
-        hours_until_expiry: isExpired ? 'EXPIRED' : Math.round((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60))
+        is_expired: isExpiredByTimestamp,
+        hours_until_expiry: isExpiredByTimestamp ? 'EXPIRED' : Math.round((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60))
       });
       
-      if (isExpired) {
-        console.warn('⚠️  Token is expired, API call may fail');
+      if (isExpiredByTimestamp) {
+        console.error('❌ Token is expired by timestamp, cannot proceed');
+        return new Response(
+          JSON.stringify({ 
+            error: 'Your Facebook session expired or access was revoked. Please reconnect to continue.',
+            reconnectRequired: true 
+          }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
+    }
+
+    // Use Facebook Access Token Debugger to validate token
+    console.log('=== FACEBOOK TOKEN DEBUGGER VALIDATION ===');
+    try {
+      const debuggerResponse = await fetch(
+        `https://graph.facebook.com/debug_token?input_token=${graphApiToken}&access_token=${graphApiToken}`
+      );
+      
+      const debuggerData = await debuggerResponse.json();
+      console.log('Facebook Token Debugger Response:', JSON.stringify(debuggerData, null, 2));
+      
+      if (debuggerData.data) {
+        const tokenInfo = debuggerData.data;
+        console.log('Token validation results:', {
+          is_valid: tokenInfo.is_valid,
+          expires_at: tokenInfo.expires_at ? new Date(tokenInfo.expires_at * 1000).toISOString() : 'Never expires',
+          scopes: tokenInfo.scopes || [],
+          app_id: tokenInfo.app_id,
+          user_id: tokenInfo.user_id,
+          error: tokenInfo.error
+        });
+        
+        if (!tokenInfo.is_valid) {
+          console.error('❌ Facebook Token Debugger says token is invalid:', tokenInfo.error);
+          return new Response(
+            JSON.stringify({ 
+              error: 'Your Facebook session expired or access was revoked. Please reconnect to continue.',
+              reconnectRequired: true,
+              debugInfo: tokenInfo.error
+            }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Check if token expires soon (within 24 hours)
+        if (tokenInfo.expires_at) {
+          const expiresAt = new Date(tokenInfo.expires_at * 1000);
+          const now = new Date();
+          const hoursUntilExpiry = (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60);
+          
+          if (hoursUntilExpiry < 24) {
+            console.warn('⚠️  Token expires in less than 24 hours:', hoursUntilExpiry.toFixed(2), 'hours');
+          }
+        }
+        
+        console.log('✅ Token validation passed, proceeding with API call');
+      }
+    } catch (debuggerError) {
+      console.error('❌ Failed to validate token with Facebook debugger:', debuggerError);
+      // Continue with API call since debugger failure doesn't mean token is invalid
     }
 
     console.log('Making Facebook API request for ad accounts...');
@@ -107,23 +169,67 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('❌ Facebook API error:', errorData);
+      console.error('❌ Facebook API error - Full response body:', errorData);
+      console.error('❌ Facebook API response status:', response.status);
+      console.error('❌ Facebook API response headers:', Object.fromEntries(response.headers.entries()));
       
       // Try to parse Facebook error details
+      let errorJson = null;
       try {
-        const errorJson = JSON.parse(errorData);
-        console.error('Facebook error details:', errorJson);
+        errorJson = JSON.parse(errorData);
+        console.error('❌ Parsed Facebook error details:', JSON.stringify(errorJson, null, 2));
         
         // Check for token-related errors
         if (errorJson.error?.code === 190) {
-          console.error('🔑 Token error detected - user needs to reconnect');
+          console.error('🔑 Token error (code 190) detected - user needs to reconnect');
+          console.error('🔑 Token error message:', errorJson.error.message);
+          console.error('🔑 Token error type:', errorJson.error.type);
+          console.error('🔑 Token error subcode:', errorJson.error.error_subcode);
+          
+          return new Response(
+            JSON.stringify({ 
+              error: 'Your Facebook session expired or access was revoked. Please reconnect to continue.',
+              reconnectRequired: true,
+              facebookError: errorJson.error
+            }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
+        
+        // Check for permissions errors
+        if (errorJson.error?.code === 10 || errorJson.error?.error_subcode === 458) {
+          console.error('🔑 Permission error detected - user needs to reconnect with proper permissions');
+          
+          return new Response(
+            JSON.stringify({ 
+              error: 'Your Facebook session expired or access was revoked. Please reconnect to continue.',
+              reconnectRequired: true,
+              facebookError: errorJson.error
+            }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Log other Facebook error details
+        console.error('❌ Other Facebook API error:', {
+          code: errorJson.error?.code,
+          message: errorJson.error?.message,
+          type: errorJson.error?.type,
+          error_subcode: errorJson.error?.error_subcode,
+          error_user_title: errorJson.error?.error_user_title,
+          error_user_msg: errorJson.error?.error_user_msg
+        });
+        
       } catch (e) {
-        console.error('Could not parse Facebook error as JSON');
+        console.error('❌ Could not parse Facebook error response as JSON:', e);
+        console.error('❌ Raw error response:', errorData);
       }
       
       return new Response(
-        JSON.stringify({ error: 'Failed to fetch ad accounts from Facebook API' }),
+        JSON.stringify({ 
+          error: 'Failed to fetch ad accounts from Facebook API',
+          facebookError: errorJson?.error || { message: errorData }
+        }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
