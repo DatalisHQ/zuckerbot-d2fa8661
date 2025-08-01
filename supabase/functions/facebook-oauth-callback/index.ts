@@ -24,6 +24,14 @@ serve(async (req) => {
     );
 
     console.log('=== FACEBOOK OAUTH CALLBACK DEBUG START ===');
+    console.log("Request timestamp:", new Date().toISOString());
+    
+    // CRITICAL: Get session immediately to capture provider_token (only available right after login)
+    const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+    
+    console.log('=== COMPLETE SESSION OBJECT DUMP ===');
+    console.log('Session error:', sessionError);
+    console.log('Complete session object:', JSON.stringify(session, null, 2));
     
     // Get the authenticated user
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
@@ -38,197 +46,69 @@ serve(async (req) => {
 
     console.log('✅ User authenticated successfully:', user.id);
     console.log('User email:', user.email);
-    console.log('User created:', user.created_at);
 
-    console.log('=== ANALYZING SUPABASE AUTH SESSION DATA ===');
+    // CRITICAL: Extract Facebook access token from session provider_token
+    let facebookAccessToken = null;
     
-    // Get user's Facebook identity
-    const facebookIdentity = user.identities?.find(identity => identity.provider === 'facebook');
-    
-    console.log('Total identities found:', user.identities?.length || 0);
-    console.log('Facebook identity exists:', !!facebookIdentity);
-    
-    if (user.identities) {
-      user.identities.forEach((identity, index) => {
-        console.log(`Identity ${index + 1}:`, {
-          provider: identity.provider,
-          id: identity.id,
-          user_id: identity.user_id,
-          identity_data_keys: identity.identity_data ? Object.keys(identity.identity_data) : [],
-          created_at: identity.created_at
-        });
-      });
-    }
-    
-    if (!facebookIdentity || !facebookIdentity.identity_data) {
-      console.error('❌ Facebook identity not found or missing identity_data');
-      console.log('Available identities:', user.identities?.map(i => i.provider) || []);
-      return new Response(
-        JSON.stringify({ error: 'Facebook identity not found' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log('✅ Facebook identity found');
-    console.log('Facebook identity data keys:', Object.keys(facebookIdentity.identity_data));
-    console.log('Facebook identity_data structure:', JSON.stringify(facebookIdentity.identity_data, null, 2));
-
-    console.log('=== SEARCHING FOR ACCESS TOKEN IN ALL LOCATIONS ===');
-    
-    // Extract Facebook access token from user metadata or session
-    // First try to get the session to access provider tokens
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    
-    console.log('Session exists:', !!session);
-    if (session) {
-      console.log('Session structure:', {
-        access_token: !!session.access_token,
-        refresh_token: !!session.refresh_token,
-        expires_in: session.expires_in,
-        expires_at: session.expires_at,
-        provider_token: !!session.provider_token,
-        provider_refresh_token: !!session.provider_refresh_token,
-        token_type: session.token_type,
-        user_id: session.user?.id
-      });
-      
-      if (session.provider_token) {
-        console.log('📍 Found provider_token in session, length:', session.provider_token.length);
-        console.log('Provider token preview:', session.provider_token.substring(0, 20) + '...');
-      }
-      
-      if (session.provider_refresh_token) {
-        console.log('📍 Found provider_refresh_token in session');
-      }
-    }
-    
-    console.log('User metadata structure:', {
-      keys: user.user_metadata ? Object.keys(user.user_metadata) : [],
-      hasProviderToken: !!user.user_metadata?.provider_token,
-      hasProviderRefreshToken: !!user.user_metadata?.provider_refresh_token
-    });
-    console.log('Full user_metadata:', JSON.stringify(user.user_metadata, null, 2));
-    
-    console.log('App metadata structure:', {
-      keys: user.app_metadata ? Object.keys(user.app_metadata) : [],
-      hasProviderToken: !!user.app_metadata?.provider_token
-    });
-    console.log('Full app_metadata:', JSON.stringify(user.app_metadata, null, 2));
-    
-    let accessToken = null;
-    let refreshToken = null;
-
-    // 1. Check session provider token (most reliable)
     if (session?.provider_token) {
-      accessToken = session.provider_token;
-      console.log('Found token in session.provider_token');
-    }
-
-    // 2. Check session refresh token
-    if (session?.provider_refresh_token) {
-      refreshToken = session.provider_refresh_token;
-      console.log('Found refresh token in session');
-    }
-    
-    // 3. Try user metadata locations
-    if (!accessToken && user.user_metadata?.provider_token) {
-      accessToken = user.user_metadata.provider_token;
-      console.log('Found token in user_metadata.provider_token');
-    }
-
-    // 4. Check user metadata refresh token
-    if (!refreshToken && user.user_metadata?.provider_refresh_token) {
-      refreshToken = user.user_metadata.provider_refresh_token;
-      console.log('Found refresh token in user_metadata');
-    }
-    
-    // 5. Check app metadata
-    if (!accessToken && user.app_metadata?.provider_token) {
-      accessToken = user.app_metadata.provider_token;
-      console.log('Found token in app_metadata.provider_token');
-    }
-    
-    // 6. Get token from Facebook identity data (most reliable for fresh OAuth)
-    if (!accessToken && facebookIdentity.identity_data) {
-      accessToken = facebookIdentity.identity_data.provider_token ||
-                   facebookIdentity.identity_data.access_token ||
-                   facebookIdentity.identity_data.token;
-      if (accessToken) {
-        console.log('Found token in identity_data');
-      }
-    }
-    
-    console.log('Token search results:', {
-      sessionToken: !!session?.provider_token,
-      userMetadataToken: !!user.user_metadata?.provider_token,
-      appMetadataToken: !!user.app_metadata?.provider_token,
-      identityDataToken: !!(facebookIdentity.identity_data?.provider_token || 
-                           facebookIdentity.identity_data?.access_token || 
-                           facebookIdentity.identity_data?.token),
-      refreshTokenAvailable: !!(refreshToken),
-      finalToken: !!accessToken
-    });
-    
-    console.log('=== TOKEN EXTRACTION SUMMARY ===');
-    console.log('Final access token found:', !!accessToken);
-    console.log('Final refresh token found:', !!refreshToken);
-    
-    if (accessToken) {
-      console.log('✅ SUCCESS: Access token extracted');
-      console.log('Token source: The last successful extraction method above');
-      console.log('Token length:', accessToken.length);
-      console.log('Token preview:', accessToken.substring(0, 20) + '...');
+      console.log('✅ FOUND provider_token in session!');
+      console.log('Provider token length:', session.provider_token.length);
+      console.log('Provider token preview:', session.provider_token.substring(0, 20) + "...");
+      facebookAccessToken = session.provider_token;
     } else {
-      console.error('❌ CRITICAL: Facebook access token not found in ANY location');
-      console.error('This means Supabase OAuth did not provide the token in the expected locations');
-      console.error('Checking all data structures one more time...');
-      
-      // Final comprehensive dump for debugging
-      console.error('=== COMPLETE SESSION DATA DUMP ===');
-      console.error('Session:', JSON.stringify(session, null, 2));
-      console.error('=== COMPLETE USER DATA DUMP ==='); 
-      console.error('User full object:', JSON.stringify(user, null, 2));
-      console.error('=== FACEBOOK IDENTITY FULL DUMP ===');
-      console.error('Facebook identity:', JSON.stringify(facebookIdentity, null, 2));
-      
-      // Mark Facebook as connected but without access token
-      // This allows onboarding to continue while flagging the incomplete connection
-      const { error: updateError } = await supabaseClient
-        .from('profiles')
-        .update({
-          facebook_connected: true,
-          facebook_access_token: null, // Explicitly set to null to indicate incomplete connection
-          facebook_business_id: null
-        })
-        .eq('user_id', user.id);
-
-      if (updateError) {
-        console.error('Error updating profile with incomplete connection:', updateError);
-        return new Response(
-          JSON.stringify({ error: 'Failed to update user profile' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      console.error('❌ CRITICAL ERROR: NO provider_token found in session');
+      console.error('Available session keys:', session ? Object.keys(session) : 'no session');
       
       return new Response(
         JSON.stringify({ 
-          success: true, 
-          message: 'Facebook connected but access token not available - you can retry connecting later',
-          incomplete: true 
+          error: 'Facebook access token not found in session', 
+          details: 'provider_token missing from OAuth callback - this is a fatal error',
+          reconnectRequired: true
         }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
       );
     }
 
-    console.log('=== FACEBOOK TOKEN EXCHANGE PHASE ===');
-    console.log('Facebook access token found, exchanging for long-lived token...');
-    console.log('Short-lived token length:', accessToken.length);
+    // IMMEDIATELY save the token to profiles table (token is only available now)
+    console.log('=== IMMEDIATE TOKEN STORAGE ===');
+    console.log('Storing Facebook access token immediately to profiles table...');
+    
+    const { error: immediateUpdateError } = await supabaseClient
+      .from('profiles')
+      .update({
+        facebook_connected: true,
+        facebook_access_token: facebookAccessToken,
+        facebook_token_expires_at: new Date(Date.now() + (2 * 60 * 60 * 1000)).toISOString() // 2 hours default
+      })
+      .eq('user_id', user.id);
+
+    if (immediateUpdateError) {
+      console.error('❌ CRITICAL: Failed to store Facebook token immediately:', immediateUpdateError);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Failed to store Facebook access token', 
+          details: immediateUpdateError.message
+        }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    console.log('✅ Facebook access token stored successfully in profiles table');
+
+    // OPTIONAL: Try to exchange for long-lived token (but continue even if this fails)
+    console.log('=== OPTIONAL: FACEBOOK TOKEN EXCHANGE PHASE ===');
+    console.log('Attempting to exchange for long-lived token...');
     console.log('App ID configured:', !!Deno.env.get('FACEBOOK_APP_ID'));
     console.log('App Secret configured:', !!Deno.env.get('FACEBOOK_APP_SECRET'));
 
-    // Exchange short-lived token for long-lived token (60 days)
-    let longLivedToken = null;
-    let tokenExpiresAt = null;
+    let finalToken = facebookAccessToken;
+    let finalExpiresAt = new Date(Date.now() + (2 * 60 * 60 * 1000)).toISOString(); // 2 hours default
     let isLongLived = false;
     
     try {
@@ -236,196 +116,106 @@ serve(async (req) => {
         Deno.env.get('FACEBOOK_APP_ID') || ''
       )}&client_secret=${encodeURIComponent(
         Deno.env.get('FACEBOOK_APP_SECRET') || ''
-      )}&fb_exchange_token=${encodeURIComponent(accessToken)}`;
+      )}&fb_exchange_token=${encodeURIComponent(facebookAccessToken)}`;
       
       console.log('Making token exchange request to Facebook...');
       const exchangeResponse = await fetch(exchangeUrl);
       const responseText = await exchangeResponse.text();
       
       console.log('Exchange response status:', exchangeResponse.status);
-      console.log('Exchange response headers:', Object.fromEntries(exchangeResponse.headers.entries()));
 
       if (exchangeResponse.ok) {
         const tokenData = JSON.parse(responseText);
         console.log('=== TOKEN EXCHANGE SUCCESS ===');
-        console.log('Full token exchange response:', JSON.stringify(tokenData, null, 2));
+        console.log('Token exchange response:', JSON.stringify(tokenData, null, 2));
         
-        longLivedToken = tokenData.access_token;
+        finalToken = tokenData.access_token;
         const expiresIn = tokenData.expires_in;
         
         // Check if we got a long-lived token (should be > 2 million seconds for 60 days)
-        isLongLived = expiresIn > 2000000; // ~23 days, so 60 days should be much higher
+        isLongLived = expiresIn > 2000000;
         
         console.log('Token expires in seconds:', expiresIn);
         console.log('Token expires in days:', expiresIn / 86400);
         console.log('Is long-lived token:', isLongLived);
         
-        if (expiresIn <= 7200) {
-          console.warn('⚠️  WARNING: Token exchange returned short-lived token (<=2 hours)');
-          console.warn('This suggests the Facebook app is not in Live mode or user is not admin/tester');
-        }
-        
-        tokenExpiresAt = new Date(Date.now() + (expiresIn * 1000)).toISOString();
-        console.log('Token will expire at:', tokenExpiresAt);
+        finalExpiresAt = new Date(Date.now() + (expiresIn * 1000)).toISOString();
+        console.log('Token will expire at:', finalExpiresAt);
         
       } else {
-        console.error('=== TOKEN EXCHANGE FAILED ===');
-        console.error('Response status:', exchangeResponse.status);
-        console.error('Response body:', responseText);
-        
-        // Try to parse error details
-        try {
-          const errorData = JSON.parse(responseText);
-          console.error('Facebook error details:', errorData);
-        } catch (e) {
-          console.error('Could not parse error response as JSON');
-        }
-        
-        // Fall back to using the original token with shorter expiry
-        console.log('Falling back to original short-lived token');
-        longLivedToken = accessToken;
-        tokenExpiresAt = new Date(Date.now() + (2 * 60 * 60 * 1000)).toISOString(); // 2 hours
+        console.warn('⚠️ Token exchange failed, using original token');
+        console.warn('Response status:', exchangeResponse.status);
+        console.warn('Response body:', responseText);
       }
     } catch (error) {
-      console.error('=== TOKEN EXCHANGE ERROR ===');
-      console.error('Error exchanging token:', error);
-      console.error('Error details:', error.message);
-      
-      // Fall back to using the original token
-      console.log('Falling back to original short-lived token due to error');
-      longLivedToken = accessToken;
-      tokenExpiresAt = new Date(Date.now() + (2 * 60 * 60 * 1000)).toISOString(); // 2 hours
-    }
-
-    // Validate the token (either long-lived or fallback)
-    console.log('=== TOKEN VALIDATION PHASE ===');
-    let tokenValid = false;
-    let userInfo = null;
-    
-    try {
-      console.log('Validating token with Facebook /me endpoint...');
-      const validationResponse = await fetch(
-        `https://graph.facebook.com/v18.0/me?access_token=${longLivedToken}`
-      );
-      
-      const validationText = await validationResponse.text();
-      console.log('Validation response status:', validationResponse.status);
-      
-      if (validationResponse.ok) {
-        userInfo = JSON.parse(validationText);
-        tokenValid = true;
-        console.log('✅ Facebook token validation successful');
-        console.log('User info:', userInfo);
-      } else {
-        console.error('❌ Facebook token validation failed');
-        console.error('Validation response:', validationText);
-        try {
-          const errorData = JSON.parse(validationText);
-          console.error('Facebook validation error details:', errorData);
-        } catch (e) {
-          console.error('Could not parse validation error as JSON');
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error validating Facebook token:', error);
+      console.warn('⚠️ Token exchange error, using original token:', error.message);
     }
 
     // Get user's business accounts to find business ID
     let businessId = null;
-    if (tokenValid) {
-      try {
-        const businessResponse = await fetch(
-          `https://graph.facebook.com/v18.0/me/businesses?access_token=${longLivedToken}`
-        );
+    try {
+      console.log('=== FETCHING BUSINESS ID ===');
+      const businessResponse = await fetch(
+        `https://graph.facebook.com/v18.0/me/businesses?access_token=${finalToken}`
+      );
 
-        if (businessResponse.ok) {
-          const businessData = await businessResponse.json();
-          if (businessData.data && businessData.data.length > 0) {
-            businessId = businessData.data[0].id;
-          }
-        } else {
-          console.error('Failed to fetch business accounts:', await businessResponse.text());
+      if (businessResponse.ok) {
+        const businessData = await businessResponse.json();
+        console.log('Business data:', businessData);
+        if (businessData.data && businessData.data.length > 0) {
+          businessId = businessData.data[0].id;
+          console.log('Found business ID:', businessId);
         }
-      } catch (error) {
-        console.error('Error fetching business accounts:', error);
+      } else {
+        console.warn('No business accounts found or access denied');
       }
+    } catch (error) {
+      console.warn('Error fetching business accounts:', error.message);
     }
 
-    // Update user profile with Facebook tokens and refresh token
-    const updateData: any = {
-      facebook_connected: true,
-      facebook_access_token: tokenValid ? longLivedToken : null,
-      facebook_business_id: businessId,
-      facebook_token_expires_at: tokenValid ? tokenExpiresAt : null
-    };
-
-    // Store refresh token if available for future silent refreshes
-    if (refreshToken) {
-      updateData.facebook_refresh_token = refreshToken;
-      console.log('Storing refresh token for future use');
-    }
-
-    console.log('=== DATABASE STORAGE PHASE ===');
-    console.log('Storing token in database...');
-    console.log('Update data:', {
-      ...updateData,
-      facebook_access_token: updateData.facebook_access_token ? `${updateData.facebook_access_token.substring(0, 10)}...` : null
-    });
-
-    const { error: updateError } = await supabaseClient
+    // FINAL UPDATE: Store the final token (long-lived if exchange worked, original if not)
+    console.log('=== FINAL DATABASE UPDATE ===');
+    const { error: finalUpdateError } = await supabaseClient
       .from('profiles')
-      .update(updateData)
+      .update({
+        facebook_connected: true,
+        facebook_access_token: finalToken,
+        facebook_business_id: businessId,
+        facebook_token_expires_at: finalExpiresAt
+      })
       .eq('user_id', user.id);
 
-    if (updateError) {
-      console.error('❌ Error updating profile:', updateError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to update user profile' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (finalUpdateError) {
+      console.error('❌ Error updating profile with final token:', finalUpdateError);
+      // Don't fail here since we already stored the initial token
+    } else {
+      console.log('✅ Final token update successful');
     }
 
     // Verify the token was stored correctly
-    console.log('=== DATABASE VERIFICATION PHASE ===');
     const { data: verifyProfile, error: verifyError } = await supabaseClient
       .from('profiles')
       .select('facebook_access_token, facebook_token_expires_at, facebook_business_id')
       .eq('user_id', user.id)
       .single();
 
-    if (verifyError) {
-      console.error('❌ Error verifying stored data:', verifyError);
-    } else {
+    if (!verifyError && verifyProfile) {
       console.log('✅ Verification: Token stored successfully');
       console.log('Stored token length:', verifyProfile.facebook_access_token?.length || 0);
       console.log('Stored expiry:', verifyProfile.facebook_token_expires_at);
       console.log('Stored business ID:', verifyProfile.facebook_business_id);
-      
-      // Final token type validation
-      if (isLongLived) {
-        console.log('🎉 SUCCESS: Long-lived token (60 days) stored successfully!');
-      } else {
-        console.warn('⚠️  WARNING: Short-lived token stored. Check Facebook app configuration.');
-        console.warn('To get long-lived tokens:');
-        console.warn('1. Facebook app must be in Live mode (not Development)');
-        console.warn('2. User must be app admin, developer, or tester');
-        console.warn('3. App must have proper permissions configured');
-      }
     }
-
-    console.log('Successfully stored Facebook tokens for user:', user.id);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: isLongLived ? 'Facebook long-lived token stored successfully' : 'Facebook token stored (short-lived - check app configuration)',
+        message: isLongLived ? 'Facebook long-lived token stored successfully' : 'Facebook token stored successfully',
         hasBusinessId: !!businessId,
         isLongLived,
-        tokenExpiresAt,
+        tokenExpiresAt: finalExpiresAt,
         debugInfo: {
           tokenType: isLongLived ? 'long-lived' : 'short-lived',
-          userFacebookId: userInfo?.id,
-          appConfigurationNote: isLongLived ? 'App properly configured' : 'App may need Live mode or user permissions'
+          appConfigurationNote: isLongLived ? 'App properly configured' : 'App may need Live mode for long-lived tokens'
         }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
