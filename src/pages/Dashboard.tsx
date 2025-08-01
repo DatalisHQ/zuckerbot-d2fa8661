@@ -71,15 +71,14 @@ useEffect(() => {
   const { drafts, isLoading: draftsLoading, deleteDraft, finalizeDraft } = useCampaignDrafts();
 
   useEffect(() => {
-  const checkUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) {
-      navigate("/auth");
-      useEffect(() => {
-      return;
-    }
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        navigate("/auth");
+        return;
+      }
 
-    setUser(session.user);
+      setUser(session.user);
 
     // Get user profile
     const { data: profileData } = await supabase
