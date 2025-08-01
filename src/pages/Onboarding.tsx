@@ -224,11 +224,15 @@ const Onboarding = () => {
   const connectFacebook = async () => {
     setIsLoading(true);
     try {
+      // Store current page for redirect back after OAuth
+      const currentPage = window.location.pathname + window.location.search;
+      localStorage.setItem('facebook_oauth_redirect', currentPage);
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
           scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
-          redirectTo: `${window.location.origin}/onboarding?facebook=connected`
+          redirectTo: `${window.location.origin}/onboarding?facebook=connected&return_to=${encodeURIComponent(currentPage)}`
         }
       });
 
@@ -315,6 +319,24 @@ const Onboarding = () => {
           });
         } finally {
           setIsLoading(false);
+          
+          // Check if user should be redirected back to a different page
+          const returnTo = urlParams.get('return_to');
+          const storedRedirect = localStorage.getItem('facebook_oauth_redirect');
+          
+          if (returnTo || storedRedirect) {
+            const redirectPath = returnTo || storedRedirect;
+            localStorage.removeItem('facebook_oauth_redirect');
+            
+            // Only redirect if it's not the onboarding page itself
+            if (redirectPath && !redirectPath.includes('/onboarding')) {
+              setTimeout(() => {
+                window.location.href = redirectPath;
+              }, 1000); // Brief delay to show success message
+              return;
+            }
+          }
+          
           // Clear URL parameters after processing
           window.history.replaceState({}, '', '/onboarding');
         }

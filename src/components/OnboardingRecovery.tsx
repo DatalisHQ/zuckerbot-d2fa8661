@@ -34,11 +34,15 @@ export const OnboardingRecovery = ({ onComplete }: OnboardingRecoveryProps) => {
   const connectFacebook = async () => {
     setIsLoading(true);
     try {
+      // Store current page for redirect back after OAuth
+      const currentPage = window.location.pathname + window.location.search;
+      localStorage.setItem('facebook_oauth_redirect', currentPage);
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
           scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
-          redirectTo: `${window.location.origin}/onboarding?step=2&facebook=connected`
+          redirectTo: `${window.location.origin}/onboarding?facebook=connected&return_to=${encodeURIComponent(currentPage)}`
         }
       });
 
