@@ -844,6 +844,7 @@ export type Database = {
           facebook_access_token: string | null
           facebook_business_id: string | null
           facebook_connected: boolean | null
+          facebook_token_expires_at: string | null
           full_name: string | null
           id: string
           onboarding_completed: boolean | null
@@ -860,6 +861,7 @@ export type Database = {
           facebook_access_token?: string | null
           facebook_business_id?: string | null
           facebook_connected?: boolean | null
+          facebook_token_expires_at?: string | null
           full_name?: string | null
           id?: string
           onboarding_completed?: boolean | null
@@ -876,6 +878,7 @@ export type Database = {
           facebook_access_token?: string | null
           facebook_business_id?: string | null
           facebook_connected?: boolean | null
+          facebook_token_expires_at?: string | null
           full_name?: string | null
           id?: string
           onboarding_completed?: boolean | null
