@@ -138,13 +138,48 @@ serve(async (req) => {
       );
     }
 
-    console.log('Facebook access token found, fetching business info...');
+    console.log('Facebook access token found, exchanging for long-lived token...');
 
-    // Validate the token first by making a simple API call
+    // Exchange short-lived token for long-lived token (60 days)
+    let longLivedToken = null;
+    let tokenExpiresAt = null;
+    
+    try {
+      const exchangeResponse = await fetch(
+        `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(
+          Deno.env.get('FACEBOOK_APP_ID') || ''
+        )}&client_secret=${encodeURIComponent(
+          Deno.env.get('FACEBOOK_APP_SECRET') || ''
+        )}&fb_exchange_token=${encodeURIComponent(accessToken)}`
+      );
+
+      if (exchangeResponse.ok) {
+        const tokenData = await exchangeResponse.json();
+        longLivedToken = tokenData.access_token;
+        
+        // Calculate expiration - Facebook long-lived tokens last 60 days by default
+        const expiresIn = tokenData.expires_in || (60 * 24 * 60 * 60); // 60 days in seconds
+        tokenExpiresAt = new Date(Date.now() + (expiresIn * 1000)).toISOString();
+        
+        console.log('Successfully exchanged for long-lived token, expires in:', expiresIn / 86400, 'days');
+      } else {
+        console.error('Failed to exchange token:', await exchangeResponse.text());
+        // Fall back to using the original token with shorter expiry
+        longLivedToken = accessToken;
+        tokenExpiresAt = new Date(Date.now() + (2 * 60 * 60 * 1000)).toISOString(); // 2 hours
+      }
+    } catch (error) {
+      console.error('Error exchanging token:', error);
+      // Fall back to using the original token
+      longLivedToken = accessToken;
+      tokenExpiresAt = new Date(Date.now() + (2 * 60 * 60 * 1000)).toISOString(); // 2 hours
+    }
+
+    // Validate the token (either long-lived or fallback)
     let tokenValid = false;
     try {
       const validationResponse = await fetch(
-        `https://graph.facebook.com/v18.0/me?access_token=${accessToken}`
+        `https://graph.facebook.com/v18.0/me?access_token=${longLivedToken}`
       );
       
       if (validationResponse.ok) {
@@ -162,7 +197,7 @@ serve(async (req) => {
     if (tokenValid) {
       try {
         const businessResponse = await fetch(
-          `https://graph.facebook.com/v18.0/me/businesses?access_token=${accessToken}`
+          `https://graph.facebook.com/v18.0/me/businesses?access_token=${longLivedToken}`
         );
 
         if (businessResponse.ok) {
@@ -181,9 +216,9 @@ serve(async (req) => {
     // Update user profile with Facebook tokens and refresh token
     const updateData: any = {
       facebook_connected: true,
-      facebook_access_token: tokenValid ? accessToken : null,
+      facebook_access_token: tokenValid ? longLivedToken : null,
       facebook_business_id: businessId,
-      facebook_token_expires_at: tokenValid ? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString() : null // 60 days from now (Facebook long-lived tokens typically last 60 days)
+      facebook_token_expires_at: tokenValid ? tokenExpiresAt : null
     };
 
     // Store refresh token if available for future silent refreshes

@@ -71,7 +71,7 @@ export const useFacebookTokenValidator = () => {
           isExpired: true,
           needsRefresh: true,
           isLoading: false,
-          error: 'Facebook access token expired'
+          error: 'Facebook requires you to reconnect every 60 days for security. Please reconnect your account.'
         };
       }
 
@@ -123,60 +123,11 @@ export const useFacebookTokenValidator = () => {
     }
   };
 
+  // Facebook doesn't provide true refresh tokens for long-lived tokens
+  // Once a long-lived token expires (after 60 days), user must re-authenticate
   const silentTokenRefresh = async (): Promise<boolean> => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return false;
-
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('facebook_access_token')
-        .eq('user_id', user.id)
-        .single();
-
-      if (profileError || !profile?.facebook_access_token) {
-        return false;
-      }
-
-      // Try to exchange short-lived token for long-lived token
-      const response = await fetch(
-        `https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(
-          'YOUR_FACEBOOK_APP_ID'
-        )}&client_secret=${encodeURIComponent(
-          'YOUR_FACEBOOK_APP_SECRET'
-        )}&fb_exchange_token=${encodeURIComponent(profile.facebook_access_token)}`
-      );
-
-      if (!response.ok) {
-        console.log('Silent token refresh failed, manual refresh needed');
-        return false;
-      }
-
-      const tokenData = await response.json();
-      
-      if (tokenData.access_token) {
-        // Calculate new expiration (long-lived tokens are typically 60 days)
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + (tokenData.expires_in ? tokenData.expires_in / 86400 : 60));
-
-        // Update token in database
-        await supabase
-          .from('profiles')
-          .update({
-            facebook_access_token: tokenData.access_token,
-            facebook_token_expires_at: expiresAt.toISOString()
-          })
-          .eq('user_id', user.id);
-
-        console.log('Token silently refreshed successfully');
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      console.error('Silent token refresh error:', error);
-      return false;
-    }
+    console.log('Facebook does not support silent token refresh for long-lived tokens. Manual reconnection required.');
+    return false;
   };
 
   const refreshToken = async (): Promise<boolean> => {
@@ -199,8 +150,8 @@ export const useFacebookTokenValidator = () => {
       if (error) {
         console.error('Facebook OAuth refresh error:', error);
         toast({
-          title: "Token Refresh Failed",
-          description: error.message || "Could not refresh Facebook token. Please try again.",
+          title: "Facebook Reconnection Failed",
+          description: error.message || "Could not reconnect Facebook. Please try again.",
           variant: "destructive",
         });
         return false;
@@ -210,8 +161,8 @@ export const useFacebookTokenValidator = () => {
     } catch (error: any) {
       console.error('Error refreshing Facebook token:', error);
       toast({
-        title: "Token Refresh Error",
-        description: "There was an error refreshing your Facebook token.",
+        title: "Facebook Reconnection Error",
+        description: "There was an error reconnecting your Facebook account.",
         variant: "destructive",
       });
       return false;
@@ -223,18 +174,7 @@ export const useFacebookTokenValidator = () => {
     setTokenStatus(status);
 
     if (status.needsRefresh) {
-      console.log('Facebook token needs refresh, attempting silent refresh...');
-      const silentRefreshSuccess = await silentTokenRefresh();
-      
-      if (silentRefreshSuccess) {
-        // Re-validate after silent refresh
-        const newStatus = await validateToken();
-        setTokenStatus(newStatus);
-        return newStatus.isValid;
-      }
-      
-      // Silent refresh failed, manual intervention needed
-      console.log('Silent refresh failed, manual reconnection required');
+      console.log('Facebook token needs refresh - manual reconnection required');
       return false;
     }
 
@@ -246,22 +186,16 @@ export const useFacebookTokenValidator = () => {
       const status = await validateToken();
       setTokenStatus(status);
 
-      // If token needs refresh, attempt silent refresh first
+      // If token needs refresh, show appropriate message
       if (status.needsRefresh) {
-        console.log('Token needs refresh on mount, attempting silent refresh...');
-        const silentRefreshSuccess = await silentTokenRefresh();
-        
-        if (!silentRefreshSuccess) {
-          toast({
-            title: "Facebook Connection Issue",
-            description: "Your Facebook access token needs to be refreshed. Please reconnect your account.",
-            variant: "destructive",
-          });
-        } else {
-          // Re-validate after successful silent refresh
-          const newStatus = await validateToken();
-          setTokenStatus(newStatus);
-        }
+        const isExpired = status.isExpired;
+        toast({
+          title: isExpired ? "Facebook Access Expired" : "Facebook Connection Issue",
+          description: isExpired 
+            ? "Facebook requires you to reconnect every 60 days for security. This is a normal part of their API."
+            : "Your Facebook connection needs to be refreshed. Please reconnect your account.",
+          variant: "destructive",
+        });
       }
     };
 

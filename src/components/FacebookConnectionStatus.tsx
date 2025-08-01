@@ -107,7 +107,7 @@ export const FacebookConnectionStatus = ({ onConnectionChange }: FacebookConnect
         <Alert className="border-orange-300 bg-orange-100">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className="text-orange-800">
-            {tokenStatus.isExpired && "Your Facebook access token has expired."}
+            {tokenStatus.isExpired && "Facebook requires you to reconnect every 60 days for security. This is a normal part of their API."}
             {tokenStatus.needsRefresh && !tokenStatus.isExpired && "Your Facebook access token needs to be refreshed."}
             {!tokenStatus.needsRefresh && !tokenStatus.isExpired && "There's an issue with your Facebook connection."}
           </AlertDescription>
@@ -141,9 +141,9 @@ export const FacebookConnectionStatus = ({ onConnectionChange }: FacebookConnect
         <div className="text-sm text-orange-700 space-y-1">
           <p><strong>Why does this happen?</strong></p>
           <ul className="list-disc list-inside space-y-1 text-xs">
-            <li>Facebook access tokens expire periodically for security</li>
-            <li>Reconnecting will get you a fresh, long-lasting token</li>
-            <li>Your data is safe - this is a normal part of OAuth security</li>
+            <li>Facebook requires reconnection every 60 days for security reasons</li>
+            <li>This gives you a fresh, long-lasting access token valid for 60 days</li>
+            <li>Your data is safe - this is Facebook's standard security practice</li>
           </ul>
         </div>
       </CardContent>
