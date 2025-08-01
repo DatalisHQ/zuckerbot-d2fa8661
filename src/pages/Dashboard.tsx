@@ -48,6 +48,17 @@ interface FacebookCampaign {
 }
 
 const Dashboard = () => {
+  // --- SUPABASE DEBUG: Auth state and session logging ---
+useEffect(() => {
+  async function fetchDebug() {
+    const user = await supabase.auth.getUser();
+    const session = await supabase.auth.getSession();
+    console.log("SUPABASE DEBUG - user:", user);
+    console.log("SUPABASE DEBUG - session:", session);
+  }
+  fetchDebug();
+}, []);
+// --- END SUPABASE DEBUG ---
   const navigate = useNavigate();
   const { toast } = useToast();
   const [user, setUser] = useState<any>(null);
@@ -65,14 +76,6 @@ const Dashboard = () => {
     if (!session?.user) {
       navigate("/auth");
       useEffect(() => {
-  async function fetchDebug() {
-    const user = await supabase.auth.getUser();
-    const session = await supabase.auth.getSession();
-    console.log("SUPABASE DEBUG - user:", user);
-    console.log("SUPABASE DEBUG - session:", session);
-  }
-  fetchDebug();
-}, []);
       return;
     }
 
