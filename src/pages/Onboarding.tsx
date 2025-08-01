@@ -266,57 +266,95 @@ const Onboarding = () => {
     const facebookParam = urlParams.get('facebook');
     
     if (facebookParam === 'connected') {
-      // Store Facebook tokens after successful OAuth
-      const storeFacebookTokens = async () => {
+      // Extract Facebook token immediately after successful OAuth
+      const extractFacebookToken = async () => {
         try {
           setIsLoading(true);
-          const { data, error } = await supabase.functions.invoke('facebook-oauth-callback');
+          console.log('[Onboarding] Facebook OAuth callback - extracting token immediately');
           
-          if (error) {
-            console.error('Error storing Facebook tokens:', error);
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          
+          if (!currentSession?.user) {
+            console.error('[Onboarding] No session found after Facebook OAuth');
             toast({
-              title: "Facebook Connection Issue",
-              description: "There was an issue with the Facebook connection. You can retry later.",
+              title: "Facebook Connection Error",
+              description: "No authenticated session found. Please try connecting again.",
               variant: "destructive",
             });
-          } else {
-            console.log('Facebook tokens stored successfully:', data);
-            
-            // Check if connection was incomplete
-            if (data.incomplete) {
-              toast({
-                title: "Facebook Connected (Incomplete)",
-                description: "Facebook identity linked but access token needs to be refreshed.",
-                variant: "destructive",
-              });
-              setFacebookConnected(false);
-            } else {
-              // Immediately sync Facebook Ads data after storing tokens
-              try {
-                await supabase.functions.invoke('sync-facebook-ads');
-                toast({
-                  title: "Facebook Connected & Synced",
-                  description: "Your Facebook account is connected and ad data has been imported.",
-                });
-                setFacebookConnected(true);
-              } catch (syncError) {
-                console.error("Facebook sync failed:", syncError);
-                // Don't fail for sync issues, just log them
-                toast({
-                  title: "Facebook Connected",
-                  description: "Your Facebook account is connected.",
-                });
-                setFacebookConnected(true);
-              }
-            }
+            return;
           }
+
+          console.log('[Onboarding] Session object after Facebook OAuth:', {
+            hasSession: !!currentSession,
+            hasProviderToken: !!currentSession.provider_token,
+            providerTokenLength: currentSession.provider_token?.length || 0,
+            userId: currentSession.user.id
+          });
+
+          // Extract provider_token (Facebook access token) immediately
+          const providerToken = currentSession.provider_token;
+          
+          if (!providerToken) {
+            console.error('[Onboarding] CRITICAL: No provider_token found in session after Facebook OAuth');
+            toast({
+              title: "Facebook Connection Failed",
+              description: "Facebook access token not found. Please try reconnecting to Facebook.",
+              variant: "destructive",
+            });
+            setFacebookConnected(false);
+            return;
+          }
+
+          console.log('[Onboarding] Successfully extracted Facebook token, storing to database...');
+          
+          // Store the token directly to the profiles table
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              facebook_access_token: providerToken,
+              facebook_connected: true
+            })
+            .eq('user_id', currentSession.user.id);
+
+          if (updateError) {
+            console.error('[Onboarding] Error storing Facebook token:', updateError);
+            toast({
+              title: "Facebook Connection Warning",
+              description: "Connected to Facebook but couldn't store access token. Please try reconnecting.",
+              variant: "destructive",
+            });
+            setFacebookConnected(false);
+            return;
+          }
+
+          console.log('[Onboarding] Facebook token stored successfully to database');
+          setFacebookConnected(true);
+
+          // Immediately sync Facebook Ads data after storing tokens
+          try {
+            console.log('[Onboarding] Syncing Facebook Ads data...');
+            await supabase.functions.invoke('sync-facebook-ads');
+            toast({
+              title: "Facebook Connected & Synced",
+              description: "Your Facebook account is connected and ad data has been imported.",
+            });
+          } catch (syncError) {
+            console.error("[Onboarding] Facebook sync failed:", syncError);
+            // Don't fail for sync issues, just log them
+            toast({
+              title: "Facebook Connected",
+              description: "Your Facebook account is connected.",
+            });
+          }
+
         } catch (error) {
-          console.error('Error in Facebook callback:', error);
+          console.error('[Onboarding] Error in immediate Facebook token extraction:', error);
           toast({
             title: "Facebook Connection Error", 
             description: "There was an error processing the Facebook connection.",
             variant: "destructive",
           });
+          setFacebookConnected(false);
         } finally {
           setIsLoading(false);
           
@@ -342,7 +380,7 @@ const Onboarding = () => {
         }
       };
       
-      storeFacebookTokens();
+      extractFacebookToken();
     }
   }, [toast]);
 
