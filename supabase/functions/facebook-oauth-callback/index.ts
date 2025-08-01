@@ -47,28 +47,47 @@ serve(async (req) => {
     // First try to get the session to access provider tokens
     const { data: { session } } = await supabaseClient.auth.getSession();
     
-    let accessToken = session?.provider_token;
-    
-    // Try user metadata locations
-    if (!accessToken) {
-      accessToken = user.user_metadata?.provider_token;
+    let accessToken = null;
+    let refreshToken = null;
+
+    // 1. Check session provider token (most reliable)
+    if (session?.provider_token) {
+      accessToken = session.provider_token;
+      console.log('Found token in session.provider_token');
+    }
+
+    // 2. Check session refresh token
+    if (session?.provider_refresh_token) {
+      refreshToken = session.provider_refresh_token;
+      console.log('Found refresh token in session');
     }
     
-    if (!accessToken) {
-      accessToken = user.app_metadata?.provider_token;
+    // 3. Try user metadata locations
+    if (!accessToken && user.user_metadata?.provider_token) {
+      accessToken = user.user_metadata.provider_token;
+      console.log('Found token in user_metadata.provider_token');
+    }
+
+    // 4. Check user metadata refresh token
+    if (!refreshToken && user.user_metadata?.provider_refresh_token) {
+      refreshToken = user.user_metadata.provider_refresh_token;
+      console.log('Found refresh token in user_metadata');
     }
     
-    // Get token from Facebook identity data (most reliable for fresh OAuth)
+    // 5. Check app metadata
+    if (!accessToken && user.app_metadata?.provider_token) {
+      accessToken = user.app_metadata.provider_token;
+      console.log('Found token in app_metadata.provider_token');
+    }
+    
+    // 6. Get token from Facebook identity data (most reliable for fresh OAuth)
     if (!accessToken && facebookIdentity.identity_data) {
       accessToken = facebookIdentity.identity_data.provider_token ||
                    facebookIdentity.identity_data.access_token ||
                    facebookIdentity.identity_data.token;
-    }
-    
-    // Try to get from provider_refresh_token as fallback
-    if (!accessToken) {
-      accessToken = user.user_metadata?.provider_refresh_token ||
-                   session?.provider_refresh_token;
+      if (accessToken) {
+        console.log('Found token in identity_data');
+      }
     }
     
     console.log('Token search results:', {
@@ -78,8 +97,7 @@ serve(async (req) => {
       identityDataToken: !!(facebookIdentity.identity_data?.provider_token || 
                            facebookIdentity.identity_data?.access_token || 
                            facebookIdentity.identity_data?.token),
-      refreshTokenAvailable: !!(user.user_metadata?.provider_refresh_token || 
-                               session?.provider_refresh_token),
+      refreshTokenAvailable: !!(refreshToken),
       finalToken: !!accessToken
     });
     
@@ -160,15 +178,23 @@ serve(async (req) => {
       }
     }
 
-    // Update user profile with Facebook tokens
+    // Update user profile with Facebook tokens and refresh token
+    const updateData: any = {
+      facebook_connected: true,
+      facebook_access_token: tokenValid ? accessToken : null,
+      facebook_business_id: businessId,
+      facebook_token_expires_at: tokenValid ? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString() : null // 60 days from now (Facebook long-lived tokens typically last 60 days)
+    };
+
+    // Store refresh token if available for future silent refreshes
+    if (refreshToken) {
+      updateData.facebook_refresh_token = refreshToken;
+      console.log('Storing refresh token for future use');
+    }
+
     const { error: updateError } = await supabaseClient
       .from('profiles')
-      .update({
-        facebook_connected: true,
-        facebook_access_token: tokenValid ? accessToken : null,
-        facebook_business_id: businessId,
-        facebook_token_expires_at: tokenValid ? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString() : null // 60 days from now (Facebook long-lived tokens typically last 60 days)
-      })
+      .update(updateData)
       .eq('user_id', user.id);
 
     if (updateError) {

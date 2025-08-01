@@ -69,7 +69,7 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
   const [selectedAdAccount, setSelectedAdAccount] = useState<string>('all');
   
   const { data: adAccounts, isLoading: accountsLoading } = useGetFacebookAdAccounts();
-  const { tokenStatus, checkAndRefreshIfNeeded } = useFacebookTokenValidator();
+  const { tokenStatus, validateToken, checkAndRefreshIfNeeded } = useFacebookTokenValidator();
 
   useEffect(() => {
     checkFacebookConnection();
@@ -93,13 +93,13 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Use the token validator to check connection and token validity
-      const isTokenValid = await checkAndRefreshIfNeeded();
-      setIsConnected(isTokenValid);
+      // Only validate token, don't auto-trigger refresh
+      const status = await validateToken();
+      setIsConnected(status.isValid);
       
-      if (isTokenValid) {
+      if (status.isValid) {
         await loadAdMetrics();
-      } else if (tokenStatus.needsRefresh) {
+      } else if (status.needsRefresh) {
         // Show error to user that token needs refresh
         toast({
           title: "Facebook Connection Issue",
@@ -155,8 +155,8 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
       if (!user) return;
 
       // Validate token before attempting to load metrics
-      const isTokenValid = await checkAndRefreshIfNeeded();
-      if (!isTokenValid) {
+      const status = await validateToken();
+      if (!status.isValid) {
         toast({
           title: "Facebook Token Issue",
           description: "Please reconnect your Facebook account to view metrics.",

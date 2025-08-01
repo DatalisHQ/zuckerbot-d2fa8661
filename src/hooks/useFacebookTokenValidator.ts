@@ -123,6 +123,62 @@ export const useFacebookTokenValidator = () => {
     }
   };
 
+  const silentTokenRefresh = async (): Promise<boolean> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('facebook_access_token')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profileError || !profile?.facebook_access_token) {
+        return false;
+      }
+
+      // Try to exchange short-lived token for long-lived token
+      const response = await fetch(
+        `https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(
+          'YOUR_FACEBOOK_APP_ID'
+        )}&client_secret=${encodeURIComponent(
+          'YOUR_FACEBOOK_APP_SECRET'
+        )}&fb_exchange_token=${encodeURIComponent(profile.facebook_access_token)}`
+      );
+
+      if (!response.ok) {
+        console.log('Silent token refresh failed, manual refresh needed');
+        return false;
+      }
+
+      const tokenData = await response.json();
+      
+      if (tokenData.access_token) {
+        // Calculate new expiration (long-lived tokens are typically 60 days)
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + (tokenData.expires_in ? tokenData.expires_in / 86400 : 60));
+
+        // Update token in database
+        await supabase
+          .from('profiles')
+          .update({
+            facebook_access_token: tokenData.access_token,
+            facebook_token_expires_at: expiresAt.toISOString()
+          })
+          .eq('user_id', user.id);
+
+        console.log('Token silently refreshed successfully');
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error('Silent token refresh error:', error);
+      return false;
+    }
+  };
+
   const refreshToken = async (): Promise<boolean> => {
     try {
       setTokenStatus(prev => ({ ...prev, isLoading: true }));
@@ -167,8 +223,19 @@ export const useFacebookTokenValidator = () => {
     setTokenStatus(status);
 
     if (status.needsRefresh) {
-      console.log('Facebook token needs refresh, attempting automatic refresh...');
-      return await refreshToken();
+      console.log('Facebook token needs refresh, attempting silent refresh...');
+      const silentRefreshSuccess = await silentTokenRefresh();
+      
+      if (silentRefreshSuccess) {
+        // Re-validate after silent refresh
+        const newStatus = await validateToken();
+        setTokenStatus(newStatus);
+        return newStatus.isValid;
+      }
+      
+      // Silent refresh failed, manual intervention needed
+      console.log('Silent refresh failed, manual reconnection required');
+      return false;
     }
 
     return status.isValid;
@@ -179,13 +246,22 @@ export const useFacebookTokenValidator = () => {
       const status = await validateToken();
       setTokenStatus(status);
 
-      // If token needs refresh, show a toast but don't auto-refresh on mount
+      // If token needs refresh, attempt silent refresh first
       if (status.needsRefresh) {
-        toast({
-          title: "Facebook Connection Issue",
-          description: "Your Facebook access token needs to be refreshed. Please reconnect your account.",
-          variant: "destructive",
-        });
+        console.log('Token needs refresh on mount, attempting silent refresh...');
+        const silentRefreshSuccess = await silentTokenRefresh();
+        
+        if (!silentRefreshSuccess) {
+          toast({
+            title: "Facebook Connection Issue",
+            description: "Your Facebook access token needs to be refreshed. Please reconnect your account.",
+            variant: "destructive",
+          });
+        } else {
+          // Re-validate after successful silent refresh
+          const newStatus = await validateToken();
+          setTokenStatus(newStatus);
+        }
       }
     };
 
@@ -196,6 +272,7 @@ export const useFacebookTokenValidator = () => {
     tokenStatus,
     validateToken,
     refreshToken,
+    silentTokenRefresh,
     checkAndRefreshIfNeeded
   };
 };
