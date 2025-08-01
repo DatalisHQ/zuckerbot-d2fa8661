@@ -64,6 +64,15 @@ const Dashboard = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
       navigate("/auth");
+      useEffect(() => {
+  async function fetchDebug() {
+    const user = await supabase.auth.getUser();
+    const session = await supabase.auth.getSession();
+    console.log("SUPABASE DEBUG - user:", user);
+    console.log("SUPABASE DEBUG - session:", session);
+  }
+  fetchDebug();
+}, []);
       return;
     }
 
