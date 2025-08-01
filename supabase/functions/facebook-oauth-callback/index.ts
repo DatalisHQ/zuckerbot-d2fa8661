@@ -23,29 +23,97 @@ serve(async (req) => {
       }
     );
 
+    console.log('=== FACEBOOK OAUTH CALLBACK DEBUG START ===');
+    
     // Get the authenticated user
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     
     if (userError || !user) {
+      console.error('❌ User authentication failed:', userError);
       return new Response(
         JSON.stringify({ error: 'User not authenticated' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    console.log('✅ User authenticated successfully:', user.id);
+    console.log('User email:', user.email);
+    console.log('User created:', user.created_at);
+
+    console.log('=== ANALYZING SUPABASE AUTH SESSION DATA ===');
+    
     // Get user's Facebook identity
     const facebookIdentity = user.identities?.find(identity => identity.provider === 'facebook');
     
+    console.log('Total identities found:', user.identities?.length || 0);
+    console.log('Facebook identity exists:', !!facebookIdentity);
+    
+    if (user.identities) {
+      user.identities.forEach((identity, index) => {
+        console.log(`Identity ${index + 1}:`, {
+          provider: identity.provider,
+          id: identity.id,
+          user_id: identity.user_id,
+          identity_data_keys: identity.identity_data ? Object.keys(identity.identity_data) : [],
+          created_at: identity.created_at
+        });
+      });
+    }
+    
     if (!facebookIdentity || !facebookIdentity.identity_data) {
+      console.error('❌ Facebook identity not found or missing identity_data');
+      console.log('Available identities:', user.identities?.map(i => i.provider) || []);
       return new Response(
         JSON.stringify({ error: 'Facebook identity not found' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    console.log('✅ Facebook identity found');
+    console.log('Facebook identity data keys:', Object.keys(facebookIdentity.identity_data));
+    console.log('Facebook identity_data structure:', JSON.stringify(facebookIdentity.identity_data, null, 2));
+
+    console.log('=== SEARCHING FOR ACCESS TOKEN IN ALL LOCATIONS ===');
+    
     // Extract Facebook access token from user metadata or session
     // First try to get the session to access provider tokens
     const { data: { session } } = await supabaseClient.auth.getSession();
+    
+    console.log('Session exists:', !!session);
+    if (session) {
+      console.log('Session structure:', {
+        access_token: !!session.access_token,
+        refresh_token: !!session.refresh_token,
+        expires_in: session.expires_in,
+        expires_at: session.expires_at,
+        provider_token: !!session.provider_token,
+        provider_refresh_token: !!session.provider_refresh_token,
+        token_type: session.token_type,
+        user_id: session.user?.id
+      });
+      
+      if (session.provider_token) {
+        console.log('📍 Found provider_token in session, length:', session.provider_token.length);
+        console.log('Provider token preview:', session.provider_token.substring(0, 20) + '...');
+      }
+      
+      if (session.provider_refresh_token) {
+        console.log('📍 Found provider_refresh_token in session');
+      }
+    }
+    
+    console.log('User metadata structure:', {
+      keys: user.user_metadata ? Object.keys(user.user_metadata) : [],
+      hasProviderToken: !!user.user_metadata?.provider_token,
+      hasProviderRefreshToken: !!user.user_metadata?.provider_refresh_token
+    });
+    console.log('Full user_metadata:', JSON.stringify(user.user_metadata, null, 2));
+    
+    console.log('App metadata structure:', {
+      keys: user.app_metadata ? Object.keys(user.app_metadata) : [],
+      hasProviderToken: !!user.app_metadata?.provider_token
+    });
+    console.log('Full app_metadata:', JSON.stringify(user.app_metadata, null, 2));
     
     let accessToken = null;
     let refreshToken = null;
@@ -101,13 +169,27 @@ serve(async (req) => {
       finalToken: !!accessToken
     });
     
-    // For now, if no token is found, we'll use a placeholder approach
-    // and mark the connection as incomplete but still progress the onboarding
-    if (!accessToken) {
-      console.error('Facebook access token not found in any location');
-      console.log('User metadata:', JSON.stringify(user.user_metadata, null, 2));
-      console.log('App metadata:', JSON.stringify(user.app_metadata, null, 2));
-      console.log('Identity data:', JSON.stringify(facebookIdentity.identity_data, null, 2));
+    console.log('=== TOKEN EXTRACTION SUMMARY ===');
+    console.log('Final access token found:', !!accessToken);
+    console.log('Final refresh token found:', !!refreshToken);
+    
+    if (accessToken) {
+      console.log('✅ SUCCESS: Access token extracted');
+      console.log('Token source: The last successful extraction method above');
+      console.log('Token length:', accessToken.length);
+      console.log('Token preview:', accessToken.substring(0, 20) + '...');
+    } else {
+      console.error('❌ CRITICAL: Facebook access token not found in ANY location');
+      console.error('This means Supabase OAuth did not provide the token in the expected locations');
+      console.error('Checking all data structures one more time...');
+      
+      // Final comprehensive dump for debugging
+      console.error('=== COMPLETE SESSION DATA DUMP ===');
+      console.error('Session:', JSON.stringify(session, null, 2));
+      console.error('=== COMPLETE USER DATA DUMP ==='); 
+      console.error('User full object:', JSON.stringify(user, null, 2));
+      console.error('=== FACEBOOK IDENTITY FULL DUMP ===');
+      console.error('Facebook identity:', JSON.stringify(facebookIdentity, null, 2));
       
       // Mark Facebook as connected but without access token
       // This allows onboarding to continue while flagging the incomplete connection
