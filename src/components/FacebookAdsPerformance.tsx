@@ -18,6 +18,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { TimeFrameFilter } from "./TimeFrameFilter";
 import { useGetFacebookAdAccounts, AdAccount } from "@/hooks/useGetFacebookAdAccounts";
+import { useFacebookTokenValidator } from "@/hooks/useFacebookTokenValidator";
+import { FacebookConnectionStatus } from "./FacebookConnectionStatus";
 
 interface AdMetrics {
   impressions: number;
@@ -67,6 +69,7 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
   const [selectedAdAccount, setSelectedAdAccount] = useState<string>('all');
   
   const { data: adAccounts, isLoading: accountsLoading } = useGetFacebookAdAccounts();
+  const { tokenStatus, checkAndRefreshIfNeeded } = useFacebookTokenValidator();
 
   useEffect(() => {
     checkFacebookConnection();
@@ -90,22 +93,19 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Check profile for Facebook connection status
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('facebook_connected, facebook_access_token, facebook_business_id')
-        .eq('user_id', user.id)
-        .single();
+      // Use the token validator to check connection and token validity
+      const isTokenValid = await checkAndRefreshIfNeeded();
+      setIsConnected(isTokenValid);
       
-      const facebookConnected = profile?.facebook_connected || false;
-      const hasValidToken = !!(profile?.facebook_access_token && profile?.facebook_business_id);
-      setIsConnected(facebookConnected && hasValidToken);
-      
-      if (facebookConnected && hasValidToken) {
+      if (isTokenValid) {
         await loadAdMetrics();
-      } else if (facebookConnected && !hasValidToken) {
-        // User is connected but tokens are missing - this shouldn't happen with new auth flow
-        console.warn('Facebook connected but tokens missing - may need to reconnect');
+      } else if (tokenStatus.needsRefresh) {
+        // Show error to user that token needs refresh
+        toast({
+          title: "Facebook Connection Issue",
+          description: "Your Facebook access token needs to be refreshed. Please reconnect your account.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Error checking Facebook connection:', error);
@@ -153,6 +153,18 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      // Validate token before attempting to load metrics
+      const isTokenValid = await checkAndRefreshIfNeeded();
+      if (!isTokenValid) {
+        toast({
+          title: "Facebook Token Issue",
+          description: "Please reconnect your Facebook account to view metrics.",
+          variant: "destructive",
+        });
+        setIsConnected(false);
+        return;
+      }
 
       // Check if user has proper Facebook credentials before syncing
       const { data: profile } = await supabase
@@ -342,25 +354,33 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
 
   if (!isConnected) {
     return (
-      <Card>
-        <CardHeader className="text-center">
-          <CardTitle>Facebook Ads Performance</CardTitle>
-          <CardDescription>
-            Connect your Facebook Ads account to view performance metrics and insights
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-center space-y-4">
-          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
-            <BarChart3 className="w-8 h-8 text-blue-600" />
-          </div>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold">Facebook Ads Performance</h2>
           <p className="text-muted-foreground">
-            Analyze your ad performance, compare with competitors, and discover optimization opportunities
+            Connect your Facebook Ads account to view performance metrics and insights
           </p>
-          <Button onClick={connectFacebook} className="btn-primary">
-            Connect Facebook Ads
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+        
+        <FacebookConnectionStatus onConnectionChange={setIsConnected} />
+        
+        <Card>
+          <CardHeader className="text-center">
+            <CardTitle>Connect Facebook Ads</CardTitle>
+            <CardDescription>
+              Analyze your ad performance, compare with competitors, and discover optimization opportunities
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+              <BarChart3 className="w-8 h-8 text-blue-600" />
+            </div>
+            <Button onClick={connectFacebook} className="btn-primary">
+              Connect Facebook Ads
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 

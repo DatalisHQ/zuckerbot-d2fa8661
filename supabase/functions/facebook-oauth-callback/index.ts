@@ -44,36 +44,44 @@ serve(async (req) => {
     }
 
     // Extract Facebook access token from user metadata or session
-    let accessToken = user.user_metadata?.provider_token;
+    // First try to get the session to access provider tokens
+    const { data: { session } } = await supabaseClient.auth.getSession();
     
-    // Try alternative locations for the access token
+    let accessToken = session?.provider_token;
+    
+    // Try user metadata locations
+    if (!accessToken) {
+      accessToken = user.user_metadata?.provider_token;
+    }
+    
     if (!accessToken) {
       accessToken = user.app_metadata?.provider_token;
     }
     
-    // Try to get from the current session
-    if (!accessToken) {
-      const { data: { session } } = await supabaseClient.auth.getSession();
-      accessToken = session?.provider_token;
-    }
-    
-    // Get token from Facebook identity data
+    // Get token from Facebook identity data (most reliable for fresh OAuth)
     if (!accessToken && facebookIdentity.identity_data) {
-      accessToken = facebookIdentity.identity_data.provider_token;
-    }
-    
-    // Try to get from provider_refresh_token (sometimes tokens are stored here)
-    if (!accessToken) {
-      accessToken = user.user_metadata?.provider_refresh_token;
-    }
-    
-    // Try to get from latest identity if it has a newer token
-    if (!accessToken && facebookIdentity.identity_data) {
-      // Look for token in various identity data fields
-      accessToken = facebookIdentity.identity_data.access_token || 
-                   facebookIdentity.identity_data.provider_token ||
+      accessToken = facebookIdentity.identity_data.provider_token ||
+                   facebookIdentity.identity_data.access_token ||
                    facebookIdentity.identity_data.token;
     }
+    
+    // Try to get from provider_refresh_token as fallback
+    if (!accessToken) {
+      accessToken = user.user_metadata?.provider_refresh_token ||
+                   session?.provider_refresh_token;
+    }
+    
+    console.log('Token search results:', {
+      sessionToken: !!session?.provider_token,
+      userMetadataToken: !!user.user_metadata?.provider_token,
+      appMetadataToken: !!user.app_metadata?.provider_token,
+      identityDataToken: !!(facebookIdentity.identity_data?.provider_token || 
+                           facebookIdentity.identity_data?.access_token || 
+                           facebookIdentity.identity_data?.token),
+      refreshTokenAvailable: !!(user.user_metadata?.provider_refresh_token || 
+                               session?.provider_refresh_token),
+      finalToken: !!accessToken
+    });
     
     // For now, if no token is found, we'll use a placeholder approach
     // and mark the connection as incomplete but still progress the onboarding
@@ -159,7 +167,7 @@ serve(async (req) => {
         facebook_connected: true,
         facebook_access_token: tokenValid ? accessToken : null,
         facebook_business_id: businessId,
-        facebook_token_expires_at: tokenValid ? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString() : null // 60 days from now
+        facebook_token_expires_at: tokenValid ? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString() : null // 60 days from now (Facebook long-lived tokens typically last 60 days)
       })
       .eq('user_id', user.id);
 
