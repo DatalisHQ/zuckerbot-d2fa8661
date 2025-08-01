@@ -279,3 +279,20 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: Co
     </div>
   );
 };
+import { useEffect } from "react";
+import { createClient } from "@supabase/supabase-js"; // adjust import if needed
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL, // or however you set envs
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+useEffect(() => {
+  async function fetchDebug() {
+    const user = await supabase.auth.getUser();
+    const session = await supabase.auth.getSession();
+    console.log("SUPABASE DEBUG - user:", user);
+    console.log("SUPABASE DEBUG - session:", session);
+  }
+  fetchDebug();
+}, []);
