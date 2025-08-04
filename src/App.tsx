@@ -58,7 +58,8 @@ function App() {
         ) {
           console.log('[App] Facebook OAuth detected - capturing token globally');
           
-          setTimeout(async () => {
+          // Update user profile with Facebook token immediately (no setTimeout)
+          const handleFacebookTokenCapture = async () => {
             try {
               // Update user profile with Facebook token
               const { error: updateError } = await supabase
@@ -76,31 +77,32 @@ function App() {
 
               console.log('[App] Facebook token stored successfully');
 
-              // Check current route to determine next action
+              // Always sync ads data after storing token (unless on onboarding)
               const currentPath = window.location.pathname;
+              const isOnboarding = currentPath === '/onboarding';
               
-              // If user is on dashboard/zuckerbot, sync ads data and show success
-              if (currentPath === '/zuckerbot' || currentPath === '/dashboard') {
-                console.log('[App] User on dashboard - syncing Facebook ads data');
+              if (!isOnboarding) {
+                console.log('[App] Syncing Facebook ads data');
                 try {
                   await supabase.functions.invoke('sync-facebook-ads');
                   console.log('[App] Facebook ads data synced successfully');
-                  
-                  // Trigger a custom event to notify the dashboard component
-                  window.dispatchEvent(new CustomEvent('facebook-connected', {
-                    detail: { success: true }
-                  }));
                 } catch (syncError) {
                   console.error('[App] Error syncing Facebook ads:', syncError);
                 }
               }
-              // If user is on onboarding, let onboarding handle the flow
-              // (no additional action needed)
+
+              // Always dispatch success event for any listening components
+              window.dispatchEvent(new CustomEvent('facebook-connected', {
+                detail: { success: true }
+              }));
               
             } catch (error) {
               console.error('[App] Error in Facebook token handling:', error);
             }
-          }, 0);
+          };
+
+          // Execute immediately
+          handleFacebookTokenCapture();
         }
       }
     );

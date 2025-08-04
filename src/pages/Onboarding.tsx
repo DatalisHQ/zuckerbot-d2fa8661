@@ -219,17 +219,7 @@ const Onboarding = () => {
         console.log("Brand analysis completed:", brandAnalysisData.analysis);
       }
 
-      // If Facebook is connected, sync ads data immediately
-      if (profileToUse?.facebook_connected && profileToUse?.facebook_access_token) {
-        console.log("Syncing Facebook Ads data...");
-        try {
-          await supabase.functions.invoke('sync-facebook-ads');
-          console.log("Facebook Ads data synced successfully");
-        } catch (syncError) {
-          console.error("Facebook sync failed (non-critical):", syncError);
-          // Don't fail onboarding if Facebook sync fails
-        }
-      }
+      // Facebook sync is now handled globally in App.tsx - no need to duplicate here
 
       // Mark onboarding as completed or show update success
       if (!isUpdateMode) {
