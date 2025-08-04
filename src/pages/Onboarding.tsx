@@ -25,6 +25,35 @@ const Onboarding = () => {
   const { toast } = useToast();
   const { logout } = useEnhancedAuth();
 
+  // Helper function to create missing user profiles
+  const createUserProfile = async (user: any) => {
+    try {
+      console.log(`[Onboarding] Creating profile for user: ${user.id}`);
+      const { data: newProfile, error: createError } = await supabase
+        .from('profiles')
+        .insert({
+          user_id: user.id,
+          email: user.email,
+          full_name: user.user_metadata?.full_name || user.user_metadata?.name || null,
+          onboarding_completed: false,
+          facebook_connected: false
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('[Onboarding] Error creating profile:', createError);
+        throw new Error(`Failed to create user profile: ${createError.message}`);
+      }
+
+      console.log('[Onboarding] Profile created successfully:', newProfile);
+      return newProfile;
+    } catch (error) {
+      console.error('[Onboarding] Profile creation failed:', error);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const checkUser = async () => {
       // Use enhanced session validation
@@ -58,9 +87,13 @@ const Onboarding = () => {
           .from('profiles')
           .select('onboarding_completed, business_name')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (profile?.onboarding_completed && !isUpdate) {
+        // If no profile exists, create one automatically
+        if (!profile) {
+          console.log('[Onboarding] No profile found, creating one...');
+          await createUserProfile(user);
+        } else if (profile?.onboarding_completed && !isUpdate) {
           console.log('[Onboarding] User has completed onboarding, redirecting to ZuckerBot');
           navigate("/zuckerbot");
           return;
@@ -117,13 +150,15 @@ const Onboarding = () => {
         .from('profiles')
         .select('*')
         .eq('user_id', session.user.id)
-        .single();
+        .maybeSingle();
 
       console.log("Existing profile before update:", existingProfile);
 
-      if (checkError) {
-        console.error("Error checking existing profile:", checkError);
-        throw new Error("Profile not found. Please sign out and sign back in.");
+      // If no profile exists, create one automatically
+      let profileToUse = existingProfile;
+      if (!existingProfile) {
+        console.log("No profile found during business setup, creating one...");
+        profileToUse = await createUserProfile(session.user);
       }
 
       // Update profile with business info
@@ -185,7 +220,7 @@ const Onboarding = () => {
       }
 
       // If Facebook is connected, sync ads data immediately
-      if (existingProfile?.facebook_connected && existingProfile?.facebook_access_token) {
+      if (profileToUse?.facebook_connected && profileToUse?.facebook_access_token) {
         console.log("Syncing Facebook Ads data...");
         try {
           await supabase.functions.invoke('sync-facebook-ads');
