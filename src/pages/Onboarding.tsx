@@ -39,7 +39,18 @@ const Onboarding = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const mode = urlParams.get('mode');
       const isUpdate = mode === 'update';
+      const facebookParam = urlParams.get('facebook');
       setIsUpdateMode(isUpdate);
+
+      // CRITICAL: If user just completed Facebook OAuth, stay on onboarding
+      // Don't redirect away even if onboarding was previously completed
+      if (facebookParam === 'connected') {
+        console.log('[Onboarding] Facebook OAuth return detected - staying on onboarding page');
+        // Clean up URL without navigating away
+        const cleanUrl = window.location.pathname + (isUpdate ? '?mode=update' : '');
+        window.history.replaceState({}, '', cleanUrl);
+        return; // Don't proceed with normal onboarding completion check
+      }
 
       // Check if already completed onboarding (but allow updates)
       try {
@@ -50,6 +61,7 @@ const Onboarding = () => {
           .single();
 
         if (profile?.onboarding_completed && !isUpdate) {
+          console.log('[Onboarding] User has completed onboarding, redirecting to ZuckerBot');
           navigate("/zuckerbot");
           return;
         }
