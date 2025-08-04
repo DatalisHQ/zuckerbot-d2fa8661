@@ -264,8 +264,14 @@ const Onboarding = () => {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        // Capture Facebook token immediately when OAuth completes
-        if (event === 'SIGNED_IN' && session?.provider_token && session?.user) {
+        // Only capture Facebook token for fresh Facebook OAuth sign-ins
+        // This prevents token capture on email logins or general sign-ins
+        if (
+          event === 'SIGNED_IN' && 
+          session?.provider_token && 
+          session?.user && 
+          session.user.app_metadata?.provider === "facebook"
+        ) {
           console.log('[Onboarding] Facebook OAuth detected - capturing token immediately');
           setIsLoading(true);
           
