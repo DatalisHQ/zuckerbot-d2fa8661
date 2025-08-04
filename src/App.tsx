@@ -34,13 +34,74 @@ function App() {
   useEffect(() => {
     console.log('[App] Initializing auth state');
     
-    // Set up auth state listener
+    // Set up auth state listener with Facebook token handling
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        console.log('[App] Auth state change:', { event, hasSession: !!session, userId: session?.user?.id });
+      async (event, session) => {
+        console.log('[App] Auth state change:', { 
+          event, 
+          hasSession: !!session, 
+          userId: session?.user?.id,
+          hasProviderToken: !!session?.provider_token,
+          provider: session?.user?.app_metadata?.provider
+        });
+        
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
+
+        // Handle Facebook OAuth token capture globally
+        if (
+          event === 'SIGNED_IN' && 
+          session?.provider_token && 
+          session?.user && 
+          session.user.app_metadata?.provider === "facebook"
+        ) {
+          console.log('[App] Facebook OAuth detected - capturing token globally');
+          
+          setTimeout(async () => {
+            try {
+              // Update user profile with Facebook token
+              const { error: updateError } = await supabase
+                .from('profiles')
+                .update({
+                  facebook_access_token: session.provider_token,
+                  facebook_connected: true
+                })
+                .eq('user_id', session.user.id);
+
+              if (updateError) {
+                console.error('[App] Error storing Facebook token:', updateError);
+                return;
+              }
+
+              console.log('[App] Facebook token stored successfully');
+
+              // Check current route to determine next action
+              const currentPath = window.location.pathname;
+              
+              // If user is on dashboard/zuckerbot, sync ads data and show success
+              if (currentPath === '/zuckerbot' || currentPath === '/dashboard') {
+                console.log('[App] User on dashboard - syncing Facebook ads data');
+                try {
+                  await supabase.functions.invoke('sync-facebook-ads');
+                  console.log('[App] Facebook ads data synced successfully');
+                  
+                  // Trigger a custom event to notify the dashboard component
+                  window.dispatchEvent(new CustomEvent('facebook-connected', {
+                    detail: { success: true }
+                  }));
+                } catch (syncError) {
+                  console.error('[App] Error syncing Facebook ads:', syncError);
+                }
+              }
+              // If user is on onboarding, let onboarding handle the flow
+              // (no additional action needed)
+              
+            } catch (error) {
+              console.error('[App] Error in Facebook token handling:', error);
+            }
+          }, 0);
+        }
       }
     );
 

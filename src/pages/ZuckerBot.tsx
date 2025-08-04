@@ -93,8 +93,28 @@ const ZuckerBot = () => {
       }
     };
 
+    // Listen for Facebook connection events from the global auth handler
+    const handleFacebookConnected = (event: CustomEvent) => {
+      console.log('[ZuckerBot] Facebook connection event received:', event.detail);
+      if (event.detail.success) {
+        toast({
+          title: "Facebook Connected",
+          description: "Your Facebook account has been connected and ad data is being synced.",
+          variant: "default",
+        });
+        
+        // Optionally reload user context to refresh any Facebook-related data
+        loadUserAndBusiness();
+      }
+    };
+
+    window.addEventListener('facebook-connected', handleFacebookConnected as EventListener);
     loadUserAndBusiness();
-  }, [navigate]);
+
+    return () => {
+      window.removeEventListener('facebook-connected', handleFacebookConnected as EventListener);
+    };
+  }, [navigate, toast]);
 
   const handlePromptAction = async (prompt: any) => {
     if (prompt.disabled) {

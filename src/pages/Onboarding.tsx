@@ -307,80 +307,22 @@ const Onboarding = () => {
     logout(navigate, false); // Don't show toast on onboarding page
   };
 
-  // Set up auth state listener for Facebook token capture
+  // Listen for global Facebook connection events
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        // Only capture Facebook token for fresh Facebook OAuth sign-ins
-        // This prevents token capture on email logins or general sign-ins
-        if (
-          event === 'SIGNED_IN' && 
-          session?.provider_token && 
-          session?.user && 
-          session.user.app_metadata?.provider === "facebook"
-        ) {
-          console.log('[Onboarding] Facebook OAuth detected - capturing token immediately');
-          setIsLoading(true);
-          
-          try {
-            const { error: updateError } = await supabase
-              .from('profiles')
-              .update({
-                facebook_access_token: session.provider_token,
-                facebook_connected: true
-              })
-              .eq('user_id', session.user.id);
-
-            if (updateError) {
-              console.error('[Onboarding] Error storing Facebook token:', updateError);
-              toast({
-                title: "Facebook Connection Warning",
-                description: "Connected to Facebook but couldn't store access token. Please try reconnecting.",
-                variant: "destructive",
-              });
-              setFacebookConnected(false);
-            } else {
-              console.log('[Onboarding] Facebook token stored successfully');
-              setFacebookConnected(true);
-
-              // Immediately sync Facebook Ads data after storing tokens
-              try {
-                console.log('[Onboarding] Syncing Facebook Ads data...');
-                await supabase.functions.invoke('sync-facebook-ads');
-                toast({
-                  title: "Facebook Connected & Synced",
-                  description: "Your Facebook account is connected and ad data has been imported.",
-                });
-              } catch (syncError) {
-                console.error("[Onboarding] Facebook sync failed:", syncError);
-                toast({
-                  title: "Facebook Connected",
-                  description: "Your Facebook account is connected.",
-                });
-              }
-
-              // CRITICAL: Stay on onboarding page after Facebook connection
-              // Only allow navigation to /zuckerbot after onboarding is complete
-              console.log('[Onboarding] Facebook OAuth complete - staying on onboarding page');
-              
-              // Clean up URL without navigating away
-              const cleanUrl = window.location.pathname;
-              window.history.replaceState({}, '', cleanUrl);
-            }
-          } catch (error) {
-            console.error('[Onboarding] Error in Facebook token capture:', error);
-            toast({
-              title: "Facebook Connection Error", 
-              description: "There was an error processing the Facebook connection.",
-              variant: "destructive",
-            });
-            setFacebookConnected(false);
-          } finally {
-            setIsLoading(false);
-          }
-        }
+    const handleFacebookConnected = (event: CustomEvent) => {
+      console.log('[Onboarding] Facebook connection event received:', event.detail);
+      if (event.detail.success) {
+        setFacebookConnected(true);
+        toast({
+          title: "Facebook Connected & Synced",
+          description: "Your Facebook account is connected and ad data has been imported.",
+        });
+        
+        // Clean up URL without navigating away
+        const cleanUrl = window.location.pathname + (isUpdateMode ? '?mode=update' : '');
+        window.history.replaceState({}, '', cleanUrl);
       }
-    );
+    };
 
     // Clean up URL parameters if Facebook OAuth redirect
     const urlParams = new URLSearchParams(window.location.search);
@@ -388,11 +330,16 @@ const Onboarding = () => {
     
     if (facebookParam === 'connected') {
       // Clean up URL parameters
-      window.history.replaceState({}, '', '/onboarding');
+      const cleanUrl = window.location.pathname + (isUpdateMode ? '?mode=update' : '');
+      window.history.replaceState({}, '', cleanUrl);
     }
 
-    return () => subscription.unsubscribe();
-  }, [toast]);
+    window.addEventListener('facebook-connected', handleFacebookConnected as EventListener);
+
+    return () => {
+      window.removeEventListener('facebook-connected', handleFacebookConnected as EventListener);
+    };
+  }, [toast, isUpdateMode]);
 
   if (isAnalyzing) {
     return (
