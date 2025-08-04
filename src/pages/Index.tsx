@@ -21,40 +21,13 @@ const Index = () => {
   useEffect(() => {
     console.log('[Index] Setting up auth state listener');
     
-    // Auth state listener with Facebook token capture
+    // Auth state listener - simplified for Index page
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         console.log('[Index] Auth state change:', { event, hasSession: !!session, userId: session?.user?.id });
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
-
-        // Capture Facebook token immediately when OAuth completes
-        if (event === 'SIGNED_IN' && session?.provider_token && session?.user) {
-          console.log('[Index] Facebook OAuth detected - capturing token immediately');
-          
-          try {
-            const { error: updateError } = await supabase
-              .from('profiles')
-              .update({
-                facebook_access_token: session.provider_token,
-                facebook_connected: true
-              })
-              .eq('user_id', session.user.id);
-
-            if (updateError) {
-              console.error('[Index] Error storing Facebook token:', updateError);
-            } else {
-              console.log('[Index] Facebook token stored successfully');
-              toast({
-                title: "Facebook Connected!",
-                description: "Your Facebook account has been connected successfully.",
-              });
-            }
-          } catch (error) {
-            console.error('[Index] Error in Facebook token capture:', error);
-          }
-        }
       }
     );
 

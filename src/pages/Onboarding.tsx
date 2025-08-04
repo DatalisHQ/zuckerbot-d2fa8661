@@ -311,6 +311,14 @@ const Onboarding = () => {
                   description: "Your Facebook account is connected.",
                 });
               }
+
+              // CRITICAL: Stay on onboarding page after Facebook connection
+              // Only allow navigation to /zuckerbot after onboarding is complete
+              console.log('[Onboarding] Facebook OAuth complete - staying on onboarding page');
+              
+              // Clean up URL without navigating away
+              const cleanUrl = window.location.pathname;
+              window.history.replaceState({}, '', cleanUrl);
             }
           } catch (error) {
             console.error('[Onboarding] Error in Facebook token capture:', error);
