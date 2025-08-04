@@ -16,12 +16,21 @@ export const useOnboardingGuard = () => {
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('onboarding_completed')
+          .select('onboarding_completed, facebook_connected, facebook_access_token, selected_ad_account_id')
           .eq('user_id', session.user.id)
-          .single();
+          .maybeSingle();
 
-        if (!profile?.onboarding_completed) {
-          console.log("Onboarding guard: User hasn't completed onboarding, redirecting");
+        // Check for all required onboarding prerequisites
+        const hasCompletedOnboarding = profile?.onboarding_completed;
+        const hasFacebookConnected = profile?.facebook_connected && profile?.facebook_access_token;
+        const hasSelectedAdAccount = profile?.selected_ad_account_id;
+
+        if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
+          console.log("Onboarding guard: Missing prerequisites", {
+            onboarding_completed: hasCompletedOnboarding,
+            facebook_connected: hasFacebookConnected,
+            ad_account_selected: hasSelectedAdAccount
+          });
           navigate("/onboarding");
           return;
         }

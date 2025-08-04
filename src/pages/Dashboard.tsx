@@ -85,13 +85,21 @@ useEffect(() => {
       .from('profiles')
       .select('*')
       .eq('user_id', session.user.id)
-      .single();
+      .maybeSingle();
 
     setProfile(profileData);
 
-    // Block access if onboarding is not completed
-    if (!profileData?.onboarding_completed) {
-      console.log("Dashboard: User hasn't completed onboarding, redirecting");
+    // Block access if any onboarding prerequisites are missing
+    const hasCompletedOnboarding = profileData?.onboarding_completed;
+    const hasFacebookConnected = profileData?.facebook_connected && profileData?.facebook_access_token;
+    const hasSelectedAdAccount = profileData?.selected_ad_account_id;
+
+    if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
+      console.log("Dashboard: Missing prerequisites, redirecting to onboarding", {
+        onboarding_completed: hasCompletedOnboarding,
+        facebook_connected: hasFacebookConnected,
+        ad_account_selected: hasSelectedAdAccount
+      });
       navigate("/onboarding");
       return;
     }

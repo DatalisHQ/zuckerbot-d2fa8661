@@ -7,7 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Bot, Sparkles, Facebook, Globe, Building, Target, LogOut } from "lucide-react";
+import { Loader2, Bot, Sparkles, Facebook, Globe, Building, Target, LogOut, AlertCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useEnhancedAuth, validateSession } from "@/utils/auth";
 
 const Onboarding = () => {
@@ -21,6 +22,10 @@ const Onboarding = () => {
   const [facebookConnected, setFacebookConnected] = useState(false);
   const [isUpdateMode, setIsUpdateMode] = useState(false);
   const [existingAnalysisId, setExistingAnalysisId] = useState<string | null>(null);
+  const [isSyncingAds, setIsSyncingAds] = useState(false);
+  const [adAccounts, setAdAccounts] = useState<any[]>([]);
+  const [selectedAdAccountId, setSelectedAdAccountId] = useState<string>('');
+  const [showAdAccountSelection, setShowAdAccountSelection] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { logout } = useEnhancedAuth();
@@ -219,13 +224,35 @@ const Onboarding = () => {
         console.log("Brand analysis completed:", brandAnalysisData.analysis);
       }
 
-      // Facebook sync is now handled globally in App.tsx - no need to duplicate here
+      // Wait for Facebook to be connected before proceeding
+      if (!facebookConnected) {
+        toast({
+          title: "Facebook Connection Required",
+          description: "Please connect your Facebook Business account to continue.",
+          variant: "destructive",
+        });
+        setIsAnalyzing(false);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if ad account is selected (for non-update mode)
+      if (!isUpdateMode && !selectedAdAccountId) {
+        // Trigger ad account selection flow
+        setIsAnalyzing(false);
+        setIsLoading(false);
+        setShowAdAccountSelection(true);
+        return;
+      }
 
       // Mark onboarding as completed or show update success
       if (!isUpdateMode) {
         const { error: completionError } = await supabase
           .from('profiles')
-          .update({ onboarding_completed: true })
+          .update({ 
+            onboarding_completed: true,
+            selected_ad_account_id: selectedAdAccountId
+          })
           .eq('user_id', session.user.id);
 
         if (completionError) {
@@ -236,15 +263,29 @@ const Onboarding = () => {
           title: "Setup Complete!",
           description: `Your ZuckerBot assistant has analyzed ${businessName} and is ready to help.`,
         });
+
+        console.log("Onboarding completed successfully - navigating to Dashboard");
+        navigate("/dashboard");
       } else {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ 
+            selected_ad_account_id: selectedAdAccountId || undefined 
+          })
+          .eq('user_id', session.user.id);
+
+        if (updateError) {
+          console.error("Error updating selected ad account:", updateError);
+        }
+
         toast({
           title: "Brand Info Updated!",
           description: `Your brand information for ${businessName} has been updated successfully.`,
         });
-      }
 
-      console.log(isUpdateMode ? "Brand info updated successfully" : "Onboarding completed successfully - navigating to ZuckerBot");
-      navigate("/zuckerbot");
+        console.log("Brand info updated successfully - navigating to ZuckerBot");
+        navigate("/zuckerbot");
+      }
       
     } catch (error: any) {
       console.error("Onboarding error:", error);
@@ -299,14 +340,40 @@ const Onboarding = () => {
 
   // Listen for global Facebook connection events
   useEffect(() => {
-    const handleFacebookConnected = (event: CustomEvent) => {
+    const handleFacebookConnected = async (event: CustomEvent) => {
       console.log('[Onboarding] Facebook connection event received:', event.detail);
       if (event.detail.success) {
         setFacebookConnected(true);
-        toast({
-          title: "Facebook Connected & Synced",
-          description: "Your Facebook account is connected and ad data has been imported.",
-        });
+        setIsSyncingAds(true);
+        
+        try {
+          // Wait for ad sync to complete, then fetch ad accounts
+          console.log('[Onboarding] Fetching ad accounts after sync...');
+          const { data, error } = await supabase.functions.invoke('get-facebook-ad-accounts');
+          
+          if (error) {
+            throw new Error(error.message || 'Failed to fetch ad accounts');
+          }
+          
+          if (data?.adAccounts && Array.isArray(data.adAccounts)) {
+            setAdAccounts(data.adAccounts);
+            console.log('[Onboarding] Ad accounts fetched:', data.adAccounts.length);
+          }
+          
+          toast({
+            title: "Facebook Connected & Synced",
+            description: "Your Facebook account is connected and ad data has been imported.",
+          });
+        } catch (error: any) {
+          console.error('[Onboarding] Error fetching ad accounts:', error);
+          toast({
+            title: "Facebook Connected",
+            description: "Facebook connected successfully, but there was an issue fetching ad accounts. You can retry later.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsSyncingAds(false);
+        }
         
         // Clean up URL without navigating away
         const cleanUrl = window.location.pathname + (isUpdateMode ? '?mode=update' : '');
@@ -330,6 +397,90 @@ const Onboarding = () => {
       window.removeEventListener('facebook-connected', handleFacebookConnected as EventListener);
     };
   }, [toast, isUpdateMode]);
+
+  const handleAdAccountSelection = async () => {
+    if (!selectedAdAccountId) {
+      toast({
+        title: "Ad Account Required",
+        description: "Please select an ad account to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Use enhanced session validation
+      const { session, user, isValid } = await validateSession();
+      if (!isValid || !user) throw new Error("No valid user session");
+
+      // Update profile with selected ad account
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          onboarding_completed: true,
+          selected_ad_account_id: selectedAdAccountId
+        })
+        .eq('user_id', user.id);
+
+      if (updateError) {
+        throw new Error("Failed to save ad account selection");
+      }
+
+      toast({
+        title: "Setup Complete!",
+        description: `Your ZuckerBot assistant is ready to help with your selected ad account.`,
+      });
+
+      console.log("Onboarding completed with ad account selection - navigating to Dashboard");
+      navigate("/dashboard");
+      
+    } catch (error: any) {
+      console.error("Ad account selection error:", error);
+      toast({
+        title: "Selection Error",
+        description: error.message || "Failed to save ad account selection. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isSyncingAds) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/30 flex items-center justify-center">
+        <Card className="w-full max-w-md text-center shadow-lg border-0 bg-card/50 backdrop-blur">
+          <CardContent className="p-8">
+            <div className="mb-6">
+              <div className="bg-primary/10 p-4 rounded-full mx-auto w-16 h-16 flex items-center justify-center mb-4">
+                <Facebook className="h-8 w-8 text-blue-600 animate-pulse" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">Syncing Facebook Data</h2>
+              <p className="text-muted-foreground">
+                Importing your ad accounts and campaign data from Facebook...
+              </p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Connected to Facebook</span>
+                <span className="text-primary">✓</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Fetching ad accounts</span>
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              </div>
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Importing campaign data</span>
+                <span>•••</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (isAnalyzing) {
     return (
@@ -363,6 +514,87 @@ const Onboarding = () => {
                 <span>•••</span>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (showAdAccountSelection) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/30 flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl shadow-lg border-0 bg-card/50 backdrop-blur">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-center space-x-2">
+              <Target className="h-6 w-6 text-primary" />
+              <span>Select Your Ad Account</span>
+            </CardTitle>
+            <p className="text-center text-muted-foreground">
+              Choose the Facebook ad account you want to use for campaigns and performance tracking
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {adAccounts.length === 0 ? (
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No Ad Accounts Found</h3>
+                <p className="text-muted-foreground mb-4">
+                  We couldn't find any ad accounts associated with your Facebook Business account.
+                </p>
+                <Button onClick={() => window.location.reload()}>
+                  Retry
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {adAccounts.map((account) => (
+                    <label
+                      key={account.id}
+                      className={`flex items-center space-x-3 p-4 border rounded-lg cursor-pointer transition-colors ${
+                        selectedAdAccountId === account.id
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="adAccount"
+                        value={account.id}
+                        checked={selectedAdAccountId === account.id}
+                        onChange={(e) => setSelectedAdAccountId(e.target.value)}
+                        className="w-4 h-4 text-primary"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium">{account.name}</div>
+                        <div className="text-sm text-muted-foreground">Account ID: {account.id}</div>
+                        <div className="text-sm">
+                          <Badge variant={account.account_status === 1 ? "default" : "secondary"}>
+                            {account.account_status === 1 ? "Active" : "Inactive"}
+                          </Badge>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="flex justify-between pt-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowAdAccountSelection(false)}
+                  >
+                    Back
+                  </Button>
+                  <Button 
+                    onClick={handleAdAccountSelection}
+                    disabled={!selectedAdAccountId || isLoading}
+                  >
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Complete Setup
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

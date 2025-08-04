@@ -849,6 +849,7 @@ export type Database = {
           full_name: string | null
           id: string
           onboarding_completed: boolean | null
+          selected_ad_account_id: string | null
           subscription_tier: string | null
           updated_at: string
           user_id: string
@@ -867,6 +868,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           onboarding_completed?: boolean | null
+          selected_ad_account_id?: string | null
           subscription_tier?: string | null
           updated_at?: string
           user_id: string
@@ -885,6 +887,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           onboarding_completed?: boolean | null
+          selected_ad_account_id?: string | null
           subscription_tier?: string | null
           updated_at?: string
           user_id?: string
