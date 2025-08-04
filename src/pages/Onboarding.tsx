@@ -69,11 +69,13 @@ const Onboarding = () => {
         return;
       }
 
-      // Check URL parameters for update mode
+      // Check URL parameters for recovery mode and other flags
       const urlParams = new URLSearchParams(window.location.search);
       const mode = urlParams.get('mode');
-      const isUpdate = mode === 'update';
+      const recovery = urlParams.get('recovery');
       const facebookParam = urlParams.get('facebook');
+      const isUpdate = mode === 'update';
+      const isRecovery = !!recovery;
       setIsUpdateMode(isUpdate);
 
       // CRITICAL: If user just completed Facebook OAuth, stay on onboarding
@@ -86,11 +88,11 @@ const Onboarding = () => {
         return; // Don't proceed with normal onboarding completion check
       }
 
-      // Check if already completed onboarding (but allow updates)
+      // Check profile and prerequisites
       try {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('onboarding_completed, business_name')
+          .select('onboarding_completed, business_name, facebook_connected, facebook_access_token, selected_ad_account_id')
           .eq('user_id', user.id)
           .maybeSingle();
 
@@ -98,10 +100,42 @@ const Onboarding = () => {
         if (!profile) {
           console.log('[Onboarding] No profile found, creating one...');
           await createUserProfile(user);
-        } else if (profile?.onboarding_completed && !isUpdate) {
-          console.log('[Onboarding] User has completed onboarding, redirecting to ZuckerBot');
-          navigate("/zuckerbot");
-          return;
+        } else {
+          // Check if recovery is needed
+          const hasCompletedOnboarding = profile?.onboarding_completed;
+          const hasFacebookConnected = profile?.facebook_connected && profile?.facebook_access_token;
+          const hasSelectedAdAccount = profile?.selected_ad_account_id;
+
+          if (isRecovery) {
+            console.log('[Onboarding] Recovery mode detected:', recovery);
+            // Handle recovery scenarios
+            if (recovery === 'facebook' && !hasFacebookConnected) {
+              setFacebookConnected(false);
+              // Show Facebook connection form
+            } else if (recovery === 'ad_account' && hasFacebookConnected && !hasSelectedAdAccount) {
+              setFacebookConnected(true);
+              // Try to fetch ad accounts and show selection
+              try {
+                const { data } = await supabase.functions.invoke('get-facebook-ad-accounts');
+                if (data?.adAccounts && Array.isArray(data.adAccounts)) {
+                  setAdAccounts(data.adAccounts);
+                  setShowAdAccountSelection(true);
+                }
+              } catch (error) {
+                console.error('[Onboarding] Error fetching ad accounts in recovery:', error);
+              }
+            }
+            // Load existing business data
+            if (profile?.business_name) {
+              setBusinessName(profile.business_name);
+            }
+          } else if (hasCompletedOnboarding && hasFacebookConnected && hasSelectedAdAccount && !isUpdate) {
+            console.log('[Onboarding] User has completed all prerequisites, redirecting to ZuckerBot');
+            navigate("/zuckerbot");
+            return;
+          } else if (hasFacebookConnected) {
+            setFacebookConnected(true);
+          }
         }
 
         // If in update mode, load existing brand analysis data
@@ -264,8 +298,8 @@ const Onboarding = () => {
           description: `Your ZuckerBot assistant has analyzed ${businessName} and is ready to help.`,
         });
 
-        console.log("Onboarding completed successfully - navigating to Dashboard");
-        navigate("/dashboard");
+      console.log("Onboarding completed successfully - navigating to ZuckerBot");
+      navigate("/zuckerbot");
       } else {
         const { error: updateError } = await supabase
           .from('profiles')
@@ -433,8 +467,8 @@ const Onboarding = () => {
         description: `Your ZuckerBot assistant is ready to help with your selected ad account.`,
       });
 
-      console.log("Onboarding completed with ad account selection - navigating to Dashboard");
-      navigate("/dashboard");
+      console.log("Onboarding completed with ad account selection - navigating to ZuckerBot");
+      navigate("/zuckerbot");
       
     } catch (error: any) {
       console.error("Ad account selection error:", error);

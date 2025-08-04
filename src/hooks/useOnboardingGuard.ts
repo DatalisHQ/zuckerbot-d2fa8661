@@ -31,7 +31,14 @@ export const useOnboardingGuard = () => {
             facebook_connected: hasFacebookConnected,
             ad_account_selected: hasSelectedAdAccount
           });
-          navigate("/onboarding");
+          
+          // Build recovery parameters to indicate what's missing
+          const recoveryParams = new URLSearchParams();
+          if (!hasFacebookConnected) recoveryParams.set('recovery', 'facebook');
+          else if (!hasSelectedAdAccount) recoveryParams.set('recovery', 'ad_account');
+          else recoveryParams.set('recovery', 'general');
+          
+          navigate(`/onboarding?${recoveryParams.toString()}`);
           return;
         }
       } catch (error) {

@@ -59,17 +59,32 @@ const ZuckerBot = () => {
 
         setUser(session.user);
 
-        // Load user profile and check onboarding status
+        // Load user profile and check prerequisites
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('*')
           .eq('user_id', session.user.id)
           .single();
 
-        // If user hasn't completed onboarding, redirect
-        if (!profile?.onboarding_completed) {
-          console.log("ZuckerBot: User hasn't completed onboarding, redirecting");
-          navigate("/onboarding");
+        // Check for all required onboarding prerequisites
+        const hasCompletedOnboarding = profile?.onboarding_completed;
+        const hasFacebookConnected = profile?.facebook_connected && profile?.facebook_access_token;
+        const hasSelectedAdAccount = profile?.selected_ad_account_id;
+
+        if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
+          console.log("ZuckerBot: Missing prerequisites, redirecting to onboarding", {
+            onboarding_completed: hasCompletedOnboarding,
+            facebook_connected: hasFacebookConnected,
+            ad_account_selected: hasSelectedAdAccount
+          });
+          
+          // Build recovery parameters to indicate what's missing
+          const recoveryParams = new URLSearchParams();
+          if (!hasFacebookConnected) recoveryParams.set('recovery', 'facebook');
+          else if (!hasSelectedAdAccount) recoveryParams.set('recovery', 'ad_account');
+          else recoveryParams.set('recovery', 'general');
+          
+          navigate(`/onboarding?${recoveryParams.toString()}`);
           return;
         }
 
