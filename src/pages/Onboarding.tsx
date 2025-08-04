@@ -381,7 +381,18 @@ const Onboarding = () => {
         setIsSyncingAds(true);
         
         try {
-          // Wait for ad sync to complete, then fetch ad accounts
+          // First sync Facebook ads data
+          console.log('[Onboarding] Syncing Facebook ads data...');
+          const { data: syncData, error: syncError } = await supabase.functions.invoke('sync-facebook-ads');
+          
+          if (syncError) {
+            console.error('[Onboarding] Sync error:', syncError);
+            // Continue even if sync fails - user can still select ad accounts
+          } else {
+            console.log('[Onboarding] Facebook ads synced successfully:', syncData);
+          }
+          
+          // Then fetch ad accounts
           console.log('[Onboarding] Fetching ad accounts after sync...');
           const { data, error } = await supabase.functions.invoke('get-facebook-ad-accounts');
           
@@ -392,6 +403,7 @@ const Onboarding = () => {
           if (data?.adAccounts && Array.isArray(data.adAccounts)) {
             setAdAccounts(data.adAccounts);
             console.log('[Onboarding] Ad accounts fetched:', data.adAccounts.length);
+            setShowAdAccountSelection(true);
           }
           
           toast({
@@ -399,12 +411,22 @@ const Onboarding = () => {
             description: "Your Facebook account is connected and ad data has been imported.",
           });
         } catch (error: any) {
-          console.error('[Onboarding] Error fetching ad accounts:', error);
-          toast({
-            title: "Facebook Connected",
-            description: "Facebook connected successfully, but there was an issue fetching ad accounts. You can retry later.",
-            variant: "destructive",
-          });
+          console.error('[Onboarding] Error syncing or fetching ad accounts:', error);
+          
+          if (error.message?.includes('reconnect') || error.reconnectRequired) {
+            setFacebookConnected(false);
+            toast({
+              title: "Facebook Reconnection Required",
+              description: error.message || "Please reconnect your Facebook account.",
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Facebook Connected",
+              description: "Facebook connected successfully, but there was an issue syncing data. You can retry later.",
+              variant: "destructive",
+            });
+          }
         } finally {
           setIsSyncingAds(false);
         }

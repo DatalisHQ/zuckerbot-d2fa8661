@@ -88,6 +88,24 @@ const ZuckerBot = () => {
           return;
         }
 
+        // Additional Facebook token validation for ZuckerBot
+        if (profile.facebook_access_token) {
+          try {
+            const tokenValidation = await fetch(
+              `https://graph.facebook.com/v18.0/me?access_token=${profile.facebook_access_token}`
+            );
+            
+            if (!tokenValidation.ok) {
+              console.log("ZuckerBot: Facebook token invalid, redirecting to reconnect");
+              navigate("/onboarding?recovery=facebook");
+              return;
+            }
+          } catch (error) {
+            console.error('ZuckerBot: Facebook token validation failed:', error);
+            // Continue but log the issue - user might still be able to browse
+          }
+        }
+
         // Load business context - get the most recent analysis
         const { data: brandAnalysis, error: brandError } = await supabase
           .from('brand_analysis')

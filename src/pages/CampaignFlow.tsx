@@ -6,11 +6,13 @@ import { CompetitorFlow } from '@/pages/CompetitorFlow';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Navbar } from "@/components/Navbar";
+import { useFacebookHealthCheck } from "@/hooks/useFacebookHealthCheck";
 
 const CampaignFlow = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const { requireHealthyConnection } = useFacebookHealthCheck();
   const [brandAnalysisId, setBrandAnalysisId] = useState<string>('');
   const [brandUrl, setBrandUrl] = useState<string>('');
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
@@ -31,15 +33,74 @@ const CampaignFlow = () => {
           return;
         }
 
-        // Check onboarding completion
+        // Check ALL onboarding prerequisites
         const { data: profile } = await supabase
           .from('profiles')
-          .select('onboarding_completed')
+          .select('onboarding_completed, facebook_connected, facebook_access_token, selected_ad_account_id')
           .eq('user_id', session.user.id)
           .single();
 
-        if (!profile?.onboarding_completed) {
+        if (!profile) {
+          toast({
+            title: "Profile Not Found",
+            description: "Please complete your profile setup first.",
+            variant: "destructive",
+          });
           navigate("/onboarding");
+          return;
+        }
+
+        // Block access if any onboarding prerequisites are missing
+        const hasCompletedOnboarding = profile.onboarding_completed;
+        const hasFacebookConnected = profile.facebook_connected && profile.facebook_access_token;
+        const hasSelectedAdAccount = profile.selected_ad_account_id;
+
+        if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
+          console.log("CampaignFlow: Missing prerequisites, redirecting to onboarding", {
+            onboarding_completed: hasCompletedOnboarding,
+            facebook_connected: hasFacebookConnected,
+            ad_account_selected: hasSelectedAdAccount
+          });
+          
+          // Build recovery parameters to indicate what's missing
+          const recoveryParams = new URLSearchParams();
+          if (!hasFacebookConnected) recoveryParams.set('recovery', 'facebook');
+          else if (!hasSelectedAdAccount) recoveryParams.set('recovery', 'ad_account');
+          else recoveryParams.set('recovery', 'general');
+          
+          toast({
+            title: "Setup Required",
+            description: "Please complete your Facebook connection and ad account selection to create campaigns.",
+            variant: "destructive",
+          });
+          
+          navigate(`/onboarding?${recoveryParams.toString()}`);
+          return;
+        }
+
+        // Validate Facebook token is still valid
+        try {
+          const tokenValidation = await fetch(
+            `https://graph.facebook.com/v18.0/me?access_token=${profile.facebook_access_token}`
+          );
+          
+          if (!tokenValidation.ok) {
+            toast({
+              title: "Facebook Connection Expired",
+              description: "Your Facebook access has expired. Please reconnect to continue.",
+              variant: "destructive",
+            });
+            navigate("/onboarding?recovery=facebook");
+            return;
+          }
+        } catch (error) {
+          console.error('Facebook token validation failed:', error);
+          toast({
+            title: "Facebook Connection Issue",
+            description: "Unable to verify Facebook connection. Please reconnect.",
+            variant: "destructive",
+          });
+          navigate("/onboarding?recovery=facebook");
           return;
         }
 
@@ -61,6 +122,12 @@ const CampaignFlow = () => {
           });
           navigate("/onboarding");
           return;
+        }
+
+        // Final Facebook health check before proceeding
+        const isFacebookHealthy = await requireHealthyConnection();
+        if (!isFacebookHealthy) {
+          return; // requireHealthyConnection handles the redirect
         }
 
         setBrandAnalysisId(brandAnalysis.id);
