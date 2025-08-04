@@ -21,13 +21,40 @@ const Index = () => {
   useEffect(() => {
     console.log('[Index] Setting up auth state listener');
     
-    // Simplified auth state listener
+    // Auth state listener with Facebook token capture
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         console.log('[Index] Auth state change:', { event, hasSession: !!session, userId: session?.user?.id });
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
+
+        // Capture Facebook token immediately when OAuth completes
+        if (event === 'SIGNED_IN' && session?.provider_token && session?.user) {
+          console.log('[Index] Facebook OAuth detected - capturing token immediately');
+          
+          try {
+            const { error: updateError } = await supabase
+              .from('profiles')
+              .update({
+                facebook_access_token: session.provider_token,
+                facebook_connected: true
+              })
+              .eq('user_id', session.user.id);
+
+            if (updateError) {
+              console.error('[Index] Error storing Facebook token:', updateError);
+            } else {
+              console.log('[Index] Facebook token stored successfully');
+              toast({
+                title: "Facebook Connected!",
+                description: "Your Facebook account has been connected successfully.",
+              });
+            }
+          } catch (error) {
+            console.error('[Index] Error in Facebook token capture:', error);
+          }
+        }
       }
     );
 
@@ -43,89 +70,11 @@ const Index = () => {
       setIsLoading(false);
     });
 
-    // Check for Facebook connection parameter and extract token immediately
+    // Clean up URL parameters if Facebook OAuth redirect
     const urlParams = new URLSearchParams(window.location.search);
     const facebookConnected = urlParams.get('facebook');
     
     if (facebookConnected === 'connected') {
-      // Extract Facebook token immediately after OAuth redirect
-      const extractFacebookToken = async () => {
-        try {
-          console.log('[Index] Facebook OAuth callback - extracting token immediately');
-          const { data: { session: currentSession } } = await supabase.auth.getSession();
-          
-          if (!currentSession?.user) {
-            console.error('[Index] No session found after Facebook OAuth');
-            toast({
-              title: "Facebook Connection Error",
-              description: "No authenticated session found. Please try connecting again.",
-              variant: "destructive",
-            });
-            return;
-          }
-
-          console.log('[Index] Session object after Facebook OAuth:', {
-            hasSession: !!currentSession,
-            hasProviderToken: !!currentSession.provider_token,
-            providerTokenLength: currentSession.provider_token?.length || 0,
-            userId: currentSession.user.id
-          });
-
-          // Extract provider_token (Facebook access token) immediately
-          const providerToken = currentSession.provider_token;
-          
-          if (!providerToken) {
-            console.error('[Index] CRITICAL: No provider_token found in session after Facebook OAuth');
-            toast({
-              title: "Facebook Connection Failed",
-              description: "Facebook access token not found. Please try reconnecting to Facebook.",
-              variant: "destructive",
-            });
-            return;
-          }
-
-          console.log('[Index] Successfully extracted Facebook token, storing to database...');
-          
-          // Store the token directly to the profiles table
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({
-              facebook_access_token: providerToken,
-              facebook_connected: true
-            })
-            .eq('user_id', currentSession.user.id);
-
-          if (updateError) {
-            console.error('[Index] Error storing Facebook token:', updateError);
-            toast({
-              title: "Facebook Connection Warning",
-              description: "Connected to Facebook but couldn't store access token. Please try reconnecting.",
-              variant: "destructive",
-            });
-            return;
-          }
-
-          console.log('[Index] Facebook token stored successfully to database');
-          toast({
-            title: "Facebook Connected!",
-            description: "Your Facebook account has been connected successfully.",
-          });
-
-        } catch (error) {
-          console.error('[Index] Error in immediate Facebook token extraction:', error);
-          toast({
-            title: "Facebook Connection Error",
-            description: "There was an error processing the Facebook connection.",
-            variant: "destructive",
-          });
-        }
-      };
-      
-      // Extract token immediately if we have a session
-      if (session?.user) {
-        extractFacebookToken();
-      }
-      
       // Clean up URL parameters
       const newUrl = window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
