@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,102 +48,49 @@ interface FacebookCampaign {
 }
 
 const Dashboard = () => {
-  // --- SUPABASE DEBUG: Auth state and session logging ---
-useEffect(() => {
-  async function fetchDebug() {
-    const user = await supabase.auth.getUser();
-    const session = await supabase.auth.getSession();
-    console.log("SUPABASE DEBUG - user:", user);
-    console.log("SUPABASE DEBUG - session:", session);
-  }
-  fetchDebug();
-}, []);
-// --- END SUPABASE DEBUG ---
-  const navigate = useNavigate();
+  const { user, profile, isLoading, isInitialized } = useAuth();
   const { toast } = useToast();
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [facebookCampaigns, setFacebookCampaigns] = useState<FacebookCampaign[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<FacebookCampaign | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
   const { drafts, isLoading: draftsLoading, deleteDraft, finalizeDraft } = useCampaignDrafts();
 
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        navigate("/auth");
+    const loadCampaignData = async () => {
+      if (!user || !profile || !isInitialized) {
+        console.log('[Dashboard] Waiting for auth initialization');
         return;
       }
 
-      setUser(session.user);
+      console.log('[Dashboard] Loading campaign data for user:', user.id);
 
-    // Get user profile
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .maybeSingle();
+      try {
+        // Get user campaigns
+        const { data: campaignData } = await supabase
+          .from('ad_campaigns')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false });
 
-    setProfile(profileData);
+        setCampaigns(campaignData || []);
 
-    // Block access if any onboarding prerequisites are missing
-    const hasCompletedOnboarding = profileData?.onboarding_completed;
-    const hasFacebookConnected = profileData?.facebook_connected && profileData?.facebook_access_token;
-    const hasSelectedAdAccount = profileData?.selected_ad_account_id;
+        // Get Facebook campaigns
+        const { data: facebookCampaignData } = await supabase
+          .from('facebook_campaigns')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('updated_time', { ascending: false });
 
-    if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
-      console.log("Dashboard: Missing prerequisites, redirecting to onboarding", {
-        onboarding_completed: hasCompletedOnboarding,
-        facebook_connected: hasFacebookConnected,
-        ad_account_selected: hasSelectedAdAccount
-      });
-      
-      // Build recovery parameters to indicate what's missing
-      const recoveryParams = new URLSearchParams();
-      if (!hasFacebookConnected) recoveryParams.set('recovery', 'facebook');
-      else if (!hasSelectedAdAccount) recoveryParams.set('recovery', 'ad_account');
-      else recoveryParams.set('recovery', 'general');
-      
-      navigate(`/onboarding?${recoveryParams.toString()}`);
-      return;
-    }
-
-      // Get user campaigns
-      const { data: campaignData } = await supabase
-        .from('ad_campaigns')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('updated_at', { ascending: false });
-
-      setCampaigns(campaignData || []);
-
-      // Get Facebook campaigns
-      const { data: facebookCampaignData } = await supabase
-        .from('facebook_campaigns')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('updated_time', { ascending: false });
-
-      setFacebookCampaigns(facebookCampaignData || []);
-      setIsLoading(false);
-    };
-
-    const checkFacebookRecovery = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('facebook_recovery') === 'true') {
-        // This should not happen - Facebook recovery should redirect to onboarding
-        console.log("Dashboard: Facebook recovery detected, redirecting to onboarding");
-        navigate("/onboarding?step=2&facebook=connected");
-        return;
+        setFacebookCampaigns(facebookCampaignData || []);
+        console.log('[Dashboard] Campaign data loaded successfully');
+      } catch (error) {
+        console.error('[Dashboard] Error loading campaign data:', error);
       }
     };
 
-    checkUser();
-    checkFacebookRecovery();
-  }, [navigate, toast]);
+    loadCampaignData();
+  }, [user, profile, isInitialized]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -278,11 +225,11 @@ useEffect(() => {
   };
 
   const handleContinueDraft = (draft: any) => {
-    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
+    window.location.href = `/campaign-flow?resumeDraft=${draft.id}`;
   };
 
   const handleEditDraft = (draft: any) => {
-    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
+    window.location.href = `/campaign-flow?resumeDraft=${draft.id}`;
   };
 
   const handleDeleteDraft = async (draftId: string) => {
@@ -292,11 +239,11 @@ useEffect(() => {
   const handleLaunchDraft = async (draft: any) => {
     await finalizeDraft(draft.id);
     // Navigate to the launch step
-    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
+    window.location.href = `/campaign-flow?resumeDraft=${draft.id}`;
   };
 
 
-  if (isLoading) {
+  if (isLoading || !isInitialized) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -326,7 +273,7 @@ useEffect(() => {
           <section>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-semibold">Quick Actions</h3>
-              <Button onClick={() => navigate("/zuckerbot")}>
+              <Button onClick={() => window.location.href = '/zuckerbot'}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create New Campaign
               </Button>
@@ -351,7 +298,7 @@ useEffect(() => {
                 </CardContent>
               </Card>
 
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/zuckerbot")}>
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => window.location.href = '/zuckerbot'}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <PlayCircle className="h-5 w-5" />
@@ -366,7 +313,7 @@ useEffect(() => {
                 </CardContent>
               </Card>
 
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/competitor-analysis")}>
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => window.location.href = '/competitor-analysis'}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <AlertCircle className="h-5 w-5" />
@@ -517,7 +464,7 @@ useEffect(() => {
                   <p className="text-muted-foreground mb-4">
                     Create your first campaign with ZuckerBot to see it here
                   </p>
-                  <Button onClick={() => navigate("/zuckerbot")}>
+                  <Button onClick={() => window.location.href = '/zuckerbot'}>
                     <Plus className="w-4 h-4 mr-2" />
                     Create First Campaign
                   </Button>
@@ -538,7 +485,7 @@ useEffect(() => {
                             <div className="flex items-start justify-between">
                               <div 
                                 className="flex-1 min-w-0 cursor-pointer"
-                                onClick={() => navigate(`/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`)}
+                                onClick={() => window.location.href = `/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`}
                               >
                                 <CardTitle className="text-base truncate group-hover:text-blue-600 transition-colors">
                                   {campaign.campaign_name}
@@ -594,7 +541,7 @@ useEffect(() => {
                             </div>
                             <div 
                               className="text-xs text-blue-600 mt-2 cursor-pointer hover:text-blue-700"
-                              onClick={() => navigate(`/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`)}
+                              onClick={() => window.location.href = `/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`}
                             >
                               Click to continue from step {campaign.current_step}
                             </div>
