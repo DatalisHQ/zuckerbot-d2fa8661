@@ -360,20 +360,6 @@ useEffect(() => {
                 </CardContent>
               </Card>
 
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/competitor-analysis")}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <AlertCircle className="h-5 w-5" />
-                    Brand Analysis
-                  </CardTitle>
-                  <CardDescription>
-                    Analyze your brand and discover competitors
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full">Analyze Brand</Button>
-                </CardContent>
-              </Card>
             </div>
           </section>
 
