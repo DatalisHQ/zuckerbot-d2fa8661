@@ -9,6 +9,7 @@ import { CampaignFlowNavigation } from '@/components/CampaignFlowNavigation';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useCampaignDrafts } from '@/hooks/useCampaignDrafts';
+import { type AudienceSegment as FacebookAudienceSegment } from '@/hooks/useCreateFacebookAudiences';
 
 interface AudienceSegment {
   id: string;
@@ -47,12 +48,13 @@ interface CampaignBuilderProps {
   brandAnalysisId?: string;
   brandUrl?: string;
   resumeDraftId?: string;
+  savedAudienceSegments?: FacebookAudienceSegment[];
   onFlowComplete: (result: any) => void;
 }
 
 type Step = 'campaign-name' | 'budget' | 'audiences' | 'ad-sets' | 'ad-variants' | 'review';
 
-export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlowComplete }: CampaignBuilderProps) => {
+export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, savedAudienceSegments, onFlowComplete }: CampaignBuilderProps) => {
   const [currentStep, setCurrentStep] = useState<Step>('campaign-name');
   const [campaignName, setCampaignName] = useState<string>('');
   const [objective, setObjective] = useState<string>('');
@@ -268,6 +270,7 @@ export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, onFl
           <AudienceSplitting
             segments={segments}
             onSegmentsChange={setSegments}
+            savedAudienceSegments={savedAudienceSegments}
           />
         )}
 
@@ -297,6 +300,7 @@ export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, onFl
             segments={segments}
             adSets={adSets}
             adVariants={adVariants}
+            savedAudienceSegments={savedAudienceSegments}
             onEdit={handleEdit}
             onLaunchComplete={handleLaunchComplete}
           />

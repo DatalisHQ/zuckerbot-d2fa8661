@@ -397,6 +397,7 @@ export const WorkflowOrchestrator = ({ brandAnalysisId, brandUrl, onFlowComplete
             <CampaignBuilder
               brandAnalysisId={workflowState.brandAnalysisId}
               brandUrl={workflowState.brandUrl}
+              savedAudienceSegments={workflowState.audienceSegments}
               onFlowComplete={onFlowComplete}
             />
           </div>

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Rocket, Edit, AlertCircle, Users, Target, DollarSign } from 'lucide-react';
 import { useGetFacebookAdAccounts, type AdAccount } from '@/hooks/useGetFacebookAdAccounts';
 import { useLaunchCampaign } from '@/hooks/useLaunchCampaign';
+import { useCreateFacebookAudiences, type AudienceSegment as FacebookAudienceSegment } from '@/hooks/useCreateFacebookAudiences';
 import { useToast } from '@/hooks/use-toast';
 
 interface AudienceSegment {
@@ -40,6 +41,7 @@ interface ReviewAndLaunchProps {
   segments: AudienceSegment[];
   adSets: AdSet[];
   adVariants: Record<string, AdVariant[]>;
+  savedAudienceSegments?: FacebookAudienceSegment[];
   onEdit: (step: string) => void;
   onLaunchComplete: (result: any) => void;
 }
@@ -51,12 +53,15 @@ export const ReviewAndLaunch = ({
   segments,
   adSets,
   adVariants,
+  savedAudienceSegments,
   onEdit,
   onLaunchComplete
 }: ReviewAndLaunchProps) => {
   const [selectedAdAccount, setSelectedAdAccount] = useState<string>('');
+  const [audiencesCreated, setAudiencesCreated] = useState(false);
   const { data: adAccounts, isLoading: loadingAdAccounts, error: adAccountsError } = useGetFacebookAdAccounts();
   const launchMutation = useLaunchCampaign();
+  const createFacebookAudiences = useCreateFacebookAudiences();
   const { toast } = useToast();
 
   const getTotalVariants = () => {
@@ -82,7 +87,34 @@ export const ReviewAndLaunch = ({
     if (!canLaunch()) return;
 
     try {
-      // Convert campaign data to launch format
+      // Step 1: Create Facebook audiences if we have saved segments
+      let facebookAudienceIds: string[] = [];
+      
+      if (savedAudienceSegments && savedAudienceSegments.length > 0 && !audiencesCreated) {
+        toast({
+          title: "Creating audiences...",
+          description: "Setting up your target audiences in Facebook.",
+        });
+
+        const audienceResult = await createFacebookAudiences.mutateAsync({
+          audienceSegments: savedAudienceSegments,
+          adAccountId: selectedAdAccount
+        });
+
+        if (audienceResult.success) {
+          facebookAudienceIds = audienceResult.createdAudiences.map(a => a.audienceId);
+          setAudiencesCreated(true);
+          
+          toast({
+            title: "Audiences created",
+            description: `Successfully created ${audienceResult.summary.created + audienceResult.summary.existing} audiences.`,
+          });
+        } else {
+          throw new Error('Failed to create some audiences');
+        }
+      }
+
+      // Step 2: Convert campaign data to launch format
       const launchPayload = {
         adAccountId: selectedAdAccount,
         campaign: {
@@ -95,7 +127,9 @@ export const ReviewAndLaunch = ({
           daily_budget: adSet.budgetAllocation * 100, // Convert to cents
           billing_event: 'IMPRESSIONS',
           optimization_goal: 'LINK_CLICKS',
-          targeting: {
+          targeting: facebookAudienceIds.length > 0 ? {
+            custom_audiences: facebookAudienceIds
+          } : {
             geo_locations: {
               countries: ['US']
             },

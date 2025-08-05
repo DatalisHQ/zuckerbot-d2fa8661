@@ -18,9 +18,15 @@ interface AudienceSegment {
   };
 }
 
+interface FacebookAudienceSegment {
+  segment: string;
+  criteria: string;
+}
+
 interface AudienceSplittingProps {
   segments: AudienceSegment[];
   onSegmentsChange: (segments: AudienceSegment[]) => void;
+  savedAudienceSegments?: FacebookAudienceSegment[];
 }
 
 const DEFAULT_SEGMENTS: AudienceSegment[] = [
@@ -46,17 +52,32 @@ const DEFAULT_SEGMENTS: AudienceSegment[] = [
 
 export const AudienceSplitting = ({
   segments,
-  onSegmentsChange
+  onSegmentsChange,
+  savedAudienceSegments
 }: AudienceSplittingProps) => {
   const [newSegmentName, setNewSegmentName] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
 
-  // Initialize with default segments if empty
+  // Initialize with saved audience segments or defaults
   useEffect(() => {
     if (segments.length === 0) {
-      onSegmentsChange(DEFAULT_SEGMENTS);
+      if (savedAudienceSegments && savedAudienceSegments.length > 0) {
+        // Convert saved audience segments to internal format
+        const convertedSegments = savedAudienceSegments.map((segment, index) => ({
+          id: `saved-${index}`,
+          name: segment.segment,
+          type: 'interests' as const,
+          description: segment.criteria,
+          targeting: {
+            demographics: segment.criteria
+          }
+        }));
+        onSegmentsChange(convertedSegments);
+      } else {
+        onSegmentsChange(DEFAULT_SEGMENTS);
+      }
     }
-  }, [segments.length, onSegmentsChange]);
+  }, [segments.length, onSegmentsChange, savedAudienceSegments]);
 
   const addSegment = () => {
     if (!newSegmentName.trim()) return;
