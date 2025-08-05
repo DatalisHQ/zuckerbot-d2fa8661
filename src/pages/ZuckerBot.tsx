@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
-import { BrandAnalysisChecker } from "@/components/BrandAnalysisChecker";
+
 
 const PREDEFINED_PROMPTS = [
   {
@@ -157,10 +157,6 @@ const ZuckerBot = () => {
           )}
         </div>
 
-        {/* Brand Analysis Status */}
-        <div className="max-w-2xl mx-auto mb-8">
-          <BrandAnalysisChecker />
-        </div>
         <div className="max-w-4xl mx-auto">
           <div className="grid md:grid-cols-2 gap-6">
             {PREDEFINED_PROMPTS.map((prompt, index) => {

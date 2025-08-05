@@ -58,12 +58,13 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId, camp
   const autoFindCompetitors = async () => {
     console.log('🔍 Auto-find competitors clicked');
     
+    // For campaign-specific workflow, we'll skip auto-discovery if no brandAnalysisId
     if (!brandAnalysisId) {
-      console.log('❌ No brandAnalysisId provided');
+      console.log('❌ No brandAnalysisId provided - skipping auto-discovery');
       toast({
-        title: "Error",
-        description: "Brand analysis required for auto-discovery",
-        variant: "destructive",
+        title: "Auto-discovery unavailable",
+        description: "Please add competitors manually for this campaign",
+        variant: "default",
       });
       return;
     }

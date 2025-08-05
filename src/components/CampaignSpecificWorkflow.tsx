@@ -19,7 +19,7 @@ interface CampaignSpecificWorkflowProps {
   onFlowComplete: (result: any) => void;
 }
 
-type WorkflowStep = 'competitor-analysis' | 'audience-selection' | 'brand-info' | 'image-upload' | 'campaign-creation';
+type WorkflowStep = 'brand-info' | 'competitor-analysis' | 'audience-selection' | 'image-upload' | 'campaign-creation';
 
 interface CampaignData {
   competitor_data: any;
@@ -30,7 +30,7 @@ interface CampaignData {
 }
 
 export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: CampaignSpecificWorkflowProps) => {
-  const [currentStep, setCurrentStep] = useState<WorkflowStep>('competitor-analysis');
+  const [currentStep, setCurrentStep] = useState<WorkflowStep>('brand-info');
   const [campaignData, setCampaignData] = useState<CampaignData>({
     competitor_data: {},
     audience_data: {},
@@ -44,6 +44,11 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
 
   const steps: { id: WorkflowStep; title: string; description: string }[] = [
     {
+      id: 'brand-info',
+      title: 'Brand Information',
+      description: 'Complete your brand analysis and positioning'
+    },
+    {
       id: 'competitor-analysis',
       title: 'Competitor Analysis',
       description: 'Find and analyze your competitors to extract winning strategies'
@@ -52,11 +57,6 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
       id: 'audience-selection',
       title: 'Audience Selection',
       description: 'Review and refine your target audience segments'
-    },
-    {
-      id: 'brand-info',
-      title: 'Brand Information',
-      description: 'Complete your brand analysis and positioning'
     },
     {
       id: 'image-upload',
@@ -96,20 +96,20 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
 
         // Determine completed steps based on data
         const completed = new Set<WorkflowStep>();
+        if (Object.keys(data.brand_data || {}).length > 0) completed.add('brand-info');
         if (Object.keys(data.competitor_data || {}).length > 0) completed.add('competitor-analysis');
         if (Object.keys(data.audience_data || {}).length > 0) completed.add('audience-selection');
-        if (Object.keys(data.brand_data || {}).length > 0) completed.add('brand-info');
         if (Object.keys(data.image_data || {}).length > 0) completed.add('image-upload');
         
         setCompletedSteps(completed);
 
         // Auto-advance to next incomplete step
-        if (!completed.has('competitor-analysis')) {
+        if (!completed.has('brand-info')) {
+          setCurrentStep('brand-info');
+        } else if (!completed.has('competitor-analysis')) {
           setCurrentStep('competitor-analysis');
         } else if (!completed.has('audience-selection')) {
           setCurrentStep('audience-selection');
-        } else if (!completed.has('brand-info')) {
-          setCurrentStep('brand-info');
         } else if (!completed.has('image-upload')) {
           setCurrentStep('image-upload');
         } else {
@@ -131,15 +131,15 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
       const updateData: any = {};
       
       switch (step) {
+        case 'brand-info':
+          updateData.brand_data = data;
+          break;
         case 'competitor-analysis':
           updateData.competitor_data = data;
           updateData.angles_data = data.selectedAngle || {};
           break;
         case 'audience-selection':
           updateData.audience_data = data;
-          break;
-        case 'brand-info':
-          updateData.brand_data = data;
           break;
         case 'image-upload':
           updateData.image_data = data;
@@ -278,6 +278,25 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
 
       {/* Step Content */}
       <div className="container mx-auto px-4 py-8">
+        {currentStep === 'brand-info' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="text-center space-y-2">
+              <h2 className="text-3xl font-bold">Brand Information</h2>
+              <p className="text-muted-foreground">
+                Complete your brand analysis for this campaign
+              </p>
+            </div>
+            
+            <BrandAnalysisForm 
+              campaignId={campaignId}
+              existingData={campaignData.brand_data}
+              onAnalysisComplete={(data) => 
+                handleStepComplete('brand-info', data)
+              }
+            />
+          </div>
+        )}
+
         {currentStep === 'competitor-analysis' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="text-center space-y-2">
@@ -331,25 +350,6 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
           </div>
         )}
 
-        {currentStep === 'brand-info' && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="text-center space-y-2">
-              <h2 className="text-3xl font-bold">Brand Information</h2>
-              <p className="text-muted-foreground">
-                Complete your brand analysis for this campaign
-              </p>
-            </div>
-            
-            <BrandAnalysisForm 
-              campaignId={campaignId}
-              existingData={campaignData.brand_data}
-              onAnalysisComplete={(data) => 
-                handleStepComplete('brand-info', data)
-              }
-            />
-          </div>
-        )}
-
         {currentStep === 'image-upload' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="text-center space-y-2">
@@ -394,7 +394,7 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
             <Button
               variant="outline"
               onClick={handleBack}
-              disabled={currentStep === 'competitor-analysis'}
+              disabled={currentStep === 'brand-info'}
               className="flex items-center gap-2"
             >
               <ArrowLeft className="h-4 w-4" />
