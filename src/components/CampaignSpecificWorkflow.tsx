@@ -74,6 +74,15 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
   // Load campaign data on mount
   useEffect(() => {
     loadCampaignData();
+    // Store current campaign ID for cross-navigation from Files page
+    if (campaignId) {
+      localStorage.setItem('currentCampaignId', campaignId);
+    }
+    
+    return () => {
+      // Clean up on unmount
+      localStorage.removeItem('currentCampaignId');
+    };
   }, [campaignId]);
 
   const loadCampaignData = async () => {

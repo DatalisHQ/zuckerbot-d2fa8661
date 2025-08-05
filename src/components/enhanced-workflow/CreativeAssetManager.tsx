@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { Loader2, Upload, Facebook, ExternalLink, Image, Check, X } from 'lucide-react';
+import { Loader2, Upload, Facebook, ExternalLink, Image, Check, X, FileImage } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -14,6 +14,7 @@ import { useUploadRawAssets } from '@/hooks/useUploadRawAssets';
 import { useFetchFacebookAssets, FacebookAsset } from '@/hooks/useFetchFacebookAssets';
 import { useGetFacebookAdAccounts, AdAccount } from '@/hooks/useGetFacebookAdAccounts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useImageFiles, UserFile } from '@/hooks/useUserFiles';
 
 export interface CreativeAsset {
   id: string;
@@ -39,6 +40,7 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
   const uploadMutation = useUploadRawAssets();
   const fbMutation = useFetchFacebookAssets();
   const adAccountsQuery = useGetFacebookAdAccounts();
+  const userFilesQuery = useImageFiles();
   const { toast } = useToast();
 
   // Load existing creative assets from database
@@ -61,6 +63,41 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
   useEffect(() => {
     if (existingAssets && existingAssets.length > 0) {
       setSavedAssets(existingAssets);
+    }
+    
+    // Check for pending file from Files page
+    const pendingFile = localStorage.getItem('pendingCampaignFile');
+    if (pendingFile) {
+      try {
+        const fileInfo = JSON.parse(pendingFile);
+        const newAsset: CreativeAsset = {
+          id: `user_file_${fileInfo.name}`,
+          url: fileInfo.url,
+          type: 'upload',
+          name: fileInfo.name,
+          selected: true
+        };
+        
+        setSavedAssets(prev => {
+          // Check if not already added
+          if (!prev.find(asset => asset.id === newAsset.id)) {
+            const updated = [...prev, newAsset];
+            saveAssetsToDatabase(updated);
+            return updated;
+          }
+          return prev;
+        });
+        
+        // Clear the pending file
+        localStorage.removeItem('pendingCampaignFile');
+        
+        toast({
+          title: "File added from library",
+          description: `${fileInfo.name} has been added to your campaign assets.`
+        });
+      } catch (error) {
+        localStorage.removeItem('pendingCampaignFile');
+      }
     }
   }, [existingAssets]);
 
@@ -187,6 +224,27 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
     saveAssetsToDatabase(updatedAssets);
   };
 
+  const addUserFile = (userFile: UserFile) => {
+    const newAsset: CreativeAsset = {
+      id: `user_file_${userFile.name}`,
+      url: userFile.url,
+      type: 'upload',
+      name: userFile.name,
+      selected: true
+    };
+    
+    // Check if already added
+    if (!savedAssets.find(asset => asset.id === newAsset.id)) {
+      const updatedAssets = [...savedAssets, newAsset];
+      setSavedAssets(updatedAssets);
+      saveAssetsToDatabase(updatedAssets);
+      toast({
+        title: "File added",
+        description: `${userFile.name} has been added to your creative assets.`
+      });
+    }
+  };
+
   const handleContinue = () => {
     const selectedAssets = savedAssets.filter(asset => asset.selected);
     if (selectedAssets.length === 0) {
@@ -215,12 +273,88 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
       </CardHeader>
       <CardContent className="space-y-6">
         
-        <Tabs defaultValue="upload" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="your-files" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="your-files">Your Files</TabsTrigger>
             <TabsTrigger value="upload">Upload Files</TabsTrigger>
             <TabsTrigger value="url">Add URLs</TabsTrigger>
             <TabsTrigger value="facebook">Facebook Assets</TabsTrigger>
           </TabsList>
+          
+          <TabsContent value="your-files" className="space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Your File Library</Label>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => window.open('/files', '_blank')}
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Manage Files
+                </Button>
+              </div>
+              
+              {userFilesQuery.isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : userFilesQuery.data && userFilesQuery.data.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+                  {userFilesQuery.data.map((file) => {
+                    const isAdded = savedAssets.some(saved => saved.id === `user_file_${file.name}`);
+                    return (
+                      <div key={file.id} className="relative border rounded-lg p-2">
+                        <img 
+                          src={file.url} 
+                          alt={file.name}
+                          className="w-full h-24 object-cover rounded mb-2"
+                        />
+                        <p className="text-xs text-muted-foreground truncate mb-2">
+                          {file.name}
+                        </p>
+                        <Button
+                          variant={isAdded ? "secondary" : "default"}
+                          size="sm"
+                          onClick={() => addUserFile(file)}
+                          disabled={isAdded}
+                          className="w-full"
+                        >
+                          {isAdded ? (
+                            <>
+                              <Check className="h-4 w-4 mr-2" />
+                              Added
+                            </>
+                          ) : (
+                            <>
+                              <FileImage className="h-4 w-4 mr-2" />
+                              Add to Campaign
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 space-y-3">
+                  <FileImage className="h-12 w-12 text-muted-foreground mx-auto" />
+                  <div>
+                    <p className="text-sm font-medium">No files in your library</p>
+                    <p className="text-xs text-muted-foreground">Upload files to your library to use them in campaigns</p>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => window.open('/files', '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Go to File Library
+                  </Button>
+                </div>
+              )}
+            </div>
+          </TabsContent>
           
           <TabsContent value="upload" className="space-y-4">
             <div className="space-y-3">

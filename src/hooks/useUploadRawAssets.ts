@@ -4,13 +4,17 @@ import { supabase } from '@/integrations/supabase/client';
 export function useUploadRawAssets() {
   return useMutation<string[], Error, File[]>({
     mutationFn: async (files) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const uploads = await Promise.all(
         files.map(async (file) => {
           const fileName = `ad-assets/${Date.now()}_${file.name}`;
+          const filePath = `${user.id}/${fileName}`;
           
           const { data, error } = await supabase.storage
             .from('user-files')
-            .upload(fileName, file);
+            .upload(filePath, file);
             
           if (error) {
             throw new Error(`Failed to upload ${file.name}: ${error.message}`);

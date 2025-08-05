@@ -28,6 +28,7 @@ export default function Files() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -38,6 +39,8 @@ export default function Files() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      setCurrentUser(user);
 
       const { data, error } = await supabase.storage
         .from('user-files')
@@ -311,6 +314,39 @@ export default function Files() {
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   </div>
+                  
+                  {/* Use in Campaign Button for image/video files */}
+                  {file.metadata?.mimetype?.startsWith('image/') || file.metadata?.mimetype?.startsWith('video/') ? (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="w-full mt-2"
+                      onClick={() => {
+                        // Store file info in localStorage for campaign workflow to pick up
+                        const fileInfo = {
+                          id: file.id,
+                          name: file.name,
+                          url: `https://wrjqevcpxkfvfudbmdhp.supabase.co/storage/v1/object/public/user-files/${encodeURIComponent(currentUser?.id || '')}/${encodeURIComponent(file.name)}`,
+                          type: 'upload'
+                        };
+                        localStorage.setItem('pendingCampaignFile', JSON.stringify(fileInfo));
+                        
+                        // Check if there's an active campaign workflow
+                        const currentCampaignId = localStorage.getItem('currentCampaignId');
+                        if (currentCampaignId) {
+                          window.location.href = `/campaign-flow?id=${currentCampaignId}&step=3`;
+                        } else {
+                          toast({
+                            title: "File ready for campaign",
+                            description: "This file will be automatically added when you create a new campaign.",
+                          });
+                        }
+                      }}
+                    >
+                      <Image className="w-3 h-3 mr-1" />
+                      Use in Campaign
+                    </Button>
+                  ) : null}
                 </CardContent>
               </Card>
             );
