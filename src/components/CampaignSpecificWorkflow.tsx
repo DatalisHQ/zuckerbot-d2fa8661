@@ -372,6 +372,8 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
             </div>
             
             <AudienceSegments
+              brandUrl={campaignData.brand_data?.brandUrl}
+              competitorProfiles={campaignData.competitor_data?.competitorProfiles}
               campaignId={campaignId}
               existingData={campaignData.audience_data}
               competitorData={campaignData.competitor_data}
