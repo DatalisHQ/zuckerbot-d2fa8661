@@ -138,7 +138,8 @@ export const CompetitorInsights = ({
       onAngleSelected(angle, {
         competitorInsights,
         overallInsights,
-        suggestedAngles
+        suggestedAngles,
+        competitorProfiles
       });
     }
   };
@@ -150,6 +151,7 @@ export const CompetitorInsights = ({
         competitorInsights,
         overallInsights,
         suggestedAngles,
+        competitorProfiles,
         audienceSegments: segments
       });
     }

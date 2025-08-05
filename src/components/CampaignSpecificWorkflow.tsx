@@ -354,7 +354,8 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
                   handleStepComplete('competitor-analysis', {
                     ...campaignData.competitor_data,
                     selectedAngle: angle,
-                    insights
+                    insights,
+                    competitorProfiles: insights.competitorProfiles
                   });
                 }}
               />
