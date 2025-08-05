@@ -136,6 +136,19 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
       setAnalysis(data.analysis);
       setAnalysisId(data.analysisId);
       
+      // Call onAnalysisComplete with both analysis data and analysisId
+      if (onAnalysisComplete) {
+        onAnalysisComplete({
+          analysis: data.analysis,
+          analysisId: data.analysisId,
+          brandName: data.analysis?.brandName,
+          businessCategory: data.analysis?.businessCategory,
+          niche: data.analysis?.niche,
+          mainProducts: data.analysis?.mainProducts,
+          valuePropositions: data.analysis?.valuePropositions
+        });
+      }
+      
       toast({
         title: "Analysis Complete",
         description: "Brand analysis has been completed successfully!",

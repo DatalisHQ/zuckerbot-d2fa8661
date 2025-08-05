@@ -126,6 +126,32 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
     }
   };
 
+  // Function to fetch the latest brand analysis for the user
+  const fetchLatestBrandAnalysis = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from('brand_analysis')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('Error fetching brand analysis:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching latest brand analysis:', error);
+      return null;
+    }
+  };
+
   const saveCampaignData = async (step: WorkflowStep, data: any) => {
     try {
       const updateData: any = {};
@@ -317,6 +343,7 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
                 }}
                 campaignId={campaignId}
                 brandAnalysisId={campaignData.brand_data?.analysisId}
+                fetchLatestBrandAnalysis={fetchLatestBrandAnalysis}
               />
             ) : (
               <CompetitorInsights

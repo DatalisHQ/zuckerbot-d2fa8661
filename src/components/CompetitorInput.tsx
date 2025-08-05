@@ -16,14 +16,16 @@ interface CompetitorInputProps {
   onCompetitorListCreated: (competitorListId: string) => void;
   brandAnalysisId?: string;
   campaignId?: string;
+  fetchLatestBrandAnalysis?: () => Promise<any>;
 }
 
-export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId, campaignId }: CompetitorInputProps) => {
+export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId, campaignId, fetchLatestBrandAnalysis }: CompetitorInputProps) => {
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [newCompetitorName, setNewCompetitorName] = useState('');
   const [newCompetitorUrl, setNewCompetitorUrl] = useState('');
   const [isAutoFinding, setIsAutoFinding] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [fallbackBrandAnalysisId, setFallbackBrandAnalysisId] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Debug logging
@@ -58,8 +60,25 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId, camp
   const autoFindCompetitors = async () => {
     console.log('🔍 Auto-find competitors clicked');
     
+    let effectiveBrandAnalysisId = brandAnalysisId;
+    
+    // If no brandAnalysisId provided, try to get the latest brand analysis
+    if (!effectiveBrandAnalysisId && fetchLatestBrandAnalysis) {
+      console.log('🔍 No brandAnalysisId provided, trying to fetch latest brand analysis...');
+      try {
+        const latestBrandAnalysis = await fetchLatestBrandAnalysis();
+        if (latestBrandAnalysis) {
+          effectiveBrandAnalysisId = latestBrandAnalysis.id;
+          setFallbackBrandAnalysisId(latestBrandAnalysis.id);
+          console.log('✅ Found latest brand analysis:', latestBrandAnalysis.id);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching latest brand analysis:', error);
+      }
+    }
+    
     // For campaign-specific workflow, we'll skip auto-discovery if no brandAnalysisId
-    if (!brandAnalysisId) {
+    if (!effectiveBrandAnalysisId) {
       console.log('❌ No brandAnalysisId provided - skipping auto-discovery');
       toast({
         title: "Auto-discovery unavailable",
@@ -71,13 +90,13 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId, camp
 
     setIsAutoFinding(true);
     try {
-      console.log('📡 Calling discover-competitors function with:', { brandAnalysisId });
+      console.log('📡 Calling discover-competitors function with:', { brandAnalysisId: effectiveBrandAnalysisId });
       
       const user = await supabase.auth.getUser();
       console.log('👤 Current user:', user.data.user?.id);
       
       const { data, error } = await supabase.functions.invoke('discover-competitors', {
-        body: { brandAnalysisId, userId: user.data.user?.id }
+        body: { brandAnalysisId: effectiveBrandAnalysisId, userId: user.data.user?.id }
       });
 
       console.log('📥 Response received:', { data, error });
@@ -146,7 +165,7 @@ export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId, camp
         .from('competitor_lists')
         .insert({
           user_id: user.data.user.id,
-          brand_analysis_id: brandAnalysisId,
+          brand_analysis_id: brandAnalysisId || fallbackBrandAnalysisId,
           competitors: competitors as any,
           auto_generated: false
         })
