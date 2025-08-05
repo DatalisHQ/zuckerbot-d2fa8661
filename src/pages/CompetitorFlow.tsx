@@ -6,6 +6,7 @@ import { RawAssetCollector } from '@/components/RawAssetCollector';
 // import { AssetTransformer } from '@/components/AssetTransformer';
 import { CampaignSettings, CampaignSettings as CampaignSettingsType } from '@/components/CampaignSettings';
 import { CampaignLauncher } from '@/components/CampaignLauncher';
+import { CampaignFlowNavigation } from '@/components/CampaignFlowNavigation';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useBuildCampaign } from '@/hooks/useBuildCampaign';
@@ -155,16 +156,61 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
     onFlowComplete(null, { type: 'save_and_exit' });
   };
 
+  // MAJOR CHANGE: Navigation functions for back/next functionality
+  const navigateToStep = (targetStep: 'input' | 'insights' | 'assets' | 'campaign-settings' | 'launch') => {
+    setCurrentStep(targetStep);
+    autoSaveDraft(targetStep);
+  };
+
+  const handleBack = () => {
+    const stepOrder: ('input' | 'insights' | 'assets' | 'campaign-settings' | 'launch')[] = 
+      ['input', 'insights', 'assets', 'campaign-settings', 'launch'];
+    const currentIndex = stepOrder.indexOf(currentStep);
+    if (currentIndex > 0) {
+      navigateToStep(stepOrder[currentIndex - 1]);
+    }
+  };
+
+  const handleNext = () => {
+    const stepOrder: ('input' | 'insights' | 'assets' | 'campaign-settings' | 'launch')[] = 
+      ['input', 'insights', 'assets', 'campaign-settings', 'launch'];
+    const currentIndex = stepOrder.indexOf(currentStep);
+    if (currentIndex < stepOrder.length - 1) {
+      navigateToStep(stepOrder[currentIndex + 1]);
+    }
+  };
+
+  const canGoBack = () => {
+    return currentStep !== 'input';
+  };
+
+  const canGoNext = () => {
+    if (currentStep === 'input') return !!competitorListId;
+    if (currentStep === 'insights') return !!selectedAngle;
+    if (currentStep === 'assets') return true; // Assets are optional
+    if (currentStep === 'campaign-settings') return !!campaignConfig;
+    return false;
+  };
+
+  const getNextButtonText = () => {
+    if (currentStep === 'launch') return 'Launch Campaign';
+    if (currentStep === 'campaign-settings') return 'Review & Launch';
+    return 'Next Step';
+  };
+
   const handleCompetitorListCreated = async (listId: string) => {
     if (listId === 'skip') {
-      // User chose to skip competitor research
-      onFlowComplete(null, { type: 'skip', description: 'User chose to skip competitor research' }, []);
+      // MAJOR CHANGE: Skip directly to assets page instead of completing flow
+      toast({
+        title: "Skipping competitor research",
+        description: "Moving to asset collection.",
+      });
+      navigateToStep('assets');
       return;
     }
     
     setCompetitorListId(listId);
-    setCurrentStep('insights');
-    await autoSaveDraft('insights');
+    navigateToStep('insights');
   };
 
   const handleAudienceSelected = (segments: AudienceSegment[]) => {
@@ -172,33 +218,26 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
   };
 
   const handleAngleSelected = async (selectedAngle: any, insights: any, profiles: any[] = []) => {
-    // Store data and move to asset collection
+    // Store data
     setCompetitorInsights(insights);
     setSelectedAngle(selectedAngle);
     setCompetitorProfiles(profiles);
     
     toast({
       title: "Strategy selected!",
-      description: "Now let's collect your raw assets.",
+      description: "Strategy saved. You can now proceed to asset collection.",
     });
     
-    setCurrentStep('assets');
-    await autoSaveDraft('assets');
+    await autoSaveDraft('insights');
   };
 
   const handleAssetsSelected = (assets: string[]) => {
     setRawAssets(assets);
+    autoSaveDraft('assets');
   };
 
   const handleAssetsComplete = async () => {
-    toast({
-      title: "Assets collected!",
-      description: "Now let's configure your campaign settings.",
-    });
-    
-    // MAJOR CHANGE: Skip asset transformation and go directly to campaign settings
-    setCurrentStep('campaign-settings');
-    await autoSaveDraft('campaign-settings');
+    await autoSaveDraft('assets');
   };
 
   const handleTransformComplete = (assets: TransformedAsset[]) => {
@@ -275,103 +314,154 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
   return (
     <div className="min-h-screen bg-background">
       {currentStep === 'input' && (
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">Competitor Research</h1>
-            <p className="text-muted-foreground">
-              Let's analyze your competition to find winning ad angles
-            </p>
+        <div className="min-h-screen bg-background flex flex-col">
+          <div className="flex-1">
+            <div className="container mx-auto px-4 py-8">
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold mb-2">Competitor Research</h1>
+                <p className="text-muted-foreground">
+                  Let's analyze your competition to find winning ad angles
+                </p>
+              </div>
+              <CompetitorInput 
+                onCompetitorListCreated={handleCompetitorListCreated}
+                brandAnalysisId={brandAnalysisId}
+              />
+            </div>
           </div>
-          <CompetitorInput 
-            onCompetitorListCreated={handleCompetitorListCreated}
-            brandAnalysisId={brandAnalysisId}
+          
+          <CampaignFlowNavigation
+            currentStep={currentStep}
+            onBack={handleBack}
+            onNext={handleNext}
+            onSave={handleContinueLater}
+            canGoBack={canGoBack()}
+            canGoNext={canGoNext()}
+            nextButtonText={getNextButtonText()}
+            nextButtonDisabled={!canGoNext()}
           />
         </div>
       )}
 
       {currentStep === 'insights' && competitorListId && (
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">Competitor Insights</h1>
-            <p className="text-muted-foreground">
-              Review the analysis and choose your marketing angle
-            </p>
+        <div className="min-h-screen bg-background flex flex-col">
+          <div className="flex-1">
+            <div className="container mx-auto px-4 py-8">
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold mb-2">Competitor Insights</h1>
+                <p className="text-muted-foreground">
+                  Review the analysis and choose your marketing angle
+                </p>
+              </div>
+              <CompetitorInsights 
+                competitorListId={competitorListId}
+                brandUrl={brandUrl}
+                onAngleSelected={handleAngleSelected}
+                onAudienceSelected={handleAudienceSelected}
+              />
+            </div>
           </div>
-          <CompetitorInsights 
-            competitorListId={competitorListId}
-            brandUrl={brandUrl}
-            onAngleSelected={handleAngleSelected}
-            onAudienceSelected={handleAudienceSelected}
+          
+          <CampaignFlowNavigation
+            currentStep={currentStep}
+            onBack={handleBack}
+            onNext={handleNext}
+            onSave={handleContinueLater}
+            canGoBack={canGoBack()}
+            canGoNext={canGoNext()}
+            nextButtonText={getNextButtonText()}
+            nextButtonDisabled={!canGoNext()}
           />
         </div>
       )}
 
       {currentStep === 'assets' && (
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">Asset Collection</h1>
-            <p className="text-muted-foreground">
-              Upload images, add URLs, or fetch from Facebook Creative Library
-            </p>
-          </div>
-          <div className="max-w-4xl mx-auto">
-            <RawAssetCollector onAssetsChange={handleAssetsSelected} />
-            <div className="flex justify-center gap-4 mt-6">
-              <Button 
-                onClick={handleAssetsComplete}
-                className="px-6 py-2"
-              >
-                Continue to Campaign Settings
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setRawAssets([]);
-                  handleAssetsComplete();
-                }}
-                className="px-6 py-2"
-              >
-                Skip This Step
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={handleContinueLater}
-                className="px-6 py-2"
-              >
-                Continue Later
-              </Button>
+        <div className="min-h-screen bg-background flex flex-col">
+          <div className="flex-1">
+            <div className="container mx-auto px-4 py-8">
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold mb-2">Asset Collection</h1>
+                <p className="text-muted-foreground">
+                  Upload images, add URLs, or fetch from Facebook Creative Library
+                </p>
+              </div>
+              <div className="max-w-4xl mx-auto">
+                <RawAssetCollector onAssetsChange={handleAssetsSelected} />
+              </div>
             </div>
           </div>
+          
+          <CampaignFlowNavigation
+            currentStep={currentStep}
+            onBack={handleBack}
+            onNext={handleNext}
+            onSave={handleContinueLater}
+            canGoBack={canGoBack()}
+            canGoNext={canGoNext()}
+            nextButtonText={getNextButtonText()}
+            nextButtonDisabled={!canGoNext()}
+          />
         </div>
       )}
 
       {/* REMOVED: Asset transformation step - flow now goes directly from assets to campaign settings */}
 
       {currentStep === 'campaign-settings' && (
-        <div className="container mx-auto px-4 py-8">
-          <CampaignSettings
-            brandUrl={brandUrl || ''}
-            competitorProfiles={competitorProfiles}
-            selectedSegments={selectedAudienceSegments}
-            onSettingsComplete={handleCampaignSettingsComplete}
+        <div className="min-h-screen bg-background flex flex-col">
+          <div className="flex-1">
+            <div className="container mx-auto px-4 py-8">
+              <CampaignSettings
+                brandUrl={brandUrl || ''}
+                competitorProfiles={competitorProfiles}
+                selectedSegments={selectedAudienceSegments}
+                onSettingsComplete={handleCampaignSettingsComplete}
+              />
+            </div>
+          </div>
+          
+          <CampaignFlowNavigation
+            currentStep={currentStep}
+            onBack={handleBack}
+            onNext={handleNext}
+            onSave={handleContinueLater}
+            canGoBack={canGoBack()}
+            canGoNext={canGoNext()}
+            nextButtonText={getNextButtonText()}
+            nextButtonDisabled={!canGoNext()}
           />
         </div>
       )}
 
       {currentStep === 'launch' && campaignConfig && (
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">Launch Campaign</h1>
-            <p className="text-muted-foreground">
-              Deploy your campaign to Facebook Ads Manager
-            </p>
+        <div className="min-h-screen bg-background flex flex-col">
+          <div className="flex-1">
+            <div className="container mx-auto px-4 py-8">
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold mb-2">Launch Campaign</h1>
+                <p className="text-muted-foreground">
+                  Deploy your campaign to Facebook Ads Manager
+                </p>
+              </div>
+              <div className="max-w-4xl mx-auto">
+                <CampaignLauncher
+                  campaignConfig={campaignConfig}
+                  onLaunchComplete={handleLaunchComplete}
+                />
+              </div>
+            </div>
           </div>
-          <div className="max-w-4xl mx-auto">
-            <CampaignLauncher
-              campaignConfig={campaignConfig}
-              onLaunchComplete={handleLaunchComplete}
-            />
-          </div>
+          
+          <CampaignFlowNavigation
+            currentStep={currentStep}
+            onBack={handleBack}
+            onNext={handleNext}
+            onSave={handleContinueLater}
+            canGoBack={canGoBack()}
+            canGoNext={false} // No next step after launch
+            nextButtonText={getNextButtonText()}
+            nextButtonDisabled={true}
+            showSave={false}
+          />
         </div>
       )}
     </div>
