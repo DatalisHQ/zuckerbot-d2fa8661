@@ -15,9 +15,10 @@ interface Competitor {
 interface CompetitorInputProps {
   onCompetitorListCreated: (competitorListId: string) => void;
   brandAnalysisId?: string;
+  campaignId?: string;
 }
 
-export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId }: CompetitorInputProps) => {
+export const CompetitorInput = ({ onCompetitorListCreated, brandAnalysisId, campaignId }: CompetitorInputProps) => {
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [newCompetitorName, setNewCompetitorName] = useState('');
   const [newCompetitorUrl, setNewCompetitorUrl] = useState('');

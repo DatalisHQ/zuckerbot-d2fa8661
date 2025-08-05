@@ -19,12 +19,15 @@ interface CompetitorProfile {
 }
 
 interface AudienceSegmentsProps {
-  brandUrl: string;
-  competitorProfiles: CompetitorProfile[];
+  brandUrl?: string;
+  competitorProfiles?: CompetitorProfile[];
+  campaignId?: string;
+  existingData?: any;
+  competitorData?: any;
   onSegmentsSelected: (segments: AudienceSegment[]) => void;
 }
 
-export function AudienceSegments({ brandUrl, competitorProfiles, onSegmentsSelected }: AudienceSegmentsProps) {
+export function AudienceSegments({ brandUrl, competitorProfiles, campaignId, existingData, competitorData, onSegmentsSelected }: AudienceSegmentsProps) {
   const [selectedSegments, setSelectedSegments] = useState<Set<number>>(new Set());
   const { toast } = useToast();
 

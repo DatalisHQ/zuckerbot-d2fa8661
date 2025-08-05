@@ -16,14 +16,19 @@ export type Database = {
     Tables: {
       ad_campaigns: {
         Row: {
+          angles_data: Json | null
+          audience_data: Json | null
           brand_analysis: Json | null
+          brand_data: Json | null
           campaign_name: string
+          competitor_data: Json | null
           created_at: string
           current_step: number
           draft_data: Json | null
           framework_selection: Json | null
           generated_ads: Json | null
           id: string
+          image_data: Json | null
           is_draft: boolean | null
           last_saved_at: string | null
           pipeline_status: string
@@ -32,14 +37,19 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          angles_data?: Json | null
+          audience_data?: Json | null
           brand_analysis?: Json | null
+          brand_data?: Json | null
           campaign_name?: string
+          competitor_data?: Json | null
           created_at?: string
           current_step?: number
           draft_data?: Json | null
           framework_selection?: Json | null
           generated_ads?: Json | null
           id?: string
+          image_data?: Json | null
           is_draft?: boolean | null
           last_saved_at?: string | null
           pipeline_status?: string
@@ -48,14 +58,19 @@ export type Database = {
           user_id: string
         }
         Update: {
+          angles_data?: Json | null
+          audience_data?: Json | null
           brand_analysis?: Json | null
+          brand_data?: Json | null
           campaign_name?: string
+          competitor_data?: Json | null
           created_at?: string
           current_step?: number
           draft_data?: Json | null
           framework_selection?: Json | null
           generated_ads?: Json | null
           id?: string
+          image_data?: Json | null
           is_draft?: boolean | null
           last_saved_at?: string | null
           pipeline_status?: string
@@ -171,6 +186,48 @@ export type Database = {
           value_propositions?: string[] | null
         }
         Relationships: []
+      }
+      campaign_facebook_audiences: {
+        Row: {
+          audience_segment_data: Json
+          campaign_id: string
+          created_at: string
+          facebook_audience_id: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          audience_segment_data?: Json
+          campaign_id: string
+          created_at?: string
+          facebook_audience_id: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          audience_segment_data?: Json
+          campaign_id?: string
+          created_at?: string
+          facebook_audience_id?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_facebook_audiences_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_facebook_audiences_facebook_audience_id_fkey"
+            columns: ["facebook_audience_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_audiences"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       competitive_reports: {
         Row: {

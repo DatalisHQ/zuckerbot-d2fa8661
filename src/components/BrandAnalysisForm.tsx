@@ -21,7 +21,13 @@ interface BrandAnalysis {
   valuePropositions: string[];
 }
 
-export const BrandAnalysisForm = () => {
+interface BrandAnalysisFormProps {
+  campaignId?: string;
+  existingData?: any;
+  onAnalysisComplete?: (data: any) => void;
+}
+
+export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete }: BrandAnalysisFormProps = {}) => {
   const { toast } = useToast();
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);

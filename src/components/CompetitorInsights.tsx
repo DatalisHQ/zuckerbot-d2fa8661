@@ -55,6 +55,8 @@ interface AngleSuggestion {
 interface CompetitorInsightsProps {
   competitorListId: string;
   brandUrl?: string;
+  campaignId?: string;
+  existingData?: any;
   onAngleSelected: (angle: AngleSuggestion, insights: any) => void;
   onAudienceSelected?: (segments: AudienceSegment[]) => void;
 }
@@ -62,6 +64,8 @@ interface CompetitorInsightsProps {
 export const CompetitorInsights = ({ 
   competitorListId, 
   brandUrl, 
+  campaignId,
+  existingData,
   onAngleSelected, 
   onAudienceSelected 
 }: CompetitorInsightsProps) => {

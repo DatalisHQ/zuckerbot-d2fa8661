@@ -49,12 +49,14 @@ interface CampaignBuilderProps {
   brandUrl?: string;
   resumeDraftId?: string;
   savedAudienceSegments?: FacebookAudienceSegment[];
+  campaignId?: string;
+  campaignData?: any;
   onFlowComplete: (result: any) => void;
 }
 
 type Step = 'campaign-name' | 'budget' | 'audiences' | 'ad-sets' | 'ad-variants' | 'review';
 
-export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, savedAudienceSegments, onFlowComplete }: CampaignBuilderProps) => {
+export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, savedAudienceSegments, campaignId, campaignData, onFlowComplete }: CampaignBuilderProps) => {
   const [currentStep, setCurrentStep] = useState<Step>('campaign-name');
   const [campaignName, setCampaignName] = useState<string>('');
   const [objective, setObjective] = useState<string>('');
