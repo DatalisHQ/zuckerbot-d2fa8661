@@ -13,16 +13,17 @@ interface CampaignFlowNavigationProps {
   showSave?: boolean;
 }
 
-const STEP_ORDER = ['input', 'insights', 'assets', 'campaign-settings', 'launch'];
+const STEP_ORDER = ['campaign-name', 'budget', 'audiences', 'ad-sets', 'ad-variants', 'review'];
 
 const getStepInfo = (step: string) => {
   const stepIndex = STEP_ORDER.indexOf(step);
   const stepNames = {
-    'input': "Competitor Research",
-    'insights': "Insights Analysis",
-    'assets': "Asset Collection",
-    'campaign-settings': "Campaign Settings",
-    'launch': "Ready to Launch"
+    'campaign-name': "Campaign Setup",
+    'budget': "Budget Planning", 
+    'audiences': "Audience Targeting",
+    'ad-sets': "Ad Set Configuration",
+    'ad-variants': "Ad Creation",
+    'review': "Review & Launch"
   };
   
   return {
