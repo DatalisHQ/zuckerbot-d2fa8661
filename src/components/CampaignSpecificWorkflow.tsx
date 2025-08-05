@@ -204,17 +204,14 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
 
   const handleNext = () => {
     const currentIndex = steps.findIndex(s => s.id === currentStep);
-    if (currentIndex < steps.length - 1 && completedSteps.has(currentStep)) {
+    if (currentIndex < steps.length - 1) {
       setCurrentStep(steps[currentIndex + 1].id);
     }
   };
 
   const canNavigateToStep = (step: WorkflowStep): boolean => {
-    const stepIndex = steps.findIndex(s => s.id === step);
-    const currentStepIndex = steps.findIndex(s => s.id === currentStep);
-    
-    // Can navigate to completed steps or next step
-    return completedSteps.has(step) || stepIndex <= currentStepIndex + 1;
+    // Allow navigation to any step - no hard requirements
+    return true;
   };
 
   return (
@@ -304,6 +301,13 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
               <p className="text-muted-foreground">
                 Analyze your competition to find winning ad strategies for this campaign
               </p>
+              {Object.keys(campaignData.brand_data || {}).length === 0 && (
+                <div className="mt-4 p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    💡 No brand data yet. Auto-discovery will be limited, but you can still add competitors manually.
+                  </p>
+                </div>
+              )}
             </div>
             
             {!campaignData.competitor_data?.competitorListId ? (
@@ -312,6 +316,7 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
                   handleStepComplete('competitor-analysis', { competitorListId });
                 }}
                 campaignId={campaignId}
+                brandAnalysisId={campaignData.brand_data?.analysisId}
               />
             ) : (
               <CompetitorInsights
@@ -412,7 +417,7 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
             
             <Button
               onClick={handleNext}
-              disabled={!completedSteps.has(currentStep) || currentStep === 'campaign-creation'}
+              disabled={currentStep === 'campaign-creation'}
               className="flex items-center gap-2"
             >
               Next
