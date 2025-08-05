@@ -16,29 +16,16 @@ export const useOnboardingGuard = () => {
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('onboarding_completed, facebook_connected, facebook_access_token, selected_ad_account_id')
+          .select('onboarding_completed')
           .eq('user_id', session.user.id)
           .maybeSingle();
 
-        // Check for all required onboarding prerequisites
+        // MAJOR CHANGE: Only check if onboarding is completed, not Facebook connection
         const hasCompletedOnboarding = profile?.onboarding_completed;
-        const hasFacebookConnected = profile?.facebook_connected && profile?.facebook_access_token;
-        const hasSelectedAdAccount = profile?.selected_ad_account_id;
 
-        if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
-          console.log("Onboarding guard: Missing prerequisites", {
-            onboarding_completed: hasCompletedOnboarding,
-            facebook_connected: hasFacebookConnected,
-            ad_account_selected: hasSelectedAdAccount
-          });
-          
-          // Build recovery parameters to indicate what's missing
-          const recoveryParams = new URLSearchParams();
-          if (!hasFacebookConnected) recoveryParams.set('recovery', 'facebook');
-          else if (!hasSelectedAdAccount) recoveryParams.set('recovery', 'ad_account');
-          else recoveryParams.set('recovery', 'general');
-          
-          navigate(`/onboarding?${recoveryParams.toString()}`);
+        if (!hasCompletedOnboarding) {
+          console.log("Onboarding guard: Onboarding not completed, redirecting");
+          navigate(`/onboarding`);
           return;
         }
       } catch (error) {

@@ -19,10 +19,10 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
 import { FacebookAdsPerformance } from "@/components/FacebookAdsPerformance";
-import { OnboardingRecovery } from "@/components/OnboardingRecovery";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useCampaignDrafts } from "@/hooks/useCampaignDrafts";
 import { DraftCampaignCard } from "@/components/DraftCampaignCard";
+import { FacebookConnector } from "@/components/FacebookConnector";
 
 interface Campaign {
   id: string;
@@ -78,7 +78,7 @@ useEffect(() => {
         return;
       }
 
-      setUser(session.user);
+    setUser(session.user);
 
     // Get user profile
     const { data: profileData } = await supabase
@@ -89,25 +89,12 @@ useEffect(() => {
 
     setProfile(profileData);
 
-    // Block access if any onboarding prerequisites are missing
+    // MAJOR CHANGE: Only check if onboarding is completed, not Facebook connection
     const hasCompletedOnboarding = profileData?.onboarding_completed;
-    const hasFacebookConnected = profileData?.facebook_connected && profileData?.facebook_access_token;
-    const hasSelectedAdAccount = profileData?.selected_ad_account_id;
 
-    if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
-      console.log("Dashboard: Missing prerequisites, redirecting to onboarding", {
-        onboarding_completed: hasCompletedOnboarding,
-        facebook_connected: hasFacebookConnected,
-        ad_account_selected: hasSelectedAdAccount
-      });
-      
-      // Build recovery parameters to indicate what's missing
-      const recoveryParams = new URLSearchParams();
-      if (!hasFacebookConnected) recoveryParams.set('recovery', 'facebook');
-      else if (!hasSelectedAdAccount) recoveryParams.set('recovery', 'ad_account');
-      else recoveryParams.set('recovery', 'general');
-      
-      navigate(`/onboarding?${recoveryParams.toString()}`);
+    if (!hasCompletedOnboarding) {
+      console.log("Dashboard: Onboarding not completed, redirecting to onboarding");
+      navigate(`/onboarding`);
       return;
     }
 
@@ -319,8 +306,15 @@ useEffect(() => {
             </p>
           </section>
 
-          {/* Onboarding Recovery */}
-          <OnboardingRecovery onComplete={() => window.location.reload()} />
+          {/* MAJOR CHANGE: Facebook Connection Card - Show if not connected */}
+          {profile && !profile.facebook_connected && (
+            <FacebookConnector 
+              onConnectionComplete={() => window.location.reload()} 
+              title="Connect Facebook for Ad Management"
+              description="Connect your Facebook Business account to access ad performance data and create campaigns."
+              buttonText="Connect Facebook Business"
+            />
+          )}
 
           {/* Quick Actions */}
           <section>

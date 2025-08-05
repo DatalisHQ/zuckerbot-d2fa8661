@@ -6,17 +6,17 @@ import { CompetitorFlow } from '@/pages/CompetitorFlow';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Navbar } from "@/components/Navbar";
-import { useFacebookHealthCheck } from "@/hooks/useFacebookHealthCheck";
+import { FacebookConnector } from "@/components/FacebookConnector";
 
 const CampaignFlow = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
-  const { requireHealthyConnection } = useFacebookHealthCheck();
   const [brandAnalysisId, setBrandAnalysisId] = useState<string>('');
   const [brandUrl, setBrandUrl] = useState<string>('');
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [needsFacebookConnection, setNeedsFacebookConnection] = useState(false);
 
   useEffect(() => {
     const loadBrandContext = async () => {
@@ -33,7 +33,7 @@ const CampaignFlow = () => {
           return;
         }
 
-        // Check ALL onboarding prerequisites
+        // MAJOR CHANGE: Only check if onboarding is completed
         const { data: profile } = await supabase
           .from('profiles')
           .select('onboarding_completed, facebook_connected, facebook_access_token, selected_ad_account_id')
@@ -50,57 +50,22 @@ const CampaignFlow = () => {
           return;
         }
 
-        // Block access if any onboarding prerequisites are missing
+        // Check if onboarding is completed
         const hasCompletedOnboarding = profile.onboarding_completed;
-        const hasFacebookConnected = profile.facebook_connected && profile.facebook_access_token;
-        const hasSelectedAdAccount = profile.selected_ad_account_id;
 
-        if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
-          console.log("CampaignFlow: Missing prerequisites, redirecting to onboarding", {
-            onboarding_completed: hasCompletedOnboarding,
-            facebook_connected: hasFacebookConnected,
-            ad_account_selected: hasSelectedAdAccount
-          });
-          
-          // Build recovery parameters to indicate what's missing
-          const recoveryParams = new URLSearchParams();
-          if (!hasFacebookConnected) recoveryParams.set('recovery', 'facebook');
-          else if (!hasSelectedAdAccount) recoveryParams.set('recovery', 'ad_account');
-          else recoveryParams.set('recovery', 'general');
-          
-          toast({
-            title: "Setup Required",
-            description: "Please complete your Facebook connection and ad account selection to create campaigns.",
-            variant: "destructive",
-          });
-          
-          navigate(`/onboarding?${recoveryParams.toString()}`);
+        if (!hasCompletedOnboarding) {
+          console.log("CampaignFlow: Onboarding not completed, redirecting to onboarding");
+          navigate("/onboarding");
           return;
         }
 
-        // Validate Facebook token is still valid
-        try {
-          const tokenValidation = await fetch(
-            `https://graph.facebook.com/v18.0/me?access_token=${profile.facebook_access_token}`
-          );
-          
-          if (!tokenValidation.ok) {
-            toast({
-              title: "Facebook Connection Expired",
-              description: "Your Facebook access has expired. Please reconnect to continue.",
-              variant: "destructive",
-            });
-            navigate("/onboarding?recovery=facebook");
-            return;
-          }
-        } catch (error) {
-          console.error('Facebook token validation failed:', error);
-          toast({
-            title: "Facebook Connection Issue",
-            description: "Unable to verify Facebook connection. Please reconnect.",
-            variant: "destructive",
-          });
-          navigate("/onboarding?recovery=facebook");
+        // MAJOR CHANGE: Check Facebook connection but don't block access
+        const hasFacebookConnected = profile.facebook_connected && profile.facebook_access_token;
+        
+        if (!hasFacebookConnected) {
+          console.log("CampaignFlow: Facebook not connected, showing connection prompt");
+          setNeedsFacebookConnection(true);
+          setIsLoading(false);
           return;
         }
 
@@ -124,11 +89,7 @@ const CampaignFlow = () => {
           return;
         }
 
-        // Final Facebook health check before proceeding
-        const isFacebookHealthy = await requireHealthyConnection();
-        if (!isFacebookHealthy) {
-          return; // requireHealthyConnection handles the redirect
-        }
+        // MAJOR CHANGE: Removed Facebook health check requirement
 
         setBrandAnalysisId(brandAnalysis.id);
         setBrandUrl(brandAnalysis.brand_url || '');
@@ -168,6 +129,59 @@ const CampaignFlow = () => {
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="text-muted-foreground">Loading campaign flow...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // MAJOR CHANGE: Show Facebook connection prompt instead of blocking access
+  if (needsFacebookConnection) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        
+        {/* Header with back button */}
+        <div className="border-b border-border/50">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center gap-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleBackToZuckerBot}
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to ZuckerBot
+              </Button>
+              <div className="h-6 w-px bg-border/50" />
+              <h1 className="text-xl font-semibold">Campaign Creation Flow</h1>
+            </div>
+          </div>
+        </div>
+
+        {/* Facebook Connection Required */}
+        <div className="container mx-auto px-4 py-16">
+          <div className="max-w-2xl mx-auto space-y-8">
+            <div className="text-center space-y-4">
+              <h2 className="text-3xl font-bold">Facebook Connection Required</h2>
+              <p className="text-muted-foreground text-lg">
+                To create and manage Facebook ad campaigns, please connect your Facebook Business account.
+              </p>
+            </div>
+            
+            <FacebookConnector 
+              onConnectionComplete={() => window.location.reload()} 
+              title="Connect Facebook Business Account"
+              description="This allows ZuckerBot to create and manage your Facebook ad campaigns."
+              buttonText="Connect Facebook Business"
+            />
+            
+            <div className="text-center">
+              <Button variant="outline" onClick={handleBackToZuckerBot}>
+                Go Back to ZuckerBot
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     );

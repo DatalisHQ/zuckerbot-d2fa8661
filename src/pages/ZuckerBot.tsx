@@ -66,44 +66,13 @@ const ZuckerBot = () => {
           .eq('user_id', session.user.id)
           .single();
 
-        // Check for all required onboarding prerequisites
+        // MAJOR CHANGE: Only check if onboarding is completed
         const hasCompletedOnboarding = profile?.onboarding_completed;
-        const hasFacebookConnected = profile?.facebook_connected && profile?.facebook_access_token;
-        const hasSelectedAdAccount = profile?.selected_ad_account_id;
 
-        if (!hasCompletedOnboarding || !hasFacebookConnected || !hasSelectedAdAccount) {
-          console.log("ZuckerBot: Missing prerequisites, redirecting to onboarding", {
-            onboarding_completed: hasCompletedOnboarding,
-            facebook_connected: hasFacebookConnected,
-            ad_account_selected: hasSelectedAdAccount
-          });
-          
-          // Build recovery parameters to indicate what's missing
-          const recoveryParams = new URLSearchParams();
-          if (!hasFacebookConnected) recoveryParams.set('recovery', 'facebook');
-          else if (!hasSelectedAdAccount) recoveryParams.set('recovery', 'ad_account');
-          else recoveryParams.set('recovery', 'general');
-          
-          navigate(`/onboarding?${recoveryParams.toString()}`);
+        if (!hasCompletedOnboarding) {
+          console.log("ZuckerBot: Onboarding not completed, redirecting to onboarding");
+          navigate(`/onboarding`);
           return;
-        }
-
-        // Additional Facebook token validation for ZuckerBot
-        if (profile.facebook_access_token) {
-          try {
-            const tokenValidation = await fetch(
-              `https://graph.facebook.com/v18.0/me?access_token=${profile.facebook_access_token}`
-            );
-            
-            if (!tokenValidation.ok) {
-              console.log("ZuckerBot: Facebook token invalid, redirecting to reconnect");
-              navigate("/onboarding?recovery=facebook");
-              return;
-            }
-          } catch (error) {
-            console.error('ZuckerBot: Facebook token validation failed:', error);
-            // Continue but log the issue - user might still be able to browse
-          }
         }
 
         // Load business context - get the most recent analysis
@@ -126,27 +95,8 @@ const ZuckerBot = () => {
       }
     };
 
-    // Listen for Facebook connection events from the global auth handler
-    const handleFacebookConnected = (event: CustomEvent) => {
-      console.log('[ZuckerBot] Facebook connection event received:', event.detail);
-      if (event.detail.success) {
-        toast({
-          title: "Facebook Connected",
-          description: "Your Facebook account has been connected and ad data is being synced.",
-          variant: "default",
-        });
-        
-        // Optionally reload user context to refresh any Facebook-related data
-        loadUserAndBusiness();
-      }
-    };
-
-    window.addEventListener('facebook-connected', handleFacebookConnected as EventListener);
+    // MAJOR CHANGE: Removed Facebook connection event listeners
     loadUserAndBusiness();
-
-    return () => {
-      window.removeEventListener('facebook-connected', handleFacebookConnected as EventListener);
-    };
   }, [navigate, toast]);
 
   const handlePromptAction = async (prompt: any) => {
