@@ -141,6 +141,7 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
         onAnalysisComplete({
           analysis: data.analysis,
           analysisId: data.analysisId,
+          brandUrl: processedUrl, // Include the validated URL
           brandName: data.analysis?.brandName,
           businessCategory: data.analysis?.businessCategory,
           niche: data.analysis?.niche,

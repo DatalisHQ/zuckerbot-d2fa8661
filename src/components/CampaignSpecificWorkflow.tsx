@@ -314,7 +314,10 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
               campaignId={campaignId}
               existingData={campaignData.brand_data}
               onAnalysisComplete={(data) => 
-                handleStepComplete('brand-info', data)
+                handleStepComplete('brand-info', { 
+                  ...data,
+                  brandUrl: data.brandUrl // Ensure brandUrl is saved
+                })
               }
             />
           </div>
