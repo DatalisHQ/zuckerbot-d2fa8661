@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import { CampaignBuilder } from '@/components/CampaignBuilder';
+import { WorkflowOrchestrator } from '@/components/WorkflowOrchestrator';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Navbar } from "@/components/Navbar";
@@ -188,36 +188,11 @@ const CampaignFlow = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      
-      {/* Header with back button */}
-      <div className="border-b border-border/50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleBackToZuckerBot}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to ZuckerBot
-            </Button>
-            <div className="h-6 w-px bg-border/50" />
-            <h1 className="text-xl font-semibold">Campaign Creation Flow</h1>
-          </div>
-        </div>
-      </div>
-
-      {/* Campaign Flow */}
-      <CampaignBuilder
-        brandAnalysisId={brandAnalysisId}
-        brandUrl={brandUrl}
-        resumeDraftId={resumeDraftId}
-        onFlowComplete={handleFlowComplete}
-      />
-    </div>
+    <WorkflowOrchestrator
+      brandAnalysisId={brandAnalysisId}
+      brandUrl={brandUrl}
+      onFlowComplete={handleFlowComplete}
+    />
   );
 };
 
