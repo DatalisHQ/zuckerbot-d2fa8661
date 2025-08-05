@@ -375,12 +375,10 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
               </p>
             </div>
             
-            <AudienceSegments
+            <PersistentAudienceSelection
               brandUrl={campaignData.brand_data?.brandUrl}
               competitorProfiles={campaignData.competitor_data?.competitorProfiles}
               campaignId={campaignId}
-              existingData={campaignData.audience_data}
-              competitorData={campaignData.competitor_data}
               onSegmentsSelected={(segments) => 
                 handleStepComplete('audience-selection', { segments })
               }

@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       ad_campaigns: {
         Row: {
+          ad_account_id: string | null
           angles_data: Json | null
           audience_data: Json | null
           brand_analysis: Json | null
@@ -23,20 +24,26 @@ export type Database = {
           campaign_name: string
           competitor_data: Json | null
           created_at: string
+          creative_assets: Json | null
           current_step: number
           draft_data: Json | null
+          facebook_campaign_data: Json | null
           framework_selection: Json | null
+          generated_ad_copy: Json | null
           generated_ads: Json | null
           id: string
           image_data: Json | null
           is_draft: boolean | null
           last_saved_at: string | null
+          launch_status: string | null
           pipeline_status: string
+          selected_audiences: Json | null
           step_data: Json | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          ad_account_id?: string | null
           angles_data?: Json | null
           audience_data?: Json | null
           brand_analysis?: Json | null
@@ -44,20 +51,26 @@ export type Database = {
           campaign_name?: string
           competitor_data?: Json | null
           created_at?: string
+          creative_assets?: Json | null
           current_step?: number
           draft_data?: Json | null
+          facebook_campaign_data?: Json | null
           framework_selection?: Json | null
+          generated_ad_copy?: Json | null
           generated_ads?: Json | null
           id?: string
           image_data?: Json | null
           is_draft?: boolean | null
           last_saved_at?: string | null
+          launch_status?: string | null
           pipeline_status?: string
+          selected_audiences?: Json | null
           step_data?: Json | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          ad_account_id?: string | null
           angles_data?: Json | null
           audience_data?: Json | null
           brand_analysis?: Json | null
@@ -65,15 +78,20 @@ export type Database = {
           campaign_name?: string
           competitor_data?: Json | null
           created_at?: string
+          creative_assets?: Json | null
           current_step?: number
           draft_data?: Json | null
+          facebook_campaign_data?: Json | null
           framework_selection?: Json | null
+          generated_ad_copy?: Json | null
           generated_ads?: Json | null
           id?: string
           image_data?: Json | null
           is_draft?: boolean | null
           last_saved_at?: string | null
+          launch_status?: string | null
           pipeline_status?: string
+          selected_audiences?: Json | null
           step_data?: Json | null
           updated_at?: string
           user_id?: string
@@ -136,6 +154,42 @@ export type Database = {
           },
         ]
       }
+      audience_segments: {
+        Row: {
+          campaign_id: string
+          created_at: string | null
+          facebook_audience_id: string | null
+          id: string
+          segment_criteria: string
+          segment_name: string
+          targeting_data: Json
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string | null
+          facebook_audience_id?: string | null
+          id?: string
+          segment_criteria: string
+          segment_name: string
+          targeting_data?: Json
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string | null
+          facebook_audience_id?: string | null
+          id?: string
+          segment_criteria?: string
+          segment_name?: string
+          targeting_data?: Json
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       brand_analysis: {
         Row: {
           analysis_status: string | null
@@ -184,6 +238,93 @@ export type Database = {
           updated_at?: string
           user_id?: string | null
           value_propositions?: string[] | null
+        }
+        Relationships: []
+      }
+      campaign_ad_sets: {
+        Row: {
+          ad_set_name: string
+          audience_segment_id: string | null
+          budget_data: Json
+          campaign_id: string
+          created_at: string | null
+          facebook_adset_id: string | null
+          id: string
+          placement_config: Json
+          status: string | null
+          targeting_config: Json
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          ad_set_name: string
+          audience_segment_id?: string | null
+          budget_data?: Json
+          campaign_id: string
+          created_at?: string | null
+          facebook_adset_id?: string | null
+          id?: string
+          placement_config?: Json
+          status?: string | null
+          targeting_config?: Json
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          ad_set_name?: string
+          audience_segment_id?: string | null
+          budget_data?: Json
+          campaign_id?: string
+          created_at?: string | null
+          facebook_adset_id?: string | null
+          id?: string
+          placement_config?: Json
+          status?: string | null
+          targeting_config?: Json
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      campaign_ads: {
+        Row: {
+          ad_copy_data: Json
+          ad_name: string
+          ad_set_id: string | null
+          campaign_id: string
+          created_at: string | null
+          creative_asset_url: string
+          facebook_ad_id: string | null
+          id: string
+          status: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          ad_copy_data?: Json
+          ad_name: string
+          ad_set_id?: string | null
+          campaign_id: string
+          created_at?: string | null
+          creative_asset_url: string
+          facebook_ad_id?: string | null
+          id?: string
+          status?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          ad_copy_data?: Json
+          ad_name?: string
+          ad_set_id?: string | null
+          campaign_id?: string
+          created_at?: string | null
+          creative_asset_url?: string
+          facebook_ad_id?: string | null
+          id?: string
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
