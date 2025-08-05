@@ -1,7 +1,9 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
 export function useUploadRawAssets() {
+  const queryClient = useQueryClient();
+  
   return useMutation<string[], Error, File[]>({
     mutationFn: async (files) => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -9,7 +11,7 @@ export function useUploadRawAssets() {
 
       const uploads = await Promise.all(
         files.map(async (file) => {
-          const fileName = `ad-assets/${Date.now()}_${file.name}`;
+          const fileName = `${Date.now()}_${file.name}`;
           const filePath = `${user.id}/${fileName}`;
           
           const { data, error } = await supabase.storage
@@ -29,6 +31,10 @@ export function useUploadRawAssets() {
       );
       
       return uploads;
+    },
+    onSuccess: () => {
+      // Invalidate user files query to refresh the file list
+      queryClient.invalidateQueries({ queryKey: ['user-files'] });
     },
   });
 }

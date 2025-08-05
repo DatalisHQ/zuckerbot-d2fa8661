@@ -141,7 +141,15 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
         description: `Uploaded ${newAssets.length} assets`
       });
     }
-  }, [uploadMutation.isSuccess, uploadMutation.data]);
+    
+    if (uploadMutation.isError) {
+      toast({
+        title: "Upload failed",
+        description: uploadMutation.error?.message || "Failed to upload files",
+        variant: "destructive"
+      });
+    }
+  }, [uploadMutation.isSuccess, uploadMutation.data, uploadMutation.isError, uploadMutation.error]);
 
   // Handle Facebook assets fetch
   useEffect(() => {
@@ -152,7 +160,15 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
         description: `Found ${fbMutation.data.length} assets`
       });
     }
-  }, [fbMutation.isSuccess, fbMutation.data]);
+    
+    if (fbMutation.isError) {
+      toast({
+        title: "Facebook fetch failed",
+        description: fbMutation.error?.message || "Failed to fetch Facebook assets",
+        variant: "destructive"
+      });
+    }
+  }, [fbMutation.isSuccess, fbMutation.data, fbMutation.isError, fbMutation.error]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -166,8 +182,13 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
     }
   };
 
-  const handleAddUrl = () => {
-    if (urlInput.trim()) {
+  const handleAddUrl = async () => {
+    if (!urlInput.trim()) return;
+    
+    try {
+      // Validate URL
+      new URL(urlInput);
+      
       const newAsset: CreativeAsset = {
         id: `url_${Date.now()}`,
         url: urlInput.trim(),
@@ -177,8 +198,19 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
       
       const updatedAssets = [...savedAssets, newAsset];
       setSavedAssets(updatedAssets);
-      saveAssetsToDatabase(updatedAssets);
+      await saveAssetsToDatabase(updatedAssets);
       setUrlInput('');
+      
+      toast({
+        title: "URL added",
+        description: "Asset URL has been added to your campaign."
+      });
+    } catch (error: any) {
+      toast({
+        title: "Invalid URL", 
+        description: "Please enter a valid URL.",
+        variant: "destructive"
+      });
     }
   };
 

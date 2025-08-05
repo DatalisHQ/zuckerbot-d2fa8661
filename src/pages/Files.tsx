@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useOnboardingGuard } from "@/hooks/useOnboardingGuard";
+import { useUserFiles } from "@/hooks/useUserFiles";
+import { useUploadRawAssets } from "@/hooks/useUploadRawAssets";
 
 interface FileItem {
   id: string;
@@ -24,85 +26,50 @@ interface FileItem {
 export default function Files() {
   useOnboardingGuard();
   
-  const [files, setFiles] = useState<FileItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const { toast } = useToast();
+  
+  // Use shared hooks for consistent file management
+  const { data: files = [], isLoading, error, refetch } = useUserFiles();
+  const uploadMutation = useUploadRawAssets();
 
+  // Get current user for URL generation
   useEffect(() => {
-    fetchFiles();
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
+    };
+    getCurrentUser();
   }, []);
 
-  const fetchFiles = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      setCurrentUser(user);
-
-      const { data, error } = await supabase.storage
-        .from('user-files')
-        .list(`${user.id}/`, {
-          limit: 100,
-          offset: 0,
-        });
-
-      if (error) throw error;
-      
-      const filesWithMetadata = data?.map(file => ({
-        ...file,
-        id: file.name,
-        bucket_id: 'user-files',
-        created_at: file.created_at || new Date().toISOString(),
-        updated_at: file.updated_at || new Date().toISOString(),
-        metadata: {
-          size: file.metadata?.size || 0,
-          mimetype: file.metadata?.mimetype || 'application/octet-stream',
-          ...file.metadata
-        }
-      })) || [];
-
-      setFiles(filesWithMetadata);
-    } catch (error: any) {
+  // Handle any fetch errors
+  useEffect(() => {
+    if (error) {
       toast({
         title: "Error loading files",
         description: error.message,
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [error, toast]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setUploading(true);
-
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('user-files')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
+      await uploadMutation.mutateAsync([file]);
+      
       toast({
         title: "File uploaded successfully",
         description: `${file.name} has been uploaded to your library.`,
       });
-
-      // Refresh the files list
-      fetchFiles();
+      
+      // Clear the input
+      event.target.value = '';
     } catch (error: any) {
       toast({
         title: "Error uploading file",
@@ -111,8 +78,6 @@ export default function Files() {
       });
     } finally {
       setUploading(false);
-      // Reset the input
-      event.target.value = '';
     }
   };
 
@@ -156,7 +121,8 @@ export default function Files() {
 
       if (error) throw error;
 
-      setFiles(prev => prev.filter(file => file.name !== fileName));
+      // Refetch files to update the list
+      refetch();
       toast({
         title: "File deleted",
         description: "The file has been removed from your library.",
