@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { CompetitorInput } from '@/components/CompetitorInput';
 import { CompetitorInsights } from '@/components/CompetitorInsights';
 import { RawAssetCollector } from '@/components/RawAssetCollector';
-import { AssetTransformer } from '@/components/AssetTransformer';
+// import { AssetTransformer } from '@/components/AssetTransformer';
 import { CampaignSettings, CampaignSettings as CampaignSettingsType } from '@/components/CampaignSettings';
 import { CampaignLauncher } from '@/components/CampaignLauncher';
 import { supabase } from "@/integrations/supabase/client";
@@ -21,7 +21,7 @@ interface CompetitorFlowProps {
 }
 
 export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlowComplete }: CompetitorFlowProps) => {
-  const [currentStep, setCurrentStep] = useState<'input' | 'insights' | 'assets' | 'transform' | 'campaign-settings' | 'launch'>('input');
+  const [currentStep, setCurrentStep] = useState<'input' | 'insights' | 'assets' | 'campaign-settings' | 'launch'>('input');
   const [competitorListId, setCompetitorListId] = useState<string>('');
   const [selectedAudienceSegments, setSelectedAudienceSegments] = useState<AudienceSegment[]>([]);
   const [competitorInsights, setCompetitorInsights] = useState<any>(null);
@@ -85,14 +85,14 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
     }
   };
 
-  const getStepFromNumber = (stepNumber: number): 'input' | 'insights' | 'assets' | 'transform' | 'campaign-settings' | 'launch' => {
-    const stepMap: Record<number, 'input' | 'insights' | 'assets' | 'transform' | 'campaign-settings' | 'launch'> = {
+  const getStepFromNumber = (stepNumber: number): 'input' | 'insights' | 'assets' | 'campaign-settings' | 'launch' => {
+    const stepMap: Record<number, 'input' | 'insights' | 'assets' | 'campaign-settings' | 'launch'> = {
       1: 'input',
       2: 'insights', 
       3: 'assets',
-      4: 'transform',
-      5: 'campaign-settings',
-      6: 'launch'
+      // 4: 'transform', // REMOVED: Asset transformation step
+      4: 'campaign-settings',
+      5: 'launch'
     };
     return stepMap[stepNumber] || 'input';
   };
@@ -102,9 +102,9 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
       'input': 1,
       'insights': 2,
       'assets': 3,
-      'transform': 4,
-      'campaign-settings': 5,
-      'launch': 6
+      // 'transform': 4, // REMOVED: Asset transformation step
+      'campaign-settings': 4,
+      'launch': 5
     };
     return stepMap[step as keyof typeof stepMap] || 1;
   };
@@ -114,9 +114,9 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
       1: "Competitor Research",
       2: "Insights Analysis",
       3: "Asset Collection", 
-      4: "Asset Transform",
-      5: "Campaign Settings",
-      6: "Ready to Launch"
+      // 4: "Asset Transform", // REMOVED: Asset transformation step
+      4: "Campaign Settings",
+      5: "Ready to Launch"
     };
     return stepNames[stepNumber as keyof typeof stepNames] || `Step ${stepNumber}`;
   };
@@ -193,11 +193,12 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
   const handleAssetsComplete = async () => {
     toast({
       title: "Assets collected!",
-      description: "Now let's transform them with AI.",
+      description: "Now let's configure your campaign settings.",
     });
     
-    setCurrentStep('transform');
-    await autoSaveDraft('transform');
+    // MAJOR CHANGE: Skip asset transformation and go directly to campaign settings
+    setCurrentStep('campaign-settings');
+    await autoSaveDraft('campaign-settings');
   };
 
   const handleTransformComplete = (assets: TransformedAsset[]) => {
@@ -320,7 +321,7 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
                 onClick={handleAssetsComplete}
                 className="px-6 py-2"
               >
-                Continue to Transform Assets
+                Continue to Campaign Settings
               </Button>
               <Button
                 variant="outline"
@@ -344,50 +345,7 @@ export const CompetitorFlow = ({ brandAnalysisId, brandUrl, resumeDraftId, onFlo
         </div>
       )}
 
-      {currentStep === 'transform' && (
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">AI Asset Transformation</h1>
-            <p className="text-muted-foreground">
-              Creating ad-ready variants with cropping, formatting, and headline overlays
-            </p>
-          </div>
-          <div className="max-w-6xl mx-auto">
-            <AssetTransformer
-              brandUrl={brandUrl || ''}
-              rawAssets={rawAssets}
-              competitorProfiles={competitorProfiles}
-              onTransformComplete={handleTransformComplete}
-            />
-            <div className="flex justify-center gap-4 mt-6">
-              <Button 
-                onClick={handleTransformFinished}
-                disabled={transformedAssets.length === 0}
-                className="px-6 py-2"
-              >
-                Continue to Campaign Settings
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setTransformedAssets([]);
-                  handleTransformFinished();
-                }}
-                className="px-6 py-2"
-              >
-                Skip This Step
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={handleContinueLater}
-                className="px-6 py-2"
-              >
-                Continue Later
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* REMOVED: Asset transformation step - flow now goes directly from assets to campaign settings */}
 
       {currentStep === 'campaign-settings' && (
         <div className="container mx-auto px-4 py-8">

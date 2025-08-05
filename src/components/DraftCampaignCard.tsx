@@ -19,9 +19,9 @@ const getStepName = (step: number): string => {
     1: "Competitor Research",
     2: "Insights Analysis", 
     3: "Asset Collection",
-    4: "Asset Transform",
-    5: "Campaign Settings",
-    6: "Ready to Launch"
+    // 4: "Asset Transform", // REMOVED: Asset transformation step
+    4: "Campaign Settings",
+    5: "Ready to Launch"
   };
   return stepNames[step as keyof typeof stepNames] || `Step ${step}`;
 };
