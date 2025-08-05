@@ -13,6 +13,7 @@ import { AudienceSegments } from '@/components/AudienceSegments';
 import { BrandAnalysisForm } from '@/components/BrandAnalysisForm';
 import { CampaignImageUpload } from '@/components/CampaignImageUpload';
 import { CampaignBuilder } from '@/components/CampaignBuilder';
+import { PersistentAudienceSelection } from '@/components/enhanced-workflow/PersistentAudienceSelection';
 
 interface CampaignSpecificWorkflowProps {
   campaignId: string;
