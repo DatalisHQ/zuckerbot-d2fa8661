@@ -42,20 +42,19 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
   const validateUrl = (input: string): string | null => {
     if (!input.trim()) return 'URL is required';
     
-    // Remove protocol if present
-    let cleanUrl = input.trim().toLowerCase();
-    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-      cleanUrl = cleanUrl.replace(/^https?:\/\//, '');
+    // Auto-prefix with https:// if no protocol is present
+    let processedUrl = input.trim();
+    if (!processedUrl.startsWith('http://') && !processedUrl.startsWith('https://')) {
+      processedUrl = 'https://' + processedUrl;
     }
     
-    // Basic domain validation - allow domains with or without www
-    const domainRegex = /^(www\.)?[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-    
-    if (!domainRegex.test(cleanUrl)) {
+    // Try to construct URL object to validate
+    try {
+      new URL(processedUrl);
+      return null; // Valid URL
+    } catch {
       return 'Please enter a valid domain (e.g., domain.com or www.example.com)';
     }
-    
-    return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,9 +104,15 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
         progressTracker.startStep('categorization', 'Determining market category and competitive positioning...');
       }, 8000);
 
+      // Prepare URL with protocol for backend
+      let processedUrl = url.trim();
+      if (!processedUrl.startsWith('http://') && !processedUrl.startsWith('https://')) {
+        processedUrl = 'https://' + processedUrl;
+      }
+
       const { data, error } = await supabase.functions.invoke('analyze-brand', {
         body: {
-          brandUrl: url,
+          brandUrl: processedUrl,
           userId: user.id
         }
       });
