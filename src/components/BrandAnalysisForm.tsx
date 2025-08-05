@@ -39,8 +39,38 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
     steps: ANALYSIS_STEPS.BRAND_ANALYSIS 
   });
 
+  const validateUrl = (input: string): string | null => {
+    if (!input.trim()) return 'URL is required';
+    
+    // Remove protocol if present
+    let cleanUrl = input.trim().toLowerCase();
+    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+      cleanUrl = cleanUrl.replace(/^https?:\/\//, '');
+    }
+    
+    // Basic domain validation - allow domains with or without www
+    const domainRegex = /^(www\.)?[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    
+    if (!domainRegex.test(cleanUrl)) {
+      return 'Please enter a valid domain (e.g., domain.com or www.example.com)';
+    }
+    
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const validationError = validateUrl(url);
+    if (validationError) {
+      toast({
+        title: "Invalid URL",
+        description: validationError,
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsLoading(true);
     setAnalysis(null);
     progressTracker.reset();
@@ -134,10 +164,10 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="flex gap-2">
               <Input
-                type="url"
+                type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com"
+                placeholder="domain.com or www.example.com"
                 required
                 disabled={isLoading}
                 className="flex-1"
@@ -151,6 +181,17 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
                 ) : (
                   'Analyze Brand'
                 )}
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline"
+                disabled={true}
+                className="bg-muted text-muted-foreground cursor-not-allowed"
+              >
+                Deep Analysis
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  Coming Soon
+                </Badge>
               </Button>
             </div>
           </form>
@@ -246,11 +287,6 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
         </div>
       )}
 
-      {analysisId && (
-        <div className="mt-8">
-          <CompetitorDiscovery brandAnalysisId={analysisId} />
-        </div>
-      )}
 
       {/* Authentication Dialog */}
       <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
