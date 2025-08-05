@@ -301,9 +301,17 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
               <UserPlus className="h-5 w-5" />
               Create Free Account
             </DialogTitle>
-            <DialogDescription>
-              Sign up for free to analyze {url ? `${new URL(url).hostname}` : 'this website'} and get detailed competitor insights.
-            </DialogDescription>
+          <DialogDescription>
+            Sign up for free to analyze {url ? (() => {
+              let safeUrl = url.trim();
+              if (!/^https?:\/\//i.test(safeUrl)) safeUrl = 'https://' + safeUrl;
+              try { 
+                return new URL(safeUrl).hostname; 
+              } catch { 
+                return url; 
+              }
+            })() : 'this website'} and get detailed competitor insights.
+          </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="text-sm text-muted-foreground">
