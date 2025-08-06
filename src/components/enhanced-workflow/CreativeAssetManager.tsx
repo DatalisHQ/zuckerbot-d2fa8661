@@ -136,6 +136,9 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
       saveAssetsToDatabase(updatedAssets);
       setLocalFiles([]);
       
+      // Refresh user files query to show new files in "Your Files" tab
+      userFilesQuery.refetch();
+      
       toast({
         title: "Upload successful",
         description: `Uploaded ${newAssets.length} assets`
@@ -149,7 +152,7 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
         variant: "destructive"
       });
     }
-  }, [uploadMutation.isSuccess, uploadMutation.data, uploadMutation.isError, uploadMutation.error]);
+  }, [uploadMutation.isSuccess, uploadMutation.data, uploadMutation.isError, uploadMutation.error, userFilesQuery]);
 
   // Handle Facebook assets fetch
   useEffect(() => {
@@ -189,28 +192,54 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
       // Validate URL
       new URL(urlInput);
       
-      const newAsset: CreativeAsset = {
-        id: `url_${Date.now()}`,
-        url: urlInput.trim(),
-        type: 'url',
-        selected: true
-      };
+      // Upload URL-based asset to user's storage for consistency
+      const response = await fetch(urlInput.trim());
+      if (!response.ok) {
+        throw new Error('Failed to fetch image from URL');
+      }
       
-      const updatedAssets = [...savedAssets, newAsset];
-      setSavedAssets(updatedAssets);
-      await saveAssetsToDatabase(updatedAssets);
+      const blob = await response.blob();
+      const fileName = `url_asset_${Date.now()}.${blob.type.split('/')[1] || 'jpg'}`;
+      const file = new File([blob], fileName, { type: blob.type });
+      
+      // Upload to user's folder like other assets
+      await uploadMutation.mutateAsync([file]);
       setUrlInput('');
       
       toast({
-        title: "URL added",
-        description: "Asset URL has been added to your campaign."
+        title: "URL asset added",
+        description: "Asset has been downloaded and added to your library."
       });
     } catch (error: any) {
-      toast({
-        title: "Invalid URL", 
-        description: "Please enter a valid URL.",
-        variant: "destructive"
-      });
+      console.error('Error adding URL asset:', error);
+      
+      // Fallback: Add URL directly without upload
+      try {
+        new URL(urlInput.trim());
+        
+        const newAsset: CreativeAsset = {
+          id: `url_${Date.now()}`,
+          url: urlInput.trim(),
+          type: 'url',
+          selected: true
+        };
+        
+        const updatedAssets = [...savedAssets, newAsset];
+        setSavedAssets(updatedAssets);
+        await saveAssetsToDatabase(updatedAssets);
+        setUrlInput('');
+        
+        toast({
+          title: "URL added",
+          description: "Asset URL has been added to your campaign."
+        });
+      } catch (urlError: any) {
+        toast({
+          title: "Invalid URL", 
+          description: "Please enter a valid image/video URL.",
+          variant: "destructive"
+        });
+      }
     }
   };
 
@@ -440,6 +469,96 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
           <TabsContent value="facebook" className="space-y-4">
             <div className="space-y-3">
               <Label>Fetch from Facebook Creative Library</Label>
+              
+              {/* Loading state for ad accounts */}
+              {adAccountsQuery.isLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                  <span>Loading Facebook ad accounts...</span>
+                </div>
+              )}
+              
+              {/* Error state for ad accounts */}
+              {adAccountsQuery.isError && (
+                <div className="text-center py-8 space-y-3">
+                  <div className="text-sm text-muted-foreground">
+                    {(adAccountsQuery.error as any)?.reconnectRequired ? (
+                      <>
+                        <p className="font-medium text-orange-600">Facebook Connection Required</p>
+                        <p>Your Facebook session expired. Please reconnect to continue.</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium text-destructive">Failed to load ad accounts</p>
+                        <p>{adAccountsQuery.error?.message || 'Unable to fetch Facebook ad accounts'}</p>
+                      </>
+                    )}
+                  </div>
+                  {(adAccountsQuery.error as any)?.reconnectRequired && (
+                    <div className="pt-2">
+                      <Button
+                        onClick={async () => {
+                          // Trigger Facebook OAuth flow
+                          try {
+                            await supabase.auth.signInWithOAuth({
+                              provider: 'facebook',
+                              options: {
+                                scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
+                                redirectTo: `${window.location.origin}${window.location.pathname}?facebook=connected`
+                              }
+                            });
+                          } catch (error: any) {
+                            toast({
+                              title: "Connection failed",
+                              description: error.message,
+                              variant: "destructive"
+                            });
+                          }
+                        }}
+                      >
+                        <Facebook className="h-4 w-4 mr-2" />
+                        Reconnect Facebook
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* No ad accounts found */}
+              {!adAccountsQuery.isLoading && !adAccountsQuery.isError && (!adAccountsQuery.data || adAccountsQuery.data.length === 0) && (
+                <div className="text-center py-8 space-y-3">
+                  <Facebook className="h-12 w-12 text-muted-foreground mx-auto" />
+                  <div>
+                    <p className="text-sm font-medium">No Facebook Ad Accounts Found</p>
+                    <p className="text-xs text-muted-foreground">Connect your Facebook Business account to access creative assets</p>
+                  </div>
+                  <Button
+                    onClick={async () => {
+                      // Trigger Facebook OAuth flow
+                      try {
+                        await supabase.auth.signInWithOAuth({
+                          provider: 'facebook',
+                          options: {
+                            scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
+                            redirectTo: `${window.location.origin}${window.location.pathname}?facebook=connected`
+                          }
+                        });
+                      } catch (error: any) {
+                        toast({
+                          title: "Connection failed",
+                          description: error.message,
+                          variant: "destructive"
+                        });
+                      }
+                    }}
+                  >
+                    <Facebook className="h-4 w-4 mr-2" />
+                    Connect Facebook Account
+                  </Button>
+                </div>
+              )}
+              
+              {/* Ad account selection and fetch */}
               {adAccountsQuery.data && adAccountsQuery.data.length > 0 && (
                 <div className="space-y-3">
                   <Select onValueChange={(value) => {

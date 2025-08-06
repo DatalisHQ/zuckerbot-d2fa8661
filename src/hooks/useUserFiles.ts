@@ -65,6 +65,7 @@ export function useImageFiles() {
     data: userFilesQuery.data?.filter(file => 
       file.metadata.mimetype?.startsWith('image/') || 
       file.metadata.mimetype?.startsWith('video/')
-    ) || []
+    ) || [],
+    refetch: userFilesQuery.refetch
   };
 }
