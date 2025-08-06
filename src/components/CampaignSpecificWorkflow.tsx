@@ -14,6 +14,7 @@ import { BrandAnalysisForm } from '@/components/BrandAnalysisForm';
 import { CampaignImageUpload } from '@/components/CampaignImageUpload';
 import { CampaignBuilder } from '@/components/CampaignBuilder';
 import { PersistentAudienceSelection } from '@/components/enhanced-workflow/PersistentAudienceSelection';
+import { CreativeAssetManager } from '@/components/enhanced-workflow/CreativeAssetManager';
 
 interface CampaignSpecificWorkflowProps {
   campaignId: string;
@@ -404,13 +405,9 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
                 Upload or select images for your ads
               </p>
             </div>
-            
-            <CampaignImageUpload
+            <CreativeAssetManager
               campaignId={campaignId}
-              existingData={campaignData.image_data}
-              onImagesSelected={(images) => 
-                handleStepComplete('image-upload', { images })
-              }
+              onAssetsSelected={(assets) => handleStepComplete('image-upload', { assets })}
             />
           </div>
         )}

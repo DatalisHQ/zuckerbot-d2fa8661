@@ -13,7 +13,11 @@ export function useUploadRawAssets() {
         files.map(async (file) => {
           const fileName = `${Date.now()}_${file.name}`;
           const filePath = `${user.id}/${fileName}`;
-          
+          // Debug logging
+          console.log('Uploading file:', file.name);
+          console.log('User ID:', user.id);
+          console.log('File path:', filePath);
+
           const { data, error } = await supabase.storage
             .from('user-files')
             .upload(filePath, file);

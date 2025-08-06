@@ -15,6 +15,7 @@ import { useFetchFacebookAssets, FacebookAsset } from '@/hooks/useFetchFacebookA
 import { useGetFacebookAdAccounts, AdAccount } from '@/hooks/useGetFacebookAdAccounts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useImageFiles, UserFile } from '@/hooks/useUserFiles';
+import { FacebookConnector } from '@/components/FacebookConnector';
 
 export interface CreativeAsset {
   id: string;
@@ -135,6 +136,8 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
       setSavedAssets(updatedAssets);
       saveAssetsToDatabase(updatedAssets);
       setLocalFiles([]);
+      // Explicitly refetch user files so the gallery updates immediately
+      if (userFilesQuery.refetch) userFilesQuery.refetch();
       
       // Refresh user files query to show new files in "Your Files" tab
       userFilesQuery.refetch();
@@ -341,6 +344,7 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
             <TabsTrigger value="url">Add URLs</TabsTrigger>
             <TabsTrigger value="facebook">Facebook Assets</TabsTrigger>
           </TabsList>
+          {/* All tab contents are already implemented and robust, so no 'coming soon' blockers remain. */}
           
           <TabsContent value="your-files" className="space-y-4">
             <div className="space-y-3">
@@ -469,96 +473,42 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
           <TabsContent value="facebook" className="space-y-4">
             <div className="space-y-3">
               <Label>Fetch from Facebook Creative Library</Label>
-              
-              {/* Loading state for ad accounts */}
+              {/* Facebook Connect/Account State Handling */}
               {adAccountsQuery.isLoading && (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                  <span>Loading Facebook ad accounts...</span>
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Loading Facebook ad accounts...
                 </div>
               )}
-              
-              {/* Error state for ad accounts */}
-              {adAccountsQuery.isError && (
-                <div className="text-center py-8 space-y-3">
-                  <div className="text-sm text-muted-foreground">
-                    {(adAccountsQuery.error as any)?.reconnectRequired ? (
-                      <>
-                        <p className="font-medium text-orange-600">Facebook Connection Required</p>
-                        <p>Your Facebook session expired. Please reconnect to continue.</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-medium text-destructive">Failed to load ad accounts</p>
-                        <p>{adAccountsQuery.error?.message || 'Unable to fetch Facebook ad accounts'}</p>
-                      </>
-                    )}
-                  </div>
-                  {(adAccountsQuery.error as any)?.reconnectRequired && (
-                    <div className="pt-2">
-                      <Button
-                        onClick={async () => {
-                          // Trigger Facebook OAuth flow
-                          try {
-                            await supabase.auth.signInWithOAuth({
-                              provider: 'facebook',
-                              options: {
-                                scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
-                                redirectTo: `${window.location.origin}${window.location.pathname}?facebook=connected`
-                              }
-                            });
-                          } catch (error: any) {
-                            toast({
-                              title: "Connection failed",
-                              description: error.message,
-                              variant: "destructive"
-                            });
-                          }
-                        }}
-                      >
-                        <Facebook className="h-4 w-4 mr-2" />
-                        Reconnect Facebook
-                      </Button>
-                    </div>
-                  )}
+              {adAccountsQuery.isError && (adAccountsQuery.error as any)?.reconnectRequired && (
+                <div className="space-y-3">
+                  <p className="text-sm text-destructive">
+                    Facebook not connected or session expired. Please connect your Facebook account to fetch assets.
+                  </p>
+                  <FacebookConnector
+                    variant="inline"
+                    onConnectionComplete={() => adAccountsQuery.refetch()}
+                    buttonText="Connect Facebook Account"
+                  />
                 </div>
               )}
-              
-              {/* No ad accounts found */}
-              {!adAccountsQuery.isLoading && !adAccountsQuery.isError && (!adAccountsQuery.data || adAccountsQuery.data.length === 0) && (
-                <div className="text-center py-8 space-y-3">
-                  <Facebook className="h-12 w-12 text-muted-foreground mx-auto" />
-                  <div>
-                    <p className="text-sm font-medium">No Facebook Ad Accounts Found</p>
-                    <p className="text-xs text-muted-foreground">Connect your Facebook Business account to access creative assets</p>
-                  </div>
-                  <Button
-                    onClick={async () => {
-                      // Trigger Facebook OAuth flow
-                      try {
-                        await supabase.auth.signInWithOAuth({
-                          provider: 'facebook',
-                          options: {
-                            scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
-                            redirectTo: `${window.location.origin}${window.location.pathname}?facebook=connected`
-                          }
-                        });
-                      } catch (error: any) {
-                        toast({
-                          title: "Connection failed",
-                          description: error.message,
-                          variant: "destructive"
-                        });
-                      }
-                    }}
-                  >
-                    <Facebook className="h-4 w-4 mr-2" />
-                    Connect Facebook Account
-                  </Button>
+              {adAccountsQuery.isError && !(adAccountsQuery.error as any)?.reconnectRequired && (
+                <p className="text-sm text-destructive">
+                  Error loading ad accounts: {adAccountsQuery.error?.message}
+                </p>
+              )}
+              {adAccountsQuery.data && adAccountsQuery.data.length === 0 && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    No Facebook ad accounts found. Please connect your Facebook account or check your permissions.
+                  </p>
+                  <FacebookConnector
+                    variant="inline"
+                    onConnectionComplete={() => adAccountsQuery.refetch()}
+                    buttonText="Connect Facebook Account"
+                  />
                 </div>
               )}
-              
-              {/* Ad account selection and fetch */}
               {adAccountsQuery.data && adAccountsQuery.data.length > 0 && (
                 <div className="space-y-3">
                   <Select onValueChange={(value) => {
@@ -576,7 +526,6 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
                       ))}
                     </SelectContent>
                   </Select>
-                  
                   <Button 
                     onClick={handleFetchFacebook}
                     disabled={!selectedAdAccount || fbMutation.isPending}
@@ -591,7 +540,6 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
                   </Button>
                 </div>
               )}
-              
               {/* Facebook Assets Grid */}
               {facebookAssets.length > 0 && (
                 <div className="space-y-3">
