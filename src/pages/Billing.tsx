@@ -51,11 +51,26 @@ export default function Billing() {
 
   const fetchUsageStats = async () => {
     try {
-      // Mock data for now - would fetch from actual usage tables
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      // Count active business profiles
+      const { count: businessCount, error: businessError } = await supabase
+        .from('brand_analysis')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+      if (businessError) throw businessError;
+      // Count launched campaigns
+      const { count: campaignCount, error: campaignError } = await supabase
+        .from('ad_campaigns')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_draft', false);
+      if (campaignError) throw campaignError;
       setUsageStats({
-        businesses_used: 1,
+        businesses_used: businessCount || 0,
         businesses_limit: getTierLimits().businesses,
-        campaigns_used: 5,
+        campaigns_used: campaignCount || 0,
         campaigns_limit: getTierLimits().campaigns,
       });
     } catch (error) {

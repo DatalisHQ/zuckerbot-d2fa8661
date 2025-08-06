@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  console.log('[CHECKOUT] Function started');
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -18,17 +19,22 @@ serve(async (req) => {
   );
 
   try {
+    console.log('[CHECKOUT] Function invoked');
     const { priceId, planType } = await req.json();
+    console.log('[CHECKOUT] Received body:', { priceId, planType });
     
-    const authHeader = req.headers.get("Authorization")!;
-    const token = authHeader.replace("Bearer ", "");
+    const authHeader = req.headers.get("Authorization");
+    console.log('[CHECKOUT] Auth header:', authHeader);
+    const token = authHeader ? authHeader.replace("Bearer ", "") : null;
     const { data } = await supabaseClient.auth.getUser(token);
     const user = data.user;
+    console.log('[CHECKOUT] User:', user?.email);
     if (!user?.email) throw new Error("User not authenticated");
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
       apiVersion: "2023-10-16",
     });
+    console.log('[CHECKOUT] Stripe initialized');
 
     // Check if customer exists
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
@@ -36,15 +42,16 @@ serve(async (req) => {
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
     }
+    console.log('[CHECKOUT] Stripe customerId:', customerId);
 
     // Define pricing
     const prices = {
       pro_monthly: { amount: 2500, interval: "month" },
-      pro_yearly: { amount: 20000, interval: "year" }, // $240/year = $20/month
+      pro_yearly: { amount: 20000, interval: "year" },
       agency_monthly: { amount: 8900, interval: "month" }
     };
-
     const selectedPrice = prices[priceId as keyof typeof prices];
+    console.log('[CHECKOUT] Selected price:', selectedPrice);
     if (!selectedPrice) throw new Error("Invalid price ID");
 
     const session = await stripe.checkout.sessions.create({
@@ -67,13 +74,15 @@ serve(async (req) => {
       success_url: `${req.headers.get("origin")}/dashboard?success=true`,
       cancel_url: `${req.headers.get("origin")}/pricing`,
     });
+    console.log('[CHECKOUT] Stripe session created:', session.id);
 
     return new Response(JSON.stringify({ url: session.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('[CHECKOUT] ERROR:', error);
+    return new Response(JSON.stringify({ error: error.message, stack: error.stack }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });

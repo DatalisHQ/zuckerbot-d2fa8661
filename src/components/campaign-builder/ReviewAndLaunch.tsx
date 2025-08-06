@@ -11,6 +11,8 @@ import { useGetFacebookAdAccounts, type AdAccount } from '@/hooks/useGetFacebook
 import { useLaunchCampaign } from '@/hooks/useLaunchCampaign';
 import { useCreateFacebookAudiences, type AudienceSegment as FacebookAudienceSegment } from '@/hooks/useCreateFacebookAudiences';
 import { useToast } from '@/hooks/use-toast';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AudienceSegment {
   id: string;
@@ -59,10 +61,22 @@ export const ReviewAndLaunch = ({
 }: ReviewAndLaunchProps) => {
   const [selectedAdAccount, setSelectedAdAccount] = useState<string>('');
   const [audiencesCreated, setAudiencesCreated] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [subscriptionTier, setSubscriptionTier] = useState<string>('free');
   const { data: adAccounts, isLoading: loadingAdAccounts, error: adAccountsError } = useGetFacebookAdAccounts();
   const launchMutation = useLaunchCampaign();
   const createFacebookAudiences = useCreateFacebookAudiences();
   const { toast } = useToast();
+
+  useEffect(() => {
+    // Fetch subscription tier on mount
+    (async () => {
+      const { data, error } = await supabase.functions.invoke('check-subscription');
+      if (!error && data?.subscription_tier) {
+        setSubscriptionTier(data.subscription_tier);
+      }
+    })();
+  }, []);
 
   const getTotalVariants = () => {
     return Object.values(adVariants).reduce((total, variants) => total + variants.length, 0);
@@ -84,6 +98,10 @@ export const ReviewAndLaunch = ({
   };
 
   const handleLaunch = async () => {
+    if (subscriptionTier === 'free') {
+      setShowUpgradeModal(true);
+      return;
+    }
     if (!canLaunch()) return;
 
     try {
@@ -398,6 +416,12 @@ export const ReviewAndLaunch = ({
           </div>
         </CardContent>
       </Card>
+
+      <UpgradeModal
+        open={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        reason="Launching campaigns is a Pro/Agency feature. Upgrade to unlock campaign launch."
+      />
     </div>
   );
 };

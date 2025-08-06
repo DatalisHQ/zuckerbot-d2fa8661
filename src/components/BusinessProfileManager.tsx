@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { UpgradeModal } from './UpgradeModal';
 
 interface BusinessProfile {
   id: string;
@@ -35,6 +36,7 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const getBusinessLimit = (tier: string) => {
     switch (tier.toLowerCase()) {
@@ -164,6 +166,14 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
     }
   };
 
+  const handleAddBusinessClick = () => {
+    if (!canAddBusiness) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    setIsAddDialogOpen(true);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
@@ -185,8 +195,9 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
             <Button 
-              disabled={!canAddBusiness}
+              disabled={false} // Always enabled, we handle gating in handler
               variant={canAddBusiness ? "default" : "secondary"}
+              onClick={handleAddBusinessClick}
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Business
@@ -312,6 +323,12 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
           setEditingBusiness(null);
         }}
         onSave={handleSaveEdit}
+      />
+
+      <UpgradeModal
+        open={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        reason="You've reached your business profile limit for your current plan. Upgrade to add more."
       />
     </div>
   );
