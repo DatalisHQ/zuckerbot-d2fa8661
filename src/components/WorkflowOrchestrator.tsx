@@ -201,6 +201,9 @@ export const WorkflowOrchestrator = ({ brandAnalysisId, brandUrl, onFlowComplete
   };
 
   const handleStepComplete = async (step: WorkflowStep, data: any) => {
+    if (step === 'audience-selection') {
+      console.log('[WorkflowOrchestrator] handleStepComplete audience-selection:', data.audienceSegments);
+    }
     await saveWorkflowState(step, data);
     
     // Auto-advance to next step
@@ -393,7 +396,7 @@ export const WorkflowOrchestrator = ({ brandAnalysisId, brandUrl, onFlowComplete
                 Create your campaign using all the insights gathered
               </p>
             </div>
-            
+            {console.log('[WorkflowOrchestrator] Rendering CampaignBuilder with audienceSegments:', workflowState.audienceSegments)}
             <CampaignBuilder
               brandAnalysisId={workflowState.brandAnalysisId}
               brandUrl={workflowState.brandUrl}

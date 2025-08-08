@@ -66,10 +66,10 @@ export function PersistentAudienceSelection({
 
   // Generate new audience suggestions
   const { data: audienceData, isLoading, error } = useQuery({
-    queryKey: ['suggest-audience', brandUrl, competitorProfiles],
+    queryKey: ['suggest-audience', campaignId, brandUrl || '', competitorProfiles?.length || 0],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('suggest-audience', {
-        body: { brandUrl, competitorProfiles }
+        body: { brandUrl: brandUrl || '', competitorProfiles: competitorProfiles || [] }
       });
 
       if (error) throw error;
@@ -84,7 +84,8 @@ export function PersistentAudienceSelection({
 
       return { segments: detailedSegments };
     },
-    enabled: !!(brandUrl && competitorProfiles?.length > 0) && (!existingSegments || existingSegments.length === 0),
+    // Always allow generation if there are no saved segments; backend now safely handles missing context
+    enabled: (!!campaignId) && (!existingSegments || existingSegments.length === 0),
     retry: 1
   });
 
@@ -204,7 +205,7 @@ export function PersistentAudienceSelection({
     }
 
     const selected = savedSegments.filter((_, index) => selectedSegments.has(index));
-    
+    console.log('[PersistentAudienceSelection] handleContinue called with segments:', selected);
     // Save all selected segments to database
     for (let i = 0; i < selected.length; i++) {
       const segment = selected[i];

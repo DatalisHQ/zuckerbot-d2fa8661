@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,7 @@ interface AudienceSplittingProps {
   segments: AudienceSegment[];
   onSegmentsChange: (segments: AudienceSegment[]) => void;
   savedAudienceSegments?: FacebookAudienceSegment[];
+  onContinue?: () => void;
 }
 
 const DEFAULT_SEGMENTS: AudienceSegment[] = [
@@ -53,16 +54,19 @@ const DEFAULT_SEGMENTS: AudienceSegment[] = [
 export const AudienceSplitting = ({
   segments,
   onSegmentsChange,
-  savedAudienceSegments
+  savedAudienceSegments,
+  onContinue
 }: AudienceSplittingProps) => {
   const [newSegmentName, setNewSegmentName] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const didInit = useRef(false);
+  const hasUserSelected = useRef(false);
 
-  // Initialize with saved audience segments or defaults
+  // Only initialize with defaults or saved segments on first mount and never after user interaction
   useEffect(() => {
-    if (segments.length === 0) {
+    if (!didInit.current && segments.length === 0 && !hasUserSelected.current) {
+      didInit.current = true;
       if (savedAudienceSegments && savedAudienceSegments.length > 0) {
-        // Convert saved audience segments to internal format
         const convertedSegments = savedAudienceSegments.map((segment, index) => ({
           id: `saved-${index}`,
           name: segment.segment,
@@ -79,9 +83,10 @@ export const AudienceSplitting = ({
     }
   }, [segments.length, onSegmentsChange, savedAudienceSegments]);
 
+  // Mark user as having made a selection after any change
   const addSegment = () => {
     if (!newSegmentName.trim()) return;
-
+    hasUserSelected.current = true;
     const newSegment: AudienceSegment = {
       id: Date.now().toString(),
       name: newSegmentName,
@@ -91,19 +96,20 @@ export const AudienceSplitting = ({
         demographics: 'Custom targeting criteria'
       }
     };
-
     onSegmentsChange([...segments, newSegment]);
     setNewSegmentName('');
     setShowAddForm(false);
   };
 
   const removeSegment = (id: string) => {
+    hasUserSelected.current = true;
     onSegmentsChange(segments.filter(segment => segment.id !== id));
   };
 
   const updateSegment = (id: string, updates: Partial<AudienceSegment>) => {
+    hasUserSelected.current = true;
     onSegmentsChange(
-      segments.map(segment => 
+      segments.map(segment =>
         segment.id === id ? { ...segment, ...updates } : segment
       )
     );
@@ -244,6 +250,18 @@ export const AudienceSplitting = ({
           </div>
         </CardContent>
       </Card>
+      {/* Continue Button */}
+      {typeof onContinue === 'function' && (
+        <div className="flex justify-end pt-4">
+          <Button
+            onClick={onContinue}
+            disabled={segments.length < 1}
+            size="lg"
+          >
+            Continue with selected segments
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

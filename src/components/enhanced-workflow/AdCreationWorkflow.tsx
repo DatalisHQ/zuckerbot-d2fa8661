@@ -95,15 +95,18 @@ export function AdCreationWorkflow({
           brandUrl: brandData?.brandUrl,
           brandName: brandData?.brandName,
           valuePropositions: brandData?.valuePropositions,
-          businessCategory: brandData?.businessCategory
+          businessCategory: brandData?.businessCategory,
+          brandStrengths: brandData?.brandStrengths,
         },
         campaignObjective: 'TRAFFIC',
         targetAudience: {
           segment: audience.segment,
           criteria: audience.criteria,
-          targeting: audience.targeting_data
+          targeting: audience.targeting_data,
+          insights: audience.insights, // Add audience insights if available
         },
         competitorInsights: competitorData?.insights,
+        selectedAngle: brandData?.selectedAngle || competitorData?.selectedAngle || audience.selectedAngle,
         creativeAsset: asset
       }
     });
@@ -136,11 +139,7 @@ export function AdCreationWorkflow({
             ad_set_name: `${audience.segment} - ${asset.name || 'Asset'}`,
             audience_segment_id: audience.id || '',
             creative_asset: asset,
-            ad_copy: adCopyData.ad_copy || {
-              headline: `Discover ${brandData?.brandName}`,
-              primary_text: `Perfect for ${audience.segment.toLowerCase()}`,
-              call_to_action: 'Learn More'
-            },
+            ad_copy: adCopyData.ad_copy, // Do not fallback to generic
             approved: false
           };
           

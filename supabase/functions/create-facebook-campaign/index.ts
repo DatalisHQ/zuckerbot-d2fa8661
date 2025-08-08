@@ -12,6 +12,8 @@ interface CampaignPayload {
     name: string;
     objective: string;
     status: 'PAUSED' | 'ACTIVE';
+    start_time?: string;
+    end_time?: string;
   };
   adSets: Array<{
     name: string;
@@ -71,17 +73,40 @@ serve(async (req) => {
       status: campaign.status,
       special_ad_categories: '[]' // Empty array for regular ads
     });
+    if (campaign.start_time) {
+      campaignParams.append('start_time', campaign.start_time);
+    }
+    if (campaign.end_time) {
+      campaignParams.append('end_time', campaign.end_time);
+    }
 
-    const campaignResponse = await fetch(
-      `${baseUrl}/act_${adAccountId}/campaigns?${campaignParams.toString()}`,
-      { method: 'POST' }
-    );
+    let campaignResponse: Response;
+    try {
+      campaignResponse = await fetch(
+        `${baseUrl}/act_${adAccountId}/campaigns?${campaignParams.toString()}`,
+        { method: 'POST' }
+      );
+    } catch (networkError) {
+      return new Response(
+        JSON.stringify({
+          error: 'Network error creating campaign',
+          details: String(networkError),
+          suggestion: 'Check network connectivity and Facebook API availability.'
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!campaignResponse.ok) {
-      const errorData = await campaignResponse.text();
+      const errorData = await campaignResponse.json().catch(() => ({}));
+      const fbMessage = errorData?.error?.message || errorData?.message || errorData || 'Unknown Facebook API error';
       console.error('Campaign creation failed:', errorData);
       return new Response(
-        JSON.stringify({ error: 'Failed to create campaign', details: errorData }),
+        JSON.stringify({
+          error: 'Failed to create campaign',
+          details: fbMessage,
+          suggestion: 'Check your Facebook ad account permissions, campaign objective, and naming conventions.'
+        }),
         { status: campaignResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -97,35 +122,54 @@ serve(async (req) => {
       const adSet = adSets[i];
       console.log(`Creating ad set ${i + 1}/${adSets.length}:`, adSet.name);
 
+      // Merge placements.publisher_platforms into targeting if present
+      const targetingObj = {
+        ...(adSet.targeting || {}),
+        ...(adSet.placements && (adSet.placements as any).publisher_platforms
+          ? { publisher_platforms: (adSet.placements as any).publisher_platforms }
+          : {})
+      };
+
       const adSetParams = new URLSearchParams({
         access_token: accessToken,
         campaign_id: campaignId,
         name: adSet.name,
-        daily_budget: (adSet.daily_budget * 100).toString(), // Convert to cents
+        // Client sends minor units already (e.g., cents). Do not convert again.
+        daily_budget: String(adSet.daily_budget),
         billing_event: adSet.billing_event,
         optimization_goal: adSet.optimization_goal,
-        targeting: JSON.stringify(adSet.targeting),
+        targeting: JSON.stringify(targetingObj),
         status: adSet.status || 'PAUSED'
       });
 
-      // Add placements if provided
-      if (adSet.placements) {
-        adSetParams.append('placements', JSON.stringify(adSet.placements));
+      let adSetResponse: Response;
+      try {
+        adSetResponse = await fetch(
+          `${baseUrl}/act_${adAccountId}/adsets?${adSetParams.toString()}`,
+          { method: 'POST' }
+        );
+      } catch (networkError) {
+        return new Response(
+          JSON.stringify({
+            error: `Network error creating ad set ${i + 1}`,
+            details: String(networkError),
+            partialResults: { campaignId, adSetIds: createdAdSetIds },
+            suggestion: 'Retry later or verify Facebook API status.'
+          }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      const adSetResponse = await fetch(
-        `${baseUrl}/act_${adAccountId}/adsets?${adSetParams.toString()}`,
-        { method: 'POST' }
-      );
-
       if (!adSetResponse.ok) {
-        const errorData = await adSetResponse.text();
+        const errorData = await adSetResponse.json().catch(() => ({}));
+        const fbMessage = errorData?.error?.message || errorData?.message || errorData || 'Unknown Facebook API error';
         console.error(`Ad set ${i + 1} creation failed:`, errorData);
         return new Response(
-          JSON.stringify({ 
-            error: `Failed to create ad set ${i + 1}`, 
-            details: errorData,
-            partialResults: { campaignId, adSetIds: createdAdSetIds }
+          JSON.stringify({
+            error: `Failed to create ad set ${i + 1}`,
+            details: fbMessage,
+            partialResults: { campaignId, adSetIds: createdAdSetIds },
+            suggestion: 'Check targeting, budget, and placement settings for this ad set.'
           }),
           { status: adSetResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -158,19 +202,34 @@ serve(async (req) => {
         status: ad.status
       });
 
-      const adResponse = await fetch(
-        `${baseUrl}/act_${adAccountId}/ads?${adParams.toString()}`,
-        { method: 'POST' }
-      );
+      let adResponse: Response;
+      try {
+        adResponse = await fetch(
+          `${baseUrl}/act_${adAccountId}/ads?${adParams.toString()}`,
+          { method: 'POST' }
+        );
+      } catch (networkError) {
+        return new Response(
+          JSON.stringify({
+            error: `Network error creating ad ${i + 1}`,
+            details: String(networkError),
+            partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
+            suggestion: 'Retry later or verify Facebook API status.'
+          }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
       if (!adResponse.ok) {
-        const errorData = await adResponse.text();
+        const errorData = await adResponse.json().catch(() => ({}));
+        const fbMessage = errorData?.error?.message || errorData?.message || errorData || 'Unknown Facebook API error';
         console.error(`Ad ${i + 1} creation failed:`, errorData);
         return new Response(
-          JSON.stringify({ 
-            error: `Failed to create ad ${i + 1}`, 
-            details: errorData,
-            partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds }
+          JSON.stringify({
+            error: `Failed to create ad ${i + 1}`,
+            details: fbMessage,
+            partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
+            suggestion: 'Check creative assets, ad copy, and Facebook ad policies.'
           }),
           { status: adResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -204,7 +263,11 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in create-facebook-campaign function:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({
+        error: error.message || 'Unknown error',
+        details: error.stack || null,
+        suggestion: 'Try again or contact support if the issue persists.'
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

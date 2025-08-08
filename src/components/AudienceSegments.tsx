@@ -32,15 +32,12 @@ export function AudienceSegments({ brandUrl, competitorProfiles, campaignId, exi
   const { toast } = useToast();
 
   const { data: audienceData, isLoading, error } = useQuery({
-    queryKey: ['suggest-audience', brandUrl, competitorProfiles],
+    queryKey: ['suggest-audience', campaignId, brandUrl || '', competitorProfiles?.length || 0],
     queryFn: async () => {
       console.log('Calling suggest-audience function...');
       
       const { data, error } = await supabase.functions.invoke('suggest-audience', {
-        body: {
-          brandUrl,
-          competitorProfiles
-        }
+        body: { brandUrl: brandUrl || '', competitorProfiles: competitorProfiles || [] }
       });
 
       if (error) {
@@ -54,7 +51,8 @@ export function AudienceSegments({ brandUrl, competitorProfiles, campaignId, exi
 
       return data;
     },
-    enabled: !!(brandUrl && competitorProfiles?.length > 0),
+    // Allow suggestion generation even without full context; backend handles defaults
+    enabled: true,
     retry: 1
   });
 
@@ -79,6 +77,7 @@ export function AudienceSegments({ brandUrl, competitorProfiles, campaignId, exi
     }
 
     const selected = audienceData?.segments?.filter((_, index) => selectedSegments.has(index)) || [];
+    console.log('[AudienceSegments] handleContinue called with segments:', selected);
     onSegmentsSelected(selected);
   };
 

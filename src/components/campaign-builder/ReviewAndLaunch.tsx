@@ -13,6 +13,7 @@ import { useCreateFacebookAudiences, type AudienceSegment as FacebookAudienceSeg
 import { useToast } from '@/hooks/use-toast';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { supabase } from '@/integrations/supabase/client';
+import { FacebookConnector } from '@/components/FacebookConnector';
 
 interface AudienceSegment {
   id: string;
@@ -26,6 +27,16 @@ interface AdSet {
   audienceSegmentId: string;
   placements: string[];
   budgetAllocation: number;
+  targeting?: {
+    interests?: string[];
+    demographics?: string;
+    behaviors?: string[];
+    age_min?: number;
+    age_max?: number;
+    genders?: string[];
+    countries?: string[];
+    location_types?: string[];
+  };
 }
 
 interface AdVariant {
@@ -44,6 +55,8 @@ interface ReviewAndLaunchProps {
   adSets: AdSet[];
   adVariants: Record<string, AdVariant[]>;
   savedAudienceSegments?: FacebookAudienceSegment[];
+  startDate?: string | null;
+  endDate?: string | null;
   onEdit: (step: string) => void;
   onLaunchComplete: (result: any) => void;
 }
@@ -56,6 +69,8 @@ export const ReviewAndLaunch = ({
   adSets,
   adVariants,
   savedAudienceSegments,
+  startDate,
+  endDate,
   onEdit,
   onLaunchComplete
 }: ReviewAndLaunchProps) => {
@@ -138,22 +153,34 @@ export const ReviewAndLaunch = ({
         campaign: {
           name: campaignName,
           objective: objective,
-          status: 'PAUSED' as const
+          status: 'ACTIVE' as const,
+          start_time: startDate,
+          end_time: endDate,
         },
         adSets: adSets.map((adSet, index) => ({
           name: adSet.name,
           daily_budget: adSet.budgetAllocation * 100, // Convert to cents
           billing_event: 'IMPRESSIONS',
           optimization_goal: 'LINK_CLICKS',
-          targeting: facebookAudienceIds.length > 0 ? {
-            custom_audiences: facebookAudienceIds
-          } : {
-            geo_locations: {
-              countries: ['US']
-            },
-            age_min: 18,
-            age_max: 65
-          },
+          targeting: (() => {
+            const t = adSet.targeting || {};
+            const age_min = typeof t.age_min === 'number' ? t.age_min : 18;
+            const age_max = typeof t.age_max === 'number' ? t.age_max : 65;
+            const genders = Array.isArray(t.genders) && t.genders.length > 0
+              ? t.genders.map(g => (g === 'male' ? 1 : 2))
+              : undefined;
+            const interests = Array.isArray(t.interests) && t.interests.length > 0
+              ? t.interests.map((name) => ({ id: name, name }))
+              : undefined;
+            const countries = Array.isArray(t.countries) && t.countries.length > 0 ? t.countries : ['US'];
+            return {
+              geo_locations: { countries },
+              age_min,
+              age_max,
+              ...(genders ? { genders } : {}),
+              ...(interests ? { interests } : {})
+            };
+          })(),
           placements: {
             publisher_platforms: adSet.placements.includes('facebook_feeds') ? ['facebook', 'instagram'] : ['facebook']
           },
@@ -176,10 +203,17 @@ export const ReviewAndLaunch = ({
       onLaunchComplete(result);
     } catch (error) {
       console.error('Launch failed:', error);
+      let description = error instanceof Error ? error.message : 'Failed to launch campaign';
+      if ((error as any)?.details) {
+        description += `\nDetails: ${(error as any).details}`;
+      }
+      if ((error as any)?.suggestion) {
+        description += `\nSuggestion: ${(error as any).suggestion}`;
+      }
       toast({
-        title: "Launch failed",
-        description: error instanceof Error ? error.message : "Failed to launch campaign",
-        variant: "destructive"
+        title: 'Launch failed',
+        description,
+        variant: 'destructive',
       });
     }
   };
@@ -208,12 +242,21 @@ export const ReviewAndLaunch = ({
           {loadingAdAccounts ? (
             <div className="text-center py-4">Loading ad accounts...</div>
           ) : adAccountsError ? (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                {adAccountsError.message}
-              </AlertDescription>
-            </Alert>
+            <div className="space-y-3">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  {adAccountsError.message}
+                </AlertDescription>
+              </Alert>
+              <FacebookConnector
+                variant="card"
+                showTitle={false}
+                description="Facebook not connected or session expired. Please connect your Facebook account to select an ad account."
+                buttonText="Connect Facebook"
+                onConnectionComplete={() => window.location.reload()}
+              />
+            </div>
           ) : (
             <div>
               <Label htmlFor="ad-account">Facebook Ad Account</Label>
@@ -256,6 +299,14 @@ export const ReviewAndLaunch = ({
             <div>
               <Label className="text-sm text-muted-foreground">Objective</Label>
               <p className="font-medium">{objective}</p>
+            </div>
+            <div>
+              <Label className="text-sm text-muted-foreground">Start Date</Label>
+              <p className="font-medium">{startDate ? new Date(startDate).toLocaleDateString() : 'Not set'}</p>
+            </div>
+            <div>
+              <Label className="text-sm text-muted-foreground">End Date</Label>
+              <p className="font-medium">{endDate ? new Date(endDate).toLocaleDateString() : 'Not set'}</p>
             </div>
             <Button
               variant="ghost"

@@ -14,13 +14,9 @@ serve(async (req) => {
 
   try {
     const { brandUrl, competitorProfiles } = await req.json();
-
-    if (!brandUrl || !competitorProfiles || !Array.isArray(competitorProfiles)) {
-      return new Response(
-        JSON.stringify({ error: 'Missing brandUrl or competitorProfiles array' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Accept partial context; proceed with whatever we have and fall back deterministically
+    const safeBrandUrl: string = typeof brandUrl === 'string' ? brandUrl : '';
+    const safeProfiles: any[] = Array.isArray(competitorProfiles) ? competitorProfiles : [];
 
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAIApiKey) {
@@ -33,13 +29,13 @@ serve(async (req) => {
     console.log('Generating audience suggestions for:', brandUrl);
 
     // Construct prompt based on competitor insights
-    const competitorSummary = competitorProfiles.map(comp => 
+    const competitorSummary = safeProfiles.map(comp => 
       `${comp.name}: Value Props: ${comp.valueProps?.join(', ') || 'N/A'}, Tone: ${comp.toneProfile || 'N/A'}`
     ).join('\n');
 
-    const prompt = `Based on the following competitor analysis for brand "${brandUrl}", suggest 3-5 distinct high-value audience segments:
+    const prompt = `Based on the following context for brand "${safeBrandUrl || 'the brand'}", suggest 3-5 distinct high-value audience segments:
 
-Competitors analyzed:
+Competitors analyzed${safeProfiles.length === 0 ? ' (none available — use general best practices for the niche)' : ''}:
 ${competitorSummary}
 
 Please analyze the competitor value propositions and tones to identify distinct audience segments that would be interested in this type of product/service.
@@ -79,14 +75,15 @@ Focus on segments that are:
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.warn('OpenAI API error, falling back:', response.status);
     }
 
-    const data = await response.json();
-    const aiResponse = data.choices[0]?.message?.content;
-
-    if (!aiResponse) {
-      throw new Error('No response from OpenAI');
+    let aiResponse: string | undefined;
+    try {
+      const data = await response.json();
+      aiResponse = data.choices?.[0]?.message?.content;
+    } catch {
+      aiResponse = undefined;
     }
 
     console.log('OpenAI response:', aiResponse);
@@ -94,7 +91,7 @@ Focus on segments that are:
     // Parse JSON response
     let audienceSegments;
     try {
-      // Try to extract JSON from the response
+      if (!aiResponse) throw new Error('No AI response');
       const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         audienceSegments = JSON.parse(jsonMatch[0]);
@@ -102,20 +99,20 @@ Focus on segments that are:
         audienceSegments = JSON.parse(aiResponse);
       }
     } catch (parseError) {
-      console.error('Failed to parse OpenAI response as JSON:', parseError);
-      // Fallback to generic segments
+      console.warn('Failed to parse AI response as JSON. Using deterministic fallback.');
+      // Deterministic fallback segments
       audienceSegments = [
         { 
-          segment: "Business owners and entrepreneurs", 
-          criteria: "Age 25-45, Business owners, Interests: Business growth, Productivity, ROI optimization" 
+          segment: "Decision-makers in target niche", 
+          criteria: "Age 25-45, Mixed genders, Interests: Category leaders, Reviews, Buying guides" 
         },
         { 
-          segment: "Marketing professionals", 
-          criteria: "Age 25-40, Job titles: Marketing Manager, Digital Marketer, Interests: Marketing tools, Analytics" 
+          segment: "Active researchers and comparers", 
+          criteria: "Age 21-40, Mixed genders, Interests: Alternatives to competitors, Tutorials, How-to content" 
         },
         { 
-          segment: "Small business owners", 
-          criteria: "Age 30-55, Small business owners, Interests: Cost-effective solutions, Automation, Efficiency" 
+          segment: "High-intent shoppers", 
+          criteria: "Age 25-55, Mixed genders, Interests: Discounts, Limited-time offers, Fast shipping" 
         }
       ];
     }

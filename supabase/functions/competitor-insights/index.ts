@@ -49,19 +49,19 @@ serve(async (req) => {
     console.log('Analyzing competitor ads...');
 
     // Process each competitor through the full sub-pipeline
-    const competitorInsights = [];
+    const competitorInsights: any[] = [];
     const competitors = competitorList.competitors || [];
 
     for (const competitor of competitors) {
       console.log(`Processing competitor: ${competitor.name}`);
       
-      let websiteData = null;
-      let adsData = null;
+      let websiteData: any = null;
+      let adsData: any = null;
 
       // Step 2: Website Scraping & Analysis (with timeout protection)
       if (competitor.url) {
         try {
-          const websiteResponse = await Promise.race([
+          const websiteResponse: any = await Promise.race([
             supabase.functions.invoke('scrape-competitor-website', {
               body: { 
                 competitorUrl: competitor.url,
@@ -75,7 +75,7 @@ serve(async (req) => {
             )
           ]);
           
-          if (websiteResponse.data?.success) {
+          if (websiteResponse?.data?.success) {
             websiteData = websiteResponse.data.data;
           }
         } catch (error) {
@@ -86,7 +86,7 @@ serve(async (req) => {
 
       // Step 3: Meta Ad Library Analysis (with timeout protection)
       try {
-        const adsResponse = await Promise.race([
+        const adsResponse: any = await Promise.race([
           supabase.functions.invoke('analyze-meta-ads', {
             body: { 
               competitorName: competitor.name,
@@ -100,12 +100,11 @@ serve(async (req) => {
           )
         ]);
         
-        if (adsResponse.data?.success) {
+        if (adsResponse?.data?.success) {
           adsData = adsResponse.data.data;
         }
       } catch (error) {
         console.error(`Failed to analyze ads for ${competitor.name}:`, error);
-        // No fallback - let the error propagate
         adsData = {
           ads: [],
           insights: { 
@@ -115,7 +114,7 @@ serve(async (req) => {
             avg_text_length: 0
           },
           total_ads_found: 0,
-          error: error.message
+          error: (error as Error).message
         };
       }
 
@@ -177,12 +176,7 @@ serve(async (req) => {
       }
     ];
 
-    const result = {
-      competitorInsights,
-      overallInsights,
-      suggestedAngles,
-      status: 'completed'
-    };
+    const result = { competitorInsights, overallInsights, suggestedAngles, status: 'completed' };
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -191,7 +185,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in competitor-insights function:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

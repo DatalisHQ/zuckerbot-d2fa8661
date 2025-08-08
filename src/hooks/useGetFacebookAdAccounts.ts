@@ -14,17 +14,19 @@ export function useGetFacebookAdAccounts() {
       const { data, error } = await supabase.functions.invoke('get-facebook-ad-accounts');
 
       if (error) {
-        console.error('useGetFacebookAdAccounts error:', error);
-        
-        // Check if this is a reconnect required error
-        if (error.message?.includes('reconnect') || data?.reconnectRequired) {
-          const reconnectError = new Error('Your Facebook session expired or access was revoked. Please reconnect to continue.');
-          (reconnectError as any).reconnectRequired = true;
-          (reconnectError as any).facebookError = data?.facebookError;
-          throw reconnectError;
+        console.error('useGetFacebookAdAccounts error:', error, 'data:', data);
+        const messageFromServer = (data as any)?.error || (data as any)?.message;
+        const err = new Error(
+          messageFromServer || error.message || 'Failed to fetch Facebook ad accounts'
+        );
+        if ((data as any)?.reconnectRequired) {
+          (err as any).reconnectRequired = true;
+          (err as any).facebookError = (data as any)?.facebookError;
         }
-        
-        throw new Error(error.message || 'Failed to fetch Facebook ad accounts');
+        if ((data as any)?.httpStatus) {
+          (err as any).httpStatus = (data as any).httpStatus;
+        }
+        throw err;
       }
 
       if (data?.reconnectRequired) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -122,40 +122,52 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
     }
   };
 
-  // Handle file uploads
+  // Handle file uploads without reprocessing on query refetches
+  const handledUpload = useRef(false);
   useEffect(() => {
-    if (uploadMutation.isSuccess && uploadMutation.data) {
+    if (uploadMutation.isSuccess && uploadMutation.data && !handledUpload.current) {
+      handledUpload.current = true;
       const newAssets: CreativeAsset[] = uploadMutation.data.map((url, index) => ({
         id: `upload_${Date.now()}_${index}`,
-        url,
+        url, // public URL from storage
         type: 'upload',
         selected: true
       }));
-      
+
       const updatedAssets = [...savedAssets, ...newAssets];
       setSavedAssets(updatedAssets);
       saveAssetsToDatabase(updatedAssets);
       setLocalFiles([]);
-      // Explicitly refetch user files so the gallery updates immediately
+      // Refresh user files once to show new files in "Your Files" tab
       if (userFilesQuery.refetch) userFilesQuery.refetch();
-      
-      // Refresh user files query to show new files in "Your Files" tab
-      userFilesQuery.refetch();
-      
+
       toast({
         title: "Upload successful",
         description: `Uploaded ${newAssets.length} assets`
       });
+
+      // Reset mutation state to avoid repeated processing on unrelated re-renders
+      // Important: Avoid looping by delaying reset to next tick
+      setTimeout(() => {
+        if (typeof uploadMutation.reset === 'function') {
+          uploadMutation.reset();
+        }
+      }, 0);
     }
-    
+
     if (uploadMutation.isError) {
       toast({
         title: "Upload failed",
         description: uploadMutation.error?.message || "Failed to upload files",
         variant: "destructive"
       });
+      setTimeout(() => {
+        if (typeof uploadMutation.reset === 'function') {
+          uploadMutation.reset();
+        }
+      }, 0);
     }
-  }, [uploadMutation.isSuccess, uploadMutation.data, uploadMutation.isError, uploadMutation.error, userFilesQuery]);
+  }, [uploadMutation.isSuccess, uploadMutation.isError]);
 
   // Handle Facebook assets fetch
   useEffect(() => {
@@ -184,6 +196,7 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
 
   const handleUpload = () => {
     if (localFiles.length > 0) {
+      handledUpload.current = false;
       uploadMutation.mutate(localFiles);
     }
   };
@@ -612,11 +625,24 @@ export function CreativeAssetManager({ campaignId, onAssetsSelected }: CreativeA
                   }`}
                 >
                   <div className="relative">
-                    <img 
-                      src={asset.url} 
-                      alt={asset.name || 'Creative asset'}
-                      className="w-full h-24 object-cover rounded mb-2"
-                    />
+                    {(() => {
+                      const isAbsolute = (u: string) => /^(https?:|data:|blob:)/i.test(u);
+                      let url = asset.url as string;
+                      if (!isAbsolute(url) && url) {
+                        const pub = supabase.storage.from('user-files').getPublicUrl(url).data?.publicUrl;
+                        if (pub) url = pub;
+                      }
+                      return (
+                        <img
+                          src={url}
+                          alt={asset.name || 'Creative asset'}
+                          className="w-full h-24 object-cover rounded mb-2"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      );
+                    })()}
                     
                     {/* Selection checkbox */}
                     <div className="absolute top-1 right-1">

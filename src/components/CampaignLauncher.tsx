@@ -265,6 +265,18 @@ export const CampaignLauncher = ({ campaignConfig, onLaunchComplete }: CampaignL
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
               <strong>Launch failed:</strong> {launchMutation.error?.message}
+              {launchMutation.error && (launchMutation.error as any).details && (
+                <>
+                  <br />
+                  <span className="font-mono text-xs text-red-700">{(launchMutation.error as any).details}</span>
+                </>
+              )}
+              {(launchMutation.error as any)?.suggestion && (
+                <>
+                  <br />
+                  <span className="text-sm text-red-900 font-semibold">Suggestion: {(launchMutation.error as any).suggestion}</span>
+                </>
+              )}
               <br />
               Please check your Ad Account ID and Facebook permissions.
             </AlertDescription>

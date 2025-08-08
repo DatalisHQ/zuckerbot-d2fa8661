@@ -4,6 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Clock, MapPin, Smartphone } from 'lucide-react';
 
 interface AudienceSegment {
@@ -11,6 +12,16 @@ interface AudienceSegment {
   name: string;
   type: string;
   description: string;
+  targeting?: {
+    interests?: string[];
+    demographics?: string;
+    behaviors?: string[];
+    age_min?: number;
+    age_max?: number;
+    genders?: string[]; // ['male','female']
+    countries?: string[];
+    location_types?: string[];
+  };
 }
 
 interface AdSet {
@@ -18,12 +29,17 @@ interface AdSet {
   name: string;
   audienceSegmentId: string;
   placements: string[];
-  schedule: {
-    startTime: string;
-    endTime: string;
-    timezone: string;
-  };
   budgetAllocation: number;
+  targeting?: {
+    interests?: string[];
+    demographics?: string;
+    behaviors?: string[];
+    age_min?: number;
+    age_max?: number;
+    genders?: string[];
+    countries?: string[];
+    location_types?: string[];
+  };
 }
 
 interface AdSetConfigurationProps {
@@ -31,6 +47,12 @@ interface AdSetConfigurationProps {
   budget: number;
   adSets: AdSet[];
   onAdSetsChange: (adSets: AdSet[]) => void;
+  startDate?: string | null;
+  endDate?: string | null;
+  onSegmentTargetingChange?: (
+    segmentId: string,
+    targeting: NonNullable<AdSet['targeting']>
+  ) => void;
 }
 
 const PLACEMENT_OPTIONS = [
@@ -48,7 +70,10 @@ export const AdSetConfiguration = ({
   segments,
   budget,
   adSets,
-  onAdSetsChange
+  onAdSetsChange,
+  startDate,
+  endDate,
+  onSegmentTargetingChange
 }: AdSetConfigurationProps) => {
   // Auto-create ad sets for each segment
   useEffect(() => {
@@ -59,12 +84,8 @@ export const AdSetConfiguration = ({
         name: `${segment.name} - Ad Set`,
         audienceSegmentId: segment.id,
         placements: ['facebook_feeds', 'instagram_feed'], // Default placements
-        schedule: {
-          startTime: '00:00',
-          endTime: '23:59',
-          timezone: 'America/New_York'
-        },
-        budgetAllocation: budgetPerSegment
+        budgetAllocation: budgetPerSegment,
+        targeting: segment.targeting || {},
       }));
       onAdSetsChange(newAdSets);
     }
@@ -90,6 +111,27 @@ export const AdSetConfiguration = ({
     updateAdSet(adSetId, { placements: newPlacements });
   };
 
+  const getNormalizedTargeting = (adSet: AdSet) => {
+    const t = adSet.targeting || {};
+    return {
+      age_min: typeof t.age_min === 'number' ? t.age_min : 18,
+      age_max: typeof t.age_max === 'number' ? t.age_max : 65,
+      genders: Array.isArray(t.genders) && t.genders.length > 0 ? t.genders : ['male', 'female'],
+      interests: Array.isArray(t.interests) ? t.interests : [],
+      behaviors: Array.isArray(t.behaviors) ? t.behaviors : [],
+      countries: Array.isArray(t.countries) && t.countries.length > 0 ? t.countries : ['US'],
+      location_types: Array.isArray(t.location_types) && t.location_types.length > 0 ? t.location_types : ['home'],
+      demographics: t.demographics,
+    };
+  };
+
+  const updateTargetingField = (adSetId: string, field: string, value: any) => {
+    const adSet = adSets.find(as => as.id === adSetId);
+    if (!adSet) return;
+    const current = getNormalizedTargeting(adSet);
+    updateAdSet(adSetId, { targeting: { ...current, [field]: value } });
+  };
+
   const getSegmentName = (segmentId: string) => {
     return segments.find(s => s.id === segmentId)?.name || 'Unknown Segment';
   };
@@ -103,8 +145,22 @@ export const AdSetConfiguration = ({
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-bold">Ad Set Configuration</h1>
         <p className="text-muted-foreground">
-          Configure targeting and placements for each audience segment
+          Review and customize your ad sets. Each ad set corresponds to an audience you selected earlier.
         </p>
+        <div className="flex flex-wrap justify-center gap-6 mt-4">
+          <div>
+            <div className="text-xs text-muted-foreground">Campaign Start</div>
+            <div className="font-semibold">{startDate ? new Date(startDate).toLocaleDateString() : 'Not set'}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Campaign End</div>
+            <div className="font-semibold">{endDate ? new Date(endDate).toLocaleDateString() : 'Not set'}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Daily Budget</div>
+            <div className="font-semibold">${budget}</div>
+          </div>
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -167,92 +223,99 @@ export const AdSetConfiguration = ({
                   </div>
                 </div>
 
-                {/* Schedule */}
-                <div>
-                  <Label className="text-base font-medium flex items-center gap-2">
-                    <Clock className="h-4 w-4" />
-                    Schedule
-                  </Label>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    When should your ads run?
+                {/* Audience Targeting */}
+                <div className="space-y-3">
+                  <Label className="text-base font-medium">Audience Targeting</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Refine age, gender, interests and locations for this ad set
                   </p>
-                  
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor={`start-time-${adSet.id}`} className="text-sm">Start Time</Label>
-                      <Select
-                        value={adSet.schedule.startTime}
-                        onValueChange={(value) => 
-                          updateAdSet(adSet.id, { 
-                            schedule: { ...adSet.schedule, startTime: value }
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Array.from({ length: 24 }, (_, i) => {
-                            const hour = i.toString().padStart(2, '0');
-                            return (
-                              <SelectItem key={hour} value={`${hour}:00`}>
-                                {`${hour}:00`}
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor={`end-time-${adSet.id}`} className="text-sm">End Time</Label>
-                      <Select
-                        value={adSet.schedule.endTime}
-                        onValueChange={(value) => 
-                          updateAdSet(adSet.id, { 
-                            schedule: { ...adSet.schedule, endTime: value }
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Array.from({ length: 24 }, (_, i) => {
-                            const hour = i.toString().padStart(2, '0');
-                            return (
-                              <SelectItem key={hour} value={`${hour}:59`}>
-                                {`${hour}:59`}
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor={`timezone-${adSet.id}`} className="text-sm">Timezone</Label>
-                      <Select
-                        value={adSet.schedule.timezone}
-                        onValueChange={(value) => 
-                          updateAdSet(adSet.id, { 
-                            schedule: { ...adSet.schedule, timezone: value }
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                          <SelectItem value="America/Chicago">Central Time</SelectItem>
-                          <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                          <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
-                          <SelectItem value="UTC">UTC</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                  {(() => {
+                    const t = getNormalizedTargeting(adSet);
+                    const emitUpdate = (field: string, value: any) => {
+                      const next = { ...t, [field]: value };
+                      updateAdSet(adSet.id, { targeting: next });
+                      if (onSegmentTargetingChange) {
+                        onSegmentTargetingChange(adSet.audienceSegmentId, next);
+                      }
+                    };
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Age Range</Label>
+                          <div className="flex gap-2 mt-1">
+                            <Input
+                              type="number"
+                              min={13}
+                              max={65}
+                              value={t.age_min}
+                              onChange={(e) => emitUpdate('age_min', parseInt(e.target.value || '0'))}
+                              placeholder="Min"
+                            />
+                            <Input
+                              type="number"
+                              min={13}
+                              max={65}
+                              value={t.age_max}
+                              onChange={(e) => emitUpdate('age_max', parseInt(e.target.value || '0'))}
+                              placeholder="Max"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label>Gender</Label>
+                          <div className="flex gap-4 mt-1">
+                            {['male','female'].map(g => (
+                              <label key={g} className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={t.genders.includes(g)}
+                                  onChange={(e) => {
+                                    const next = e.target.checked
+                                      ? Array.from(new Set([...t.genders, g]))
+                                      : t.genders.filter(x => x !== g);
+                                    emitUpdate('genders', next);
+                                  }}
+                                />
+                                {g === 'male' ? 'Men' : 'Women'}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="md:col-span-2">
+                          <Label>Interests (comma-separated)</Label>
+                          <Input
+                            value={t.interests.join(', ')}
+                            onChange={(e) => emitUpdate('interests', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                            placeholder="e.g., Digital marketing, Business tools"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <Label>Countries</Label>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {['US','CA','GB','AU','DE','FR','NL','SE','IN'].map(code => {
+                              const selected = t.countries.includes(code);
+                              return (
+                                <button
+                                  key={code}
+                                  type="button"
+                                  onClick={() => {
+                                    const next = selected
+                                      ? t.countries.filter(c => c !== code)
+                                      : [...t.countries, code];
+                                    emitUpdate('countries', next);
+                                  }}
+                                  className={`px-3 py-1 rounded border text-sm ${selected ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
+                                >
+                                  {code}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </CardContent>
             </Card>

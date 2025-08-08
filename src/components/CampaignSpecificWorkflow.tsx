@@ -114,18 +114,9 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
         
         setCompletedSteps(completed);
 
-        // Auto-advance to next incomplete step
-        if (!completed.has('brand-info')) {
-          setCurrentStep('brand-info');
-        } else if (!completed.has('competitor-analysis')) {
-          setCurrentStep('competitor-analysis');
-        } else if (!completed.has('audience-selection')) {
-          setCurrentStep('audience-selection');
-        } else if (!completed.has('image-upload')) {
-          setCurrentStep('image-upload');
-        } else {
-          setCurrentStep('campaign-creation');
-        }
+        // Do NOT auto-advance steps; respect user navigation via Next/Previous
+        // Keep currentStep unchanged on load. If this is the very first load
+        // and currentStep is undefined (should not happen), default to 'brand-info'.
       }
     } catch (error) {
       console.error('Error loading campaign data:', error);
@@ -215,12 +206,6 @@ export const CampaignSpecificWorkflow = ({ campaignId, onFlowComplete }: Campaig
 
   const handleStepComplete = async (step: WorkflowStep, data: any) => {
     await saveCampaignData(step, data);
-    
-    // Auto-advance to next step
-    const stepIndex = steps.findIndex(s => s.id === step);
-    if (stepIndex < steps.length - 1) {
-      setCurrentStep(steps[stepIndex + 1].id);
-    }
   };
 
   const getStepProgress = () => {

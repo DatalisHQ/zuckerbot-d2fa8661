@@ -73,13 +73,15 @@ export const FacebookConnector = ({
     try {
       // Store current page for redirect back after OAuth
       const currentPage = window.location.pathname + window.location.search;
+      const returnTo = window.location.href;
       localStorage.setItem('facebook_oauth_redirect', currentPage);
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
           scopes: 'ads_management,ads_read,business_management,pages_read_engagement',
-          redirectTo: `${window.location.origin}${currentPage}?facebook=connected`
+          // Include absolute return_to for cross-domain fallback
+          redirectTo: `${window.location.origin}${currentPage}${currentPage.includes('?') ? '&' : '?'}facebook=connected&return_to=${encodeURIComponent(returnTo)}`
         }
       });
 
@@ -208,10 +210,25 @@ export const FacebookConnector = ({
       // Update connection status
       setIsConnected(true);
 
-      // Clean up URL without navigating away
-      const cleanUrl = window.location.pathname;
-      window.history.replaceState({}, '', cleanUrl);
-      
+      // Redirect back to the exact page the user initiated OAuth from
+      const redirectPath = localStorage.getItem('facebook_oauth_redirect');
+      const urlParams = new URLSearchParams(window.location.search);
+      const returnToParam = urlParams.get('return_to');
+      if (redirectPath) {
+        localStorage.removeItem('facebook_oauth_redirect');
+        // Use full reload to ensure auth context and queries refresh
+        window.location.assign(redirectPath);
+        return;
+      } else if (returnToParam) {
+        // Cross-domain fallback if localStorage not available on this host
+        window.location.assign(decodeURIComponent(returnToParam));
+        return;
+      } else {
+        // Clean up query param without navigation if no stored path
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, '', cleanUrl);
+      }
+
       if (onConnectionComplete) {
         onConnectionComplete();
       }
