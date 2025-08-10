@@ -48,7 +48,8 @@ export function useLaunchCampaign() {
         if (error) {
           // Supabase edge functions return structured error info; pass it along
           const message = (error as any)?.message || 'Failed to launch Facebook campaign';
-          throw new Error(message);
+          const details = (error as any)?.details || '';
+          throw new Error(`${message}${details ? ` | ${details}` : ''}`);
         }
         if (!data?.success) {
           // Surface non-success responses with details when available

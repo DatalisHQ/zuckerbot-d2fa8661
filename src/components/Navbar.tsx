@@ -2,11 +2,23 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { LogOut, User } from "lucide-react";
 import { SlidingMenu } from "./SlidingMenu";
+import { useEffect, useState } from "react";
+import { isCurrentUserAdmin } from "@/lib/admin";
 import { useEnhancedAuth } from "@/utils/auth";
 
 export const Navbar = () => {
   const navigate = useNavigate();
   const { logout } = useEnhancedAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const ok = await isCurrentUserAdmin();
+      if (mounted) setIsAdmin(ok);
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const handleSignOut = () => {
     logout(navigate, true);
@@ -24,6 +36,11 @@ export const Navbar = () => {
             </Link>
           </div>
           <div className="hidden md:flex items-center space-x-2">
+            {isAdmin && (
+              <Button variant="ghost" asChild>
+                <Link to="/admin">Admin</Link>
+              </Button>
+            )}
             <Button variant="ghost" asChild>
               <Link to="/profile">
                 <User className="h-4 w-4 mr-2" />

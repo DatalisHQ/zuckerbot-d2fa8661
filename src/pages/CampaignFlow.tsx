@@ -12,9 +12,10 @@ export default function CampaignFlow() {
   const brandAnalysisId = location.state?.brandAnalysisId || new URLSearchParams(location.search).get('brandAnalysisId');
   const brandUrl = location.state?.brandUrl || new URLSearchParams(location.search).get('brandUrl');
   const resumeDraftId = location.state?.resumeDraftId || new URLSearchParams(location.search).get('resumeDraftId');
+  const resumeCampaignId = new URLSearchParams(location.search).get('campaignId');
   
   // Create new campaign if no draft ID provided
-  const [campaignId, setCampaignId] = useState<string | null>(resumeDraftId);
+  const [campaignId, setCampaignId] = useState<string | null>(resumeCampaignId || resumeDraftId);
   
   useEffect(() => {
     if (!campaignId) {

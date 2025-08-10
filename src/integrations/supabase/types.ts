@@ -421,6 +421,11 @@ export type Database = {
           competitor_list_id: string
           competitor_name: string
           created_at: string
+          engagement: Json | null
+          creative_breakdown: Json | null
+          spend_tier_range: unknown | null
+          impression_tier_range: unknown | null
+          analysis_window_daterange: unknown | null
           creative_trends: Json | null
           ctas: Json | null
           hooks: Json | null
@@ -434,6 +439,11 @@ export type Database = {
           competitor_list_id: string
           competitor_name: string
           created_at?: string
+          engagement?: Json | null
+          creative_breakdown?: Json | null
+          spend_tier_range?: unknown | null
+          impression_tier_range?: unknown | null
+          analysis_window_daterange?: unknown | null
           creative_trends?: Json | null
           ctas?: Json | null
           hooks?: Json | null
@@ -447,6 +457,11 @@ export type Database = {
           competitor_list_id?: string
           competitor_name?: string
           created_at?: string
+          engagement?: Json | null
+          creative_breakdown?: Json | null
+          spend_tier_range?: unknown | null
+          impression_tier_range?: unknown | null
+          analysis_window_daterange?: unknown | null
           creative_trends?: Json | null
           ctas?: Json | null
           hooks?: Json | null
@@ -454,6 +469,42 @@ export type Database = {
           total_ads_found?: number | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      competitor_analysis_history: {
+        Row: {
+          id: string
+          user_id: string
+          competitor_list_id: string
+          competitor_name: string
+          snapshot_at: string
+          ads_data: Json
+          insights: Json
+          metrics: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          competitor_list_id: string
+          competitor_name: string
+          snapshot_at?: string
+          ads_data?: Json
+          insights?: Json
+          metrics?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          competitor_list_id?: string
+          competitor_name?: string
+          snapshot_at?: string
+          ads_data?: Json
+          insights?: Json
+          metrics?: Json
+          created_at?: string
         }
         Relationships: []
       }

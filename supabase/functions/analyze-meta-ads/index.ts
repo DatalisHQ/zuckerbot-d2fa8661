@@ -45,18 +45,42 @@ function formatSpend(spend: any, currency: string = 'USD'): string {
   return `$${lower}-$${upper}`;
 }
 
-// Enhanced fallback scraper using Playwright with detailed logging
+// Rotate proxies if provided via env PROXY_URLS (comma-separated)
+function getRotatingProxy(index: number): string | null {
+  const proxyEnv = Deno.env.get('PROXY_URLS')?.trim();
+  if (!proxyEnv) return null;
+  const proxies = proxyEnv.split(',').map(p => p.trim()).filter(Boolean);
+  if (proxies.length === 0) return null;
+  return proxies[index % proxies.length] || null;
+}
+
+// Exponential backoff helper
+async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+// Enhanced fallback scraper using Playwright with proxy rotation, retries, and detailed logging
 async function scrapeFacebookAdsLibrary(pageId: string): Promise<any[]> {
   let browser = null;
   try {
     console.log(`\n=== FACEBOOK ADS LIBRARY SCRAPER STARTING ===`);
     console.log(`Target Page ID: ${pageId}`);
     
-    browser = await chromium.launch({ 
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-    });
-    const page = await browser.newPage();
+    const maxRetries = 3;
+    let lastError: any = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const proxy = getRotatingProxy(attempt);
+      try {
+        console.log(`Launching browser (attempt ${attempt + 1}/${maxRetries})${proxy ? ` with proxy ${proxy}` : ''}`);
+        browser = await chromium.launch({ 
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            proxy ? `--proxy-server=${proxy}` : ''
+          ].filter(Boolean)
+        });
+        const context = await browser.newContext();
+        const page = await context.newPage();
     
     // Set comprehensive headers to avoid detection
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -69,7 +93,7 @@ async function scrapeFacebookAdsLibrary(pageId: string): Promise<any[]> {
     console.log(`Navigating to: ${url}`);
     
     // Navigate with longer timeout
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 });
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
     console.log(`✓ Page loaded successfully`);
     
     // Log current URL to confirm we're on the right page
@@ -244,17 +268,19 @@ async function scrapeFacebookAdsLibrary(pageId: string): Promise<any[]> {
       console.log(`Sample ad data:`, JSON.stringify(ads[0], null, 2));
     }
     
-    return ads;
-    
-  } catch (error) {
-    console.error('❌ Facebook Ads Library scraper error:', error);
-    console.error('Error stack:', error.stack);
-    return [];
-  } finally {
-    if (browser) {
-      await browser.close();
-      console.log(`✓ Browser closed`);
+        // Success path: return ads
+        await browser.close();
+        return ads;
+      } catch (error) {
+        lastError = error;
+        console.log(`Scrape attempt ${attempt + 1} failed:`, error.message || error);
+        try { if (browser) await browser.close(); } catch { /* ignore */ }
+        // backoff before retry
+        await sleep(500 * Math.pow(2, attempt));
+      }
     }
+    console.error('❌ Facebook Ads Library scraper failed after retries:', lastError);
+    return [];
   }
 }
 
@@ -434,7 +460,7 @@ serve(async (req) => {
 
     let allAds = [];
 
-    // Try API first with 5-second timeout
+    // Try API first with retry and alternate strategies
     for (const query of uniqueQueries) {
       if (allAds.length >= 5) break; // Stop when we have enough ads
 
@@ -465,7 +491,7 @@ serve(async (req) => {
         
         console.log('Full API URL:', adLibraryUrl.toString().replace(facebookAccessToken, '[REDACTED]'));
         
-        // 5-second timeout for API call
+        // 5-second timeout for API call with simple retries
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
@@ -524,14 +550,19 @@ serve(async (req) => {
               continue;
             }
             
-            // For 400 errors, try alternative search approaches
+            // For 400 errors, try alternative search approaches and page_id fallback
             if (response.status === 400) {
               console.log('Bad request - trying alternative search approach for:', query);
               
               // Try a simpler search with fewer parameters
               const simpleUrl = new URL(`https://graph.facebook.com/v21.0/ads_archive`);
               simpleUrl.searchParams.set('access_token', facebookAccessToken);
-              simpleUrl.searchParams.set('search_terms', query);
+              if (query.startsWith('page_id:')) {
+                const pageId = query.replace('page_id:', '');
+                simpleUrl.searchParams.set('search_page_ids', `["${pageId}"]`);
+              } else {
+                simpleUrl.searchParams.set('search_terms', query);
+              }
               simpleUrl.searchParams.set('ad_reached_countries', '["US"]');
               simpleUrl.searchParams.set('limit', '10');
               simpleUrl.searchParams.set('fields', 'id,page_name,ad_creative_bodies,ad_creative_link_titles,ad_snapshot_url');
@@ -590,20 +621,46 @@ serve(async (req) => {
             const adsToProcess = relevantAds.length > 0 ? relevantAds : data.data;
             
             // Process and format the ads
-            const processedAds = adsToProcess.slice(0, 5 - allAds.length).map((ad: any) => ({
-              id: ad.id,
-              headline: ad.ad_creative_link_titles?.[0] || ad.ad_creative_link_captions?.[0] || 'No headline',
-              primary_text: ad.ad_creative_bodies?.[0] || ad.ad_creative_link_descriptions?.[0] || 'No description',
-              cta: extractCallToAction(ad.ad_creative_link_captions?.[0] || ad.ad_creative_link_titles?.[0] || ''),
-              image_url: ad.ad_snapshot_url || 'https://via.placeholder.com/400x300?text=Ad+Creative',
-              impressions: formatImpressions(ad.impressions),
-              spend_estimate: formatSpend(ad.spend, ad.currency),
-              date_created: ad.ad_delivery_start_time || new Date().toISOString(),
-              page_name: ad.page_name,
-              page_id: ad.page_id,
-              funding_entity: ad.funding_entity,
-              relevance_score: relevantAds.includes(ad) ? 'high' : 'medium'
-            }));
+            const processedAds = adsToProcess.slice(0, 5 - allAds.length).map((ad: any) => {
+              // Derive creative type from available fields
+              const mediaType = (ad.media_type || '').toString().toLowerCase();
+              const creativeType = mediaType.includes('video') ? 'video' : mediaType.includes('carousel') ? 'carousel' : 'image';
+
+              // Parse impression/spend numeric ranges for storage later
+              const impressionsLower = parseInt(ad?.impressions?.lower_bound || '0');
+              const impressionsUpper = parseInt(ad?.impressions?.upper_bound || impressionsLower || '0');
+              const spendLower = parseInt(ad?.spend?.lower_bound || '0');
+              const spendUpper = parseInt(ad?.spend?.upper_bound || spendLower || '0');
+
+              // Engagement placeholders (not provided by API; may be enriched by scraper later)
+              const engagement = { likes: null, comments: null, shares: null };
+
+              const startDate = ad.ad_delivery_start_time || new Date().toISOString();
+              const endDate = ad.ad_delivery_stop_time || null;
+
+              return {
+                id: ad.id,
+                headline: ad.ad_creative_link_titles?.[0] || ad.ad_creative_link_captions?.[0] || 'No headline',
+                primary_text: ad.ad_creative_bodies?.[0] || ad.ad_creative_link_descriptions?.[0] || 'No description',
+                cta: extractCallToAction(ad.ad_creative_link_captions?.[0] || ad.ad_creative_link_titles?.[0] || ''),
+                image_url: ad.ad_snapshot_url || 'https://via.placeholder.com/400x300?text=Ad+Creative',
+                impressions: formatImpressions(ad.impressions),
+                spend_estimate: formatSpend(ad.spend, ad.currency),
+                date_created: startDate,
+                page_name: ad.page_name,
+                page_id: ad.page_id,
+                funding_entity: ad.funding_entity,
+                relevance_score: relevantAds.includes(ad) ? 'high' : 'medium',
+                // new enriched fields kept inside ads_data for now
+                creative_type: creativeType,
+                engagement,
+                metrics: {
+                  impressions_range: { lower: impressionsLower || null, upper: impressionsUpper || null },
+                  spend_range: { lower: spendLower || null, upper: spendUpper || null },
+                },
+                run_window: { start: startDate, end: endDate }
+              };
+            });
             
             allAds.push(...processedAds);
             
@@ -625,11 +682,11 @@ serve(async (req) => {
       }
     }
 
-    // If API failed to get ads, try scraper fallback
-    if (allAds.length === 0 && knownPageId) {
+    // If API failed to get ads, try scraper fallback (with page ID if we discovered one)
+    if (allAds.length === 0 && (facebookPageId || knownPageId)) {
       console.log(`\n=== ATTEMPTING SCRAPER FALLBACK FOR PAGE ID: ${knownPageId} ===`);
       try {
-        const scrapedAds = await scrapeFacebookAdsLibrary(knownPageId);
+        const scrapedAds = await scrapeFacebookAdsLibrary(facebookPageId || knownPageId);
         if (scrapedAds.length > 0) {
           allAds.push(...scrapedAds);
           console.log(`Scraper found ${scrapedAds.length} ads`);
@@ -673,7 +730,7 @@ serve(async (req) => {
         throw new Error('OpenAI API key not configured');
       }
 
-    const adTexts = allAds.map(ad => `Headline: ${ad.headline}\nText: ${ad.primary_text}\nCTA: ${ad.cta}`).join('\n\n');
+    const adTexts = allAds.map(ad => `Headline: ${ad.headline}\nText: ${ad.primary_text}\nCTA: ${ad.cta}\nCreativeType: ${ad.creative_type || 'unknown'}\nRunWindow: ${ad.run_window?.start || ''} -> ${ad.run_window?.end || ''}\nImpressionsRange: ${ad.metrics?.impressions_range?.lower || ''}-${ad.metrics?.impressions_range?.upper || ''}\nSpendRange: ${ad.metrics?.spend_range?.lower || ''}-${ad.metrics?.spend_range?.upper || ''}`).join('\n\n');
 
     const analysisResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -695,7 +752,12 @@ serve(async (req) => {
 {
   "hooks": ["Specific hook phrase 1", "Specific hook phrase 2", "Specific hook phrase 3", "Hook phrase 4", "Hook phrase 5"],
   "ctas": ["Most common CTA", "Second most common CTA", "Third CTA"],
-  "creative_trends": ["Specific creative pattern 1", "Creative pattern 2", "Pattern 3"]
+  "creative_trends": ["Specific creative pattern 1", "Creative pattern 2", "Pattern 3"],
+  "top_ctas": ["Buy Now", "Learn More", "Get Started"],
+  "visual_themes": ["clean product close-ups", "UGC handheld video", "before-after"],
+  "creative_fatigue_flags": [{"ad_id":"...","reason":"running >30 days with low engagement proxy"}],
+  "positioning_opportunities": ["Angle about guarantee missing in market", "Faster setup vs competitors"],
+  "top_hooks": ["...", "...", "...", "...", "..."]
 }
 
 Focus on extracting actual phrases and patterns from these ads:
@@ -752,6 +814,38 @@ Extract specific headlines, opening phrases, and emotional triggers used across 
       };
     }
 
+    // Compute aggregate tiers and creative breakdown
+    const numericRanges = (ads: any[], key: 'impressions' | 'spend') => {
+      const lowers = ads.map(a => a.metrics?.[key + '_range']?.lower).filter((n: any) => typeof n === 'number');
+      const uppers = ads.map(a => a.metrics?.[key + '_range']?.upper).filter((n: any) => typeof n === 'number');
+      const min = lowers.length ? Math.min(...lowers) : null;
+      const max = uppers.length ? Math.max(...uppers) : null;
+      return { min, max };
+    };
+    const impressionsAgg = numericRanges(allAds, 'impressions');
+    const spendAgg = numericRanges(allAds, 'spend');
+    const creativeBreakdown = Array.from(new Map(allAds.map(a => [a.creative_type || 'image', 0])).keys())
+      .map(type => ({ type, count: allAds.filter(a => (a.creative_type || 'image') === type).length }));
+
+    // Build Postgres range literals
+    const intRangeLiteral = (min: number | null, max: number | null) => {
+      if (typeof min === 'number' && typeof max === 'number') {
+        return `[${min},${max}]`;
+      }
+      return null;
+    };
+
+    const toISODate = (iso?: string | null) => (iso ? iso.substring(0, 10) : null);
+    const allStartDates = allAds.map(a => toISODate(a?.run_window?.start)).filter(Boolean) as string[];
+    const allEndDates = allAds.map(a => toISODate(a?.run_window?.end)).filter(Boolean) as string[];
+    const earliestStart = allStartDates.length ? allStartDates.sort()[0] : null;
+    const latestEnd = (allEndDates.length ? allEndDates.sort()[allEndDates.length - 1] : toISODate(new Date().toISOString()));
+    const dateRangeLiteral = (start: string | null, end: string | null) => {
+      if (start && end) return `[${start},${end}]`;
+      if (start) return `[${start},]`;
+      return null;
+    };
+
     // Save competitor ad insights to database
     const { data: insightsData, error: insightsError } = await supabase
       .from('competitor_ad_insights')
@@ -763,13 +857,38 @@ Extract specific headlines, opening phrases, and emotional triggers used across 
         hooks: insights.hooks,
         ctas: insights.ctas,
         creative_trends: insights.creative_trends,
-        total_ads_found: allAds.length
+        total_ads_found: allAds.length,
+        engagement: {},
+        creative_breakdown: creativeBreakdown,
+        spend_tier_range: intRangeLiteral(spendAgg.min as any, spendAgg.max as any),
+        impression_tier_range: intRangeLiteral(impressionsAgg.min as any, impressionsAgg.max as any),
+        analysis_window_daterange: dateRangeLiteral(earliestStart, latestEnd)
       })
       .select()
       .single();
 
     if (insightsError) {
       console.error('Error saving competitor ad insights:', insightsError);
+    }
+
+    // Also store a snapshot into competitor_analysis_history for trend tracking
+    try {
+      await supabase
+        .from('competitor_analysis_history')
+        .insert({
+          user_id: userId,
+          competitor_list_id: competitorListId,
+          competitor_name: competitorName,
+          ads_data: allAds,
+          insights: insights,
+          metrics: {
+            impressions: impressionsAgg,
+            spend: spendAgg,
+            creative_breakdown: creativeBreakdown
+          }
+        });
+    } catch (histErr) {
+      console.log('History snapshot insert error:', histErr);
     }
 
     const result = {

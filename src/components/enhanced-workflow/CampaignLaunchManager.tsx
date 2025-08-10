@@ -201,9 +201,8 @@ export function CampaignLaunchManager({
       ads: approvedAds.map((ad, index) => ({
         name: ad.ad_set_name,
         adset_index: audienceSegments.findIndex(seg => seg.id === ad.audience_segment_id),
-        creative: {
-          creative_id: ad.creative_asset.facebook_creative_id || ad.creative_asset.url
-        },
+        // IMPORTANT: creative_id must be a numeric AdCreative ID in Facebook
+        creative: ad.creative_asset.facebook_creative_id ? { creative_id: ad.creative_asset.facebook_creative_id } : { creative_id: '' },
         status: 'ACTIVE' as const
       }))
     };

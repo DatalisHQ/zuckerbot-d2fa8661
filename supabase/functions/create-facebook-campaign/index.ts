@@ -41,7 +41,12 @@ serve(async (req) => {
   try {
     const payload: CampaignPayload = await req.json();
     
-    const { adAccountId, campaign, adSets, ads } = payload;
+    let { adAccountId, campaign, adSets, ads } = payload;
+
+    // Normalize adAccountId in case 'act_' prefix was included by client
+    if (adAccountId.startsWith('act_')) {
+      adAccountId = adAccountId.replace('act_', '');
+    }
 
     // Validate required fields
     if (!adAccountId || !campaign || !adSets || !ads) {
@@ -59,17 +64,36 @@ serve(async (req) => {
       );
     }
 
-    const apiVersion = Deno.env.get('FACEBOOK_API_VERSION') || 'v19.0';
+    const apiVersion = Deno.env.get('FACEBOOK_API_VERSION') || 'v21.0';
     const baseUrl = `https://graph.facebook.com/${apiVersion}`;
 
     console.log('Starting Facebook campaign creation for account:', adAccountId);
 
     // Step 1: Create Campaign
     console.log('Creating campaign:', campaign.name);
+
+    // Map legacy objectives to Outcome-based ones (required on newer API versions)
+    const normalizeObjective = (obj: string) => {
+      const o = (obj || '').toUpperCase();
+      const map: Record<string, string> = {
+        'TRAFFIC': 'OUTCOME_TRAFFIC',
+        'LINK_CLICKS': 'OUTCOME_TRAFFIC',
+        'CONVERSIONS': 'OUTCOME_SALES',
+        'SALES': 'OUTCOME_SALES',
+        'LEADS': 'OUTCOME_LEADS',
+        'BRAND_AWARENESS': 'OUTCOME_AWARENESS',
+        'REACH': 'OUTCOME_AWARENESS',
+        'APP_INSTALLS': 'APP_INSTALLS',
+        'ENGAGEMENT': 'OUTCOME_ENGAGEMENT'
+      };
+      return map[o] || o;
+    };
+
+    const normalizedObjective = normalizeObjective(campaign.objective);
     const campaignParams = new URLSearchParams({
       access_token: accessToken,
       name: campaign.name,
-      objective: campaign.objective,
+      objective: normalizedObjective,
       status: campaign.status,
       special_ad_categories: '[]' // Empty array for regular ads
     });
@@ -194,11 +218,25 @@ serve(async (req) => {
 
       console.log(`Creating ad ${i + 1}/${ads.length}:`, ad.name);
 
+      // Validate creative_id; must be an existing creative ID in this ad account
+      const creativeId = ad?.creative?.creative_id;
+      if (!creativeId || !/^\d+$/.test(String(creativeId))) {
+        return new Response(
+          JSON.stringify({
+            error: `Invalid creative_id for ad ${i + 1}`,
+            details: 'creative_id must be a numeric ID of an existing AdCreative. Create the creative first, then pass its ID.',
+            partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
+            suggestion: 'Create image/video AdCreative via the /adcreatives endpoint and pass its ID in the payload.'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const adParams = new URLSearchParams({
         access_token: accessToken,
         name: ad.name,
         adset_id: adSetId,
-        creative: JSON.stringify(ad.creative),
+        creative: JSON.stringify({ creative_id: String(creativeId) }),
         status: ad.status
       });
 

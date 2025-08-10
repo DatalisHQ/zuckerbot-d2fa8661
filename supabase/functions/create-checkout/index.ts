@@ -20,8 +20,8 @@ serve(async (req) => {
 
   try {
     console.log('[CHECKOUT] Function invoked');
-    const { priceId, planType } = await req.json();
-    console.log('[CHECKOUT] Received body:', { priceId, planType });
+    const { priceId, planType, successPath, cancelPath } = await req.json();
+    console.log('[CHECKOUT] Received body:', { priceId, planType, successPath, cancelPath });
     
     const authHeader = req.headers.get("Authorization");
     console.log('[CHECKOUT] Auth header:', authHeader);
@@ -54,6 +54,10 @@ serve(async (req) => {
     console.log('[CHECKOUT] Selected price:', selectedPrice);
     if (!selectedPrice) throw new Error("Invalid price ID");
 
+    const origin = req.headers.get("origin") || Deno.env.get("PUBLIC_SITE_URL") || "";
+    const successUrl = successPath ? `${origin}${successPath}` : `${origin}/dashboard?success=true`;
+    const cancelUrl = cancelPath ? `${origin}${cancelPath}` : `${origin}/pricing`;
+
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       customer_email: customerId ? undefined : user.email,
@@ -71,8 +75,8 @@ serve(async (req) => {
         },
       ],
       mode: "subscription",
-      success_url: `${req.headers.get("origin")}/dashboard?success=true`,
-      cancel_url: `${req.headers.get("origin")}/pricing`,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
     });
     console.log('[CHECKOUT] Stripe session created:', session.id);
 

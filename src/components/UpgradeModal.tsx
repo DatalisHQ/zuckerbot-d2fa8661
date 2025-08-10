@@ -47,11 +47,17 @@ export function UpgradeModal({ open, onClose, reason }: UpgradeModalProps) {
         setLoading(null);
         return;
       }
+      // Preserve current route and critical state via successPath
+      const currentUrl = new URL(window.location.href);
+      const params = new URLSearchParams(currentUrl.search);
+      // Pass campaign and resume info if present so we can restore
+      const successPath = `${currentUrl.pathname}?${params.toString()}`;
       const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { priceId, planType }
+        body: { priceId, planType, successPath }
       });
       if (error) throw error;
-      window.open(data.url, '_blank');
+      // Open in same tab to preserve app context on return
+      window.location.href = data.url;
       setLoading(null);
       onClose();
     } catch (error: any) {

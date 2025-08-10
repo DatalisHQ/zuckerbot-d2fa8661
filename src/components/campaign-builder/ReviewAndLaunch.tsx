@@ -89,6 +89,11 @@ export const ReviewAndLaunch = ({
       const { data, error } = await supabase.functions.invoke('check-subscription');
       if (!error && data?.subscription_tier) {
         setSubscriptionTier(data.subscription_tier);
+        // If user came back from Stripe success, refresh profile and hide modal
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('success') === 'true' && (data.subscription_tier === 'pro' || data.subscription_tier === 'agency')) {
+          setShowUpgradeModal(false);
+        }
       }
     })();
   }, []);
@@ -161,7 +166,7 @@ export const ReviewAndLaunch = ({
           name: adSet.name,
           daily_budget: adSet.budgetAllocation * 100, // Convert to cents
           billing_event: 'IMPRESSIONS',
-          optimization_goal: 'LINK_CLICKS',
+          optimization_goal: 'REACH',
           targeting: (() => {
             const t = adSet.targeting || {};
             const age_min = typeof t.age_min === 'number' ? t.age_min : 18;
@@ -191,9 +196,8 @@ export const ReviewAndLaunch = ({
           return variants.map((variant, variantIndex) => ({
             name: `${adSet.name} - ${variant.headline}`,
             adset_index: adSetIndex,
-            creative: {
-              creative_id: `temp_creative_${variant.id}` // This would be replaced with actual creative IDs
-            },
+            // Placeholder; must be replaced with real AdCreative ID before launch
+            creative: { creative_id: '' },
             status: 'PAUSED' as const
           }));
         })

@@ -23,6 +23,7 @@ import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
 import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
+import AdminDashboard from "./pages/AdminDashboard";
 
 const queryClient = new QueryClient();
 
@@ -143,6 +144,7 @@ function App() {
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
               <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
               <Route path="/zuckerbot" element={user ? <ZuckerBot /> : <Navigate to="/auth" />} />
+              <Route path="/admin" element={user ? <AdminDashboard /> : <Navigate to="/auth" />} />
               <Route path="/campaign-flow" element={user ? <CampaignFlow /> : <Navigate to="/auth" />} />
               <Route path="/conversations" element={user ? <ConversationLayout><Conversations /></ConversationLayout> : <Navigate to="/auth" />} />
               <Route path="/files" element={user ? <ConversationLayout><Files /></ConversationLayout> : <Navigate to="/auth" />} />

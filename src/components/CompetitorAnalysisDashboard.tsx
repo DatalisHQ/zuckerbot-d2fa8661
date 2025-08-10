@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { BrandAnalysisForm } from "@/components/BrandAnalysisForm";
 import { 
   Target, 
@@ -13,15 +14,81 @@ import {
   Plus,
   ArrowRight
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 export const CompetitorAnalysisDashboard = () => {
   const [quickAnalysisUrl, setQuickAnalysisUrl] = useState('');
+  const [lists, setLists] = useState<any[]>([]);
+  const [selectedListId, setSelectedListId] = useState<string>('');
+  const [playbook, setPlaybook] = useState<any>(null);
+  const [isLoadingPlaybook, setIsLoadingPlaybook] = useState(false);
+  const { toast } = useToast();
 
   const handleQuickAnalysis = async () => {
     if (!quickAnalysisUrl.trim()) return;
     
     // This would trigger the brand analysis form with the URL
     console.log('Quick analysis for:', quickAnalysisUrl);
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data, error } = await supabase
+          .from('competitor_lists')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (error) throw error;
+        setLists(data || []);
+        if ((data || []).length > 0) setSelectedListId(data![0].id);
+      } catch (e: any) {
+        console.error('Failed to load competitor lists', e);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      if (!selectedListId) return;
+      setIsLoadingPlaybook(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data, error } = await supabase.functions.invoke('competitor-playbook', {
+          body: { competitorListId: selectedListId, userId: user.id }
+        });
+        if (error) throw error;
+        setPlaybook(data?.playbook || null);
+      } catch (e: any) {
+        toast({ title: 'Failed to load playbook', description: e.message || 'Please try again', variant: 'destructive' });
+      } finally {
+        setIsLoadingPlaybook(false);
+      }
+    })();
+  }, [selectedListId]);
+
+  const exportPlaybookToPdf = async () => {
+    if (!playbook) return;
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(`<html><head><title>Competitor Playbook</title></head><body>`);
+    w.document.write(`<h2>Competitor Playbook</h2>`);
+    w.document.write(`<h3>Top Hooks</h3><ul>${(playbook.top_hooks||[]).map((h: string) => `<li>${h}</li>`).join('')}</ul>`);
+    w.document.write(`<h3>Top CTAs</h3><ul>${(playbook.top_ctas||[]).map((c: string) => `<li>${c}</li>`).join('')}</ul>`);
+    w.document.write(`<h3>Visual Themes</h3><ul>${(playbook.visual_themes||[]).map((t: string) => `<li>${t}</li>`).join('')}</ul>`);
+    if (Array.isArray(playbook.positioning_opportunities)) {
+      w.document.write(`<h3>Positioning Opportunities</h3><ul>${playbook.positioning_opportunities.map((p: string) => `<li>${p}</li>`).join('')}</ul>`);
+    }
+    w.document.write(`</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+    w.close();
   };
 
   return (
@@ -122,6 +189,97 @@ export const CompetitorAnalysisDashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Competitor Playbook */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5" />
+            Competitor Playbook
+          </CardTitle>
+          <CardDescription>
+            Key hooks, CTAs, themes, and fatigue flags from your competitor lists
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-2">
+              <label className="text-xs text-muted-foreground">Select Competitor List</label>
+              <select
+                className="w-full border rounded h-10 px-2"
+                value={selectedListId}
+                onChange={(e) => setSelectedListId(e.target.value)}
+              >
+                {lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.id.slice(0, 8)} • {new Date(l.created_at).toLocaleString()} • {(l.competitors || []).length} competitors
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <Button variant="outline" className="w-full" onClick={exportPlaybookToPdf} disabled={!playbook || isLoadingPlaybook}>
+                Export PDF
+              </Button>
+            </div>
+          </div>
+
+          {isLoadingPlaybook && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading playbook…</div>
+          )}
+
+          {playbook && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <h4 className="font-medium text-sm mb-2">Top Hooks</h4>
+                <div className="flex flex-wrap gap-1">
+                  {(playbook.top_hooks || []).map((h: string, i: number) => (
+                    <Badge key={i} variant="secondary" className="text-xs">{h}</Badge>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h4 className="font-medium text-sm mb-2">Top CTAs</h4>
+                <div className="flex flex-wrap gap-1">
+                  {(playbook.top_ctas || []).map((c: string, i: number) => (
+                    <Badge key={i} className="text-xs bg-primary text-primary-foreground">{c}</Badge>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h4 className="font-medium text-sm mb-2">Visual Themes</h4>
+                <div className="flex flex-wrap gap-1">
+                  {(playbook.visual_themes || []).map((t: string, i: number) => (
+                    <Badge key={i} variant="outline" className="text-xs">{t}</Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {playbook?.creative_fatigue_flags?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm mb-2 text-red-600">Creative Fatigue Flags</h4>
+              <ul className="text-xs list-disc ml-5">
+                {playbook.creative_fatigue_flags.slice(0,5).map((f: any, i: number) => (
+                  <li key={i}>{f.ad_id}: {f.reason}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {playbook?.positioning_opportunities?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm mb-2">Positioning Opportunities</h4>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                {playbook.positioning_opportunities.map((p: string, i: number) => (
+                  <li key={i} className="flex items-start gap-1"><span className="text-primary">•</span>{p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Main Analysis Form */}
       <div className="max-w-4xl mx-auto">
