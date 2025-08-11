@@ -183,7 +183,10 @@ serve(async (req) => {
       const adSet = adSets[i];
       console.log(`Creating ad set ${i + 1}/${adSets.length}:`, adSet.name);
 
-      // Merge placements.publisher_platforms into targeting if present
+      // Extract placements (should be top-level ad set params, not inside targeting)
+      const placements = (adSet as any).placements || {};
+
+      // Normalize targeting
       const baseTargeting = { ...(adSet.targeting || {}) } as any;
       // Resolve interests provided as names into numeric IDs
       let validInterests: { id: string; name: string }[] = [];
@@ -207,10 +210,18 @@ serve(async (req) => {
 
       const targetingObj: any = {
         ...baseTargeting,
-        ...(adSet.placements && (adSet.placements as any).publisher_platforms
-          ? { publisher_platforms: (adSet.placements as any).publisher_platforms }
-          : {})
       };
+
+      // Normalize custom_audiences to expected array of objects with id
+      if (Array.isArray((targetingObj as any).custom_audiences)) {
+        (targetingObj as any).custom_audiences = (targetingObj as any).custom_audiences
+          .filter((v: any) => !!v)
+          .map((v: any) => (typeof v === 'string' || typeof v === 'number') ? { id: String(v) } : (v?.id ? { id: String(v.id) } : null))
+          .filter((v: any) => v && /^\d+$/.test(v.id));
+        if ((targetingObj as any).custom_audiences.length === 0) {
+          delete (targetingObj as any).custom_audiences;
+        }
+      }
 
       // Ensure no stray top-level interests leak through to the Graph API
       if (Object.prototype.hasOwnProperty.call(targetingObj, 'interests')) {
@@ -235,6 +246,17 @@ serve(async (req) => {
         targeting: JSON.stringify(targetingObj),
         status: adSet.status || 'PAUSED'
       });
+
+      // Apply placements as top-level params if present
+      if (placements && Array.isArray((placements as any).publisher_platforms) && (placements as any).publisher_platforms.length > 0) {
+        adSetParams.append('publisher_platforms', JSON.stringify((placements as any).publisher_platforms));
+      }
+      if (placements && Array.isArray((placements as any).facebook_positions) && (placements as any).facebook_positions.length > 0) {
+        adSetParams.append('facebook_positions', JSON.stringify((placements as any).facebook_positions));
+      }
+      if (placements && Array.isArray((placements as any).instagram_positions) && (placements as any).instagram_positions.length > 0) {
+        adSetParams.append('instagram_positions', JSON.stringify((placements as any).instagram_positions));
+      }
 
       let adSetResponse: Response;
       try {

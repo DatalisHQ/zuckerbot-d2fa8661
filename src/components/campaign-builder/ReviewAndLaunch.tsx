@@ -183,6 +183,7 @@ export const ReviewAndLaunch = ({
               age_min,
               age_max,
               ...(genders ? { genders } : {}),
+              // Backend resolves interests to IDs and nests under flexible_spec
               ...(interests ? { interests } : {})
             };
           })(),
@@ -191,7 +192,7 @@ export const ReviewAndLaunch = ({
           },
           status: 'PAUSED' as const
         })),
-        ads: adSets.flatMap((adSet, adSetIndex) => {
+         ads: adSets.flatMap((adSet, adSetIndex) => {
           const variants = adVariants[adSet.id] || [];
           return variants.map((variant, variantIndex) => ({
             name: `${adSet.name} - ${variant.headline}`,

@@ -188,11 +188,12 @@ export function CampaignLaunchManager({
           genders: segment.targeting_data.genders.map(g => g === 'male' ? 1 : 2),
           // Send raw keywords as strings; backend resolves to IDs and nests under flexible_spec
           interests: (segment.targeting_data.interests || []).filter(Boolean),
-          custom_audiences: audiencesToUse.find(aud => 
-            aud.segmentName === segment.segment
-          )?.audienceId ? [audiencesToUse.find(aud => 
-            aud.segmentName === segment.segment
-          ).audienceId] : undefined
+          custom_audiences: (() => {
+            const match = audiencesToUse.find(aud => aud.segmentName === segment.segment);
+            const id = match?.audienceId;
+            if (!id) return undefined;
+            return [{ id: String(id).replace(/^act_+/i, '') }];
+          })()
         },
         status: 'ACTIVE' as const
       })),
