@@ -125,6 +125,31 @@ serve(async (req) => {
     };
 
     const normalizedObjective = normalizeObjective(campaign.objective);
+
+    // Derive safe defaults for ad set optimization/billing based on objective
+    const deriveAdsetGoals = (objective: string) => {
+      switch (objective) {
+        case 'OUTCOME_TRAFFIC':
+        case 'LINK_CLICKS':
+          return { optimization_goal: 'LINK_CLICKS', billing_event: 'LINK_CLICKS' };
+        case 'OUTCOME_AWARENESS':
+        case 'REACH':
+        case 'BRAND_AWARENESS':
+          return { optimization_goal: 'REACH', billing_event: 'IMPRESSIONS' };
+        case 'OUTCOME_ENGAGEMENT':
+        case 'POST_ENGAGEMENT':
+          return { optimization_goal: 'POST_ENGAGEMENT', billing_event: 'IMPRESSIONS' };
+        case 'OUTCOME_LEADS':
+        case 'LEAD_GENERATION':
+          return { optimization_goal: 'LEAD_GENERATION', billing_event: 'IMPRESSIONS' };
+        case 'OUTCOME_SALES':
+        case 'CONVERSIONS':
+          return { optimization_goal: 'CONVERSIONS', billing_event: 'IMPRESSIONS' };
+        default:
+          return { optimization_goal: 'REACH', billing_event: 'IMPRESSIONS' };
+      }
+    };
+    const defaultAdsetGoals = deriveAdsetGoals(normalizedObjective);
     const campaignParams = new URLSearchParams({
       access_token: accessToken,
       name: campaign.name,
@@ -251,8 +276,9 @@ serve(async (req) => {
         name: adSet.name,
         // Client sends minor units already (e.g., cents). Do not convert again.
         daily_budget: String(adSet.daily_budget),
-        billing_event: adSet.billing_event,
-        optimization_goal: adSet.optimization_goal,
+        // Use backend-derived goals to avoid invalid combinations
+        billing_event: defaultAdsetGoals.billing_event,
+        optimization_goal: defaultAdsetGoals.optimization_goal,
         targeting: JSON.stringify(targetingObj),
         status: adSet.status || 'PAUSED'
       });
@@ -289,13 +315,19 @@ serve(async (req) => {
 
       if (!adSetResponse.ok) {
         const errorData = await adSetResponse.json().catch(() => ({}));
-        const fbMessage = errorData?.error?.message || errorData?.message || errorData || 'Unknown Facebook API error';
+        const fbMessage = errorData?.error?.message || errorData?.message || 'Unknown Facebook API error';
+        const fbUser = errorData?.error?.error_user_msg || errorData?.error_user_msg;
+        const fbData = errorData?.error?.error_data || errorData?.error_data;
+        const detailParts = [fbMessage];
+        if (fbUser) detailParts.push(String(fbUser));
+        if (fbData) detailParts.push(typeof fbData === 'string' ? fbData : JSON.stringify(fbData));
+        const details = detailParts.join(' | ');
         console.error(`Ad set ${i + 1} creation failed:`, errorData);
         return new Response(
           JSON.stringify({
             success: false,
             error: `Failed to create ad set ${i + 1}`,
-            details: fbMessage,
+            details,
             partialResults: { campaignId, adSetIds: createdAdSetIds },
             suggestion: 'Check targeting, budget, and placement settings for this ad set.'
           }),
