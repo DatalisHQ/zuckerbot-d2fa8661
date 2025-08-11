@@ -320,7 +320,7 @@ useEffect(() => {
           <section>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-semibold">Quick Actions</h3>
-              <Button onClick={() => navigate("/zuckerbot")}>
+              <Button onClick={() => navigate("/campaign-flow")}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create New Campaign
               </Button>
@@ -345,7 +345,7 @@ useEffect(() => {
                 </CardContent>
               </Card>
 
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/zuckerbot")}>
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/campaign-flow")}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <PlayCircle className="h-5 w-5" />
@@ -372,25 +372,6 @@ useEffect(() => {
               </Badge>
             </div>
 
-            {/* Draft Campaigns */}
-            {drafts.length > 0 && (
-              <div className="mb-6">
-                <h4 className="text-lg font-medium mb-3 text-orange-600">Draft Campaigns</h4>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {drafts.map((draft) => (
-                    <DraftCampaignCard
-                      key={draft.id}
-                      draft={draft}
-                      onContinue={handleContinueDraft}
-                      onEdit={handleEditDraft}
-                      onDelete={handleDeleteDraft}
-                      onLaunch={handleLaunchDraft}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-            
             {/* Facebook Campaigns */}
             {facebookCampaigns.length > 0 && (
               <div className="mb-6">
@@ -585,6 +566,25 @@ useEffect(() => {
                   </div>
                 )}
               </>
+            )}
+
+            {/* Draft Campaigns (moved to bottom) */}
+            {drafts.length > 0 && (
+              <div className="mt-8">
+                <h4 className="text-lg font-medium mb-3 text-orange-600">Draft Campaigns</h4>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {drafts.map((draft) => (
+                    <DraftCampaignCard
+                      key={draft.id}
+                      draft={draft}
+                      onContinue={handleContinueDraft}
+                      onEdit={handleEditDraft}
+                      onDelete={handleDeleteDraft}
+                      onLaunch={handleLaunchDraft}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
           </section>
 

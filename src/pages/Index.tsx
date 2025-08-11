@@ -94,7 +94,7 @@ const Index = () => {
     if (!profile.onboarding_completed) {
       navigate("/onboarding");
     } else {
-      navigate("/zuckerbot");
+      navigate("/dashboard");
     }
   };
 
@@ -148,10 +148,10 @@ const Index = () => {
               <div className="flex items-center space-x-4">
                 {user ? (
                   <>
-                     <Link to="/zuckerbot">
+                     <Link to="/dashboard">
                        <Button variant="ghost" className="text-foreground hover:text-primary">
                          <MessageCircle className="w-4 h-4 mr-2" />
-                         Open Chat
+                         Go to Dashboard
                        </Button>
                      </Link>
                      <Link to="/pricing">
@@ -273,10 +273,10 @@ const Index = () => {
                   
                   <div className="text-center">
                     {user ? (
-                      <Link to="/zuckerbot">
+                      <Link to="/dashboard">
                         <Button className="btn-primary">
                           <MessageCircle className="w-4 h-4 mr-2" />
-                          Continue This Conversation
+                          Go to Dashboard
                         </Button>
                       </Link>
                     ) : (
@@ -443,10 +443,10 @@ const Index = () => {
                   </>
                 ) : (
                   <div className="flex flex-col sm:flex-row gap-4">
-                    <Link to="/zuckerbot">
+                    <Link to="/dashboard">
                       <Button size="lg" className="btn-primary h-16 px-10 text-xl shadow-2xl hover:shadow-primary/25 transition-all duration-300">
                         <MessageCircle className="w-6 h-6 mr-3" />
-                        Continue Your Conversation
+                        Go to Dashboard
                       </Button>
                     </Link>
                     <Link to="/pricing">

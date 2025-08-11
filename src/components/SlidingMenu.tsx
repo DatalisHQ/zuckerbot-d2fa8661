@@ -65,12 +65,7 @@ export const SlidingMenu = () => {
       icon: Building2,
       description: "Analyze your brand positioning"
     },
-    {
-      title: "Competitor Analysis",
-      href: "/competitor-analysis",
-      icon: Users,
-      description: "Monitor and analyze competitors"
-    },
+    // Competitor Analysis removed for MVP
     {
       title: "Billing & Pricing",
       href: "/billing",
