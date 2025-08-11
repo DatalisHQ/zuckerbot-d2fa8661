@@ -324,6 +324,18 @@ serve(async (req) => {
 
       console.log('Final targeting payload for ad set', i + 1, JSON.stringify(targetingObj).slice(0, 400));
 
+      // Determine goals; if optimizing for conversions but no pixel is available, fallback to LINK_CLICKS
+      let goals = { ...defaultAdsetGoals } as { optimization_goal: string; billing_event: string };
+      let promotedObject: any = undefined;
+      if (goals.optimization_goal === 'CONVERSIONS') {
+        const pixelId = await getDefaultPixelId();
+        if (pixelId) {
+          promotedObject = { pixel_id: pixelId, custom_event_type: 'PURCHASE' };
+        } else {
+          goals = { optimization_goal: 'LINK_CLICKS', billing_event: 'LINK_CLICKS' };
+        }
+      }
+
       const adSetParams = new URLSearchParams({
         access_token: accessToken,
         campaign_id: campaignId,
@@ -331,8 +343,8 @@ serve(async (req) => {
         // Client sends minor units already (e.g., cents). Do not convert again.
         daily_budget: String(adSet.daily_budget),
         // Use backend-derived goals to avoid invalid combinations
-        billing_event: defaultAdsetGoals.billing_event,
-        optimization_goal: defaultAdsetGoals.optimization_goal,
+        billing_event: goals.billing_event,
+        optimization_goal: goals.optimization_goal,
         targeting: JSON.stringify(targetingObj),
         status: adSet.status || 'PAUSED'
       });
@@ -342,12 +354,9 @@ serve(async (req) => {
       // Add debug output from Graph
       adSetParams.append('debug', 'all');
 
-      // For CONVERSIONS optimization, try to attach a pixel as promoted_object
-      if (defaultAdsetGoals.optimization_goal === 'CONVERSIONS') {
-        const pixelId = await getDefaultPixelId();
-        if (pixelId) {
-          adSetParams.append('promoted_object', JSON.stringify({ pixel_id: pixelId }));
-        }
+      // Attach promoted_object if available
+      if (promotedObject) {
+        adSetParams.append('promoted_object', JSON.stringify(promotedObject));
       }
 
       // Placements are included in targetingObj; no top-level placement params
@@ -388,6 +397,14 @@ serve(async (req) => {
             success: false,
             error: `Failed to create ad set ${i + 1}`,
             details,
+            raw: errorData,
+            sent: {
+              billing_event: goals.billing_event,
+              optimization_goal: goals.optimization_goal,
+              targeting: targetingObj,
+              placements: placements || null,
+              promoted_object: promotedObject || null
+            },
             partialResults: { campaignId, adSetIds: createdAdSetIds },
             suggestion: 'Enable fewer placements, verify geo_locations, age/gender, budget min, and interest keywords.'
           }),
