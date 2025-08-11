@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,9 @@ export const CompetitorAnalysisDashboard = () => {
   const [selectedListId, setSelectedListId] = useState<string>('');
   const [playbook, setPlaybook] = useState<any>(null);
   const [isLoadingPlaybook, setIsLoadingPlaybook] = useState(false);
+  const [playbookError, setPlaybookError] = useState<string | null>(null);
   const { toast } = useToast();
+  const formRef = useRef<HTMLDivElement | null>(null);
 
   const handleQuickAnalysis = async () => {
     if (!quickAnalysisUrl.trim()) return;
@@ -54,7 +56,8 @@ export const CompetitorAnalysisDashboard = () => {
 
   useEffect(() => {
     (async () => {
-      if (!selectedListId) return;
+      setPlaybookError(null);
+      if (!selectedListId) { setPlaybook(null); return; }
       setIsLoadingPlaybook(true);
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -63,9 +66,16 @@ export const CompetitorAnalysisDashboard = () => {
           body: { competitorListId: selectedListId, userId: user.id }
         });
         if (error) throw error;
-        setPlaybook(data?.playbook || null);
+        if (!data?.playbook) {
+          setPlaybook(null);
+          setPlaybookError('No playbook available yet for this list. Create a new analysis below.');
+        } else {
+          setPlaybook(data.playbook);
+        }
       } catch (e: any) {
-        toast({ title: 'Failed to load playbook', description: e.message || 'Please try again', variant: 'destructive' });
+        console.warn('Failed to load playbook', e);
+        setPlaybookError('Failed to load playbook. Create a new analysis below.');
+        setPlaybook(null);
       } finally {
         setIsLoadingPlaybook(false);
       }
@@ -133,9 +143,9 @@ export const CompetitorAnalysisDashboard = () => {
         </div>
       </div>
 
-      {/* Quick Action Cards */}
-      <div className="grid md:grid-cols-3 gap-6">
-        <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer">
+      {/* Primary action only: New Analysis */}
+      <div className="grid md:grid-cols-1 gap-6">
+        <Card className="group hover:shadow-lg transition-all duration-300">
           <CardHeader className="text-center">
             <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-2 glow-sm group-hover:glow-primary transition-all duration-300">
               <Target className="w-6 h-6 text-primary-foreground" />
@@ -146,45 +156,9 @@ export const CompetitorAnalysisDashboard = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <Button variant="outline" className="w-full">
+            <Button variant="outline" className="w-full" onClick={() => formRef.current?.scrollIntoView({ behavior: 'smooth' })}>
               <Plus className="w-4 h-4 mr-2" />
               New Analysis
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer">
-          <CardHeader className="text-center">
-            <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-2 glow-sm group-hover:glow-primary transition-all duration-300">
-              <BarChart3 className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <CardTitle>Ad Intelligence</CardTitle>
-            <CardDescription>
-              Monitor competitor Facebook ads and campaigns
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center">
-            <Button variant="outline" className="w-full">
-              <Eye className="w-4 h-4 mr-2" />
-              View Ad Library
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer">
-          <CardHeader className="text-center">
-            <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center mx-auto mb-2 glow-sm group-hover:glow-primary transition-all duration-300">
-              <TrendingUp className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <CardTitle>Market Intelligence</CardTitle>
-            <CardDescription>
-              Discover trends and opportunities in your market
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center">
-            <Button variant="outline" className="w-full">
-              <Zap className="w-4 h-4 mr-2" />
-              Generate Report
             </Button>
           </CardContent>
         </Card>
@@ -225,7 +199,11 @@ export const CompetitorAnalysisDashboard = () => {
           </div>
 
           {isLoadingPlaybook && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading playbook…</div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">Loading playbook…</div>
+          )}
+
+          {playbookError && (
+            <div className="text-sm text-muted-foreground">{playbookError}</div>
           )}
 
           {playbook && (
@@ -282,7 +260,7 @@ export const CompetitorAnalysisDashboard = () => {
       </Card>
 
       {/* Main Analysis Form */}
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto" ref={formRef}>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

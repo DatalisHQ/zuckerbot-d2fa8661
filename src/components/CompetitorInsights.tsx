@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, TrendingUp, Target, Lightbulb, ExternalLink, AlertCircle, BarChart3 } from "lucide-react";
+import { TrendingUp, Target, Lightbulb, ExternalLink, AlertCircle, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AudienceSegments, type AudienceSegment } from './AudienceSegments';
@@ -209,7 +209,7 @@ export const CompetitorInsights = ({
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center space-y-4">
-              <Loader2 className="h-8 w-8 animate-spin" />
+              <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
               <div className="text-center">
                 <h3 className="text-lg font-semibold">Analyzing Competitor Strategies</h3>
                 <p className="text-sm text-muted-foreground">

@@ -38,7 +38,7 @@ export default function FAQ() {
     },
     {
       question: "Can ZuckerBot integrate with my Facebook Ads Manager?",
-      answer: "Currently, ZuckerBot provides strategic guidance and recommendations. Direct integration with Facebook Ads Manager is planned for future releases."
+      answer: "Yes. ZuckerBot integrates with Facebook Ads Manager for campaign creation and management."
     },
     {
       question: "What's included in the Agency plan?",

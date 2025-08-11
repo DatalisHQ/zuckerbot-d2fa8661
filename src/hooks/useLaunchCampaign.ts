@@ -46,7 +46,7 @@ export function useLaunchCampaign() {
         });
 
         if (error) {
-          // Supabase edge functions return structured error info; pass it along
+          // Edge function call failed at transport layer
           const message = (error as any)?.message || 'Failed to launch Facebook campaign';
           const details = (error as any)?.details || '';
           throw new Error(`${message}${details ? ` | ${details}` : ''}`);

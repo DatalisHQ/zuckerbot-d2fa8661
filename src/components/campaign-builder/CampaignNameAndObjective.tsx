@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,6 +7,46 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import { CalendarIcon } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+
+function PrefillFromBrand({ onPrefill }: { onPrefill: (name: string) => void }) {
+  const [options, setOptions] = useState<{ id: string; brand_name: string; brand_url: string | null }[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase
+          .from('brand_analysis')
+          .select('id, brand_name, brand_url')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        setOptions(data || []);
+      } catch {}
+    })();
+  }, []);
+  if (!options.length) return null;
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <Label className="text-xs text-muted-foreground">Prefill from brand:</Label>
+      <Select onValueChange={(id) => {
+        const sel = options.find(o => o.id === id);
+        if (sel) onPrefill(`${sel.brand_name} Campaign - ${new Date().toLocaleDateString()}`);
+      }}>
+        <SelectTrigger className="h-8 w-[240px]">
+          <SelectValue placeholder="Select a brand" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.id} value={o.id}>{o.brand_name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 interface CampaignNameAndObjectiveProps {
   campaignName: string;
@@ -20,23 +60,23 @@ interface CampaignNameAndObjectiveProps {
 }
 
 const OBJECTIVES = {
-  'AWARENESS': {
+  'OUTCOME_AWARENESS': {
     name: 'Brand Awareness',
     description: 'Increase brand recognition and reach more people'
   },
-  'TRAFFIC': {
+  'OUTCOME_TRAFFIC': {
     name: 'Website Traffic',
     description: 'Drive visits to your website or app'
   },
-  'ENGAGEMENT': {
+  'OUTCOME_ENGAGEMENT': {
     name: 'Engagement',
     description: 'Get more likes, comments, shares, and interactions'
   },
-  'LEADS': {
+  'OUTCOME_LEADS': {
     name: 'Lead Generation',
     description: 'Collect contact information from potential customers'
   },
-  'SALES': {
+  'OUTCOME_SALES': {
     name: 'Conversions/Sales',
     description: 'Drive purchases and other valuable actions'
   }
@@ -69,6 +109,32 @@ export const CampaignNameAndObjective = ({
 
   const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
   const minutes = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+
+  // Prefill: fetch the user's most recent active brand from onboarding
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data, error } = await supabase
+          .from('brand_analysis')
+          .select('brand_name, brand_url, business_category')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) return;
+        if (data) {
+          if (!campaignName) {
+            // Prefill campaign name with brand + date
+            const suggested = `${data.brand_name || 'Campaign'} - ${new Date().toLocaleDateString()}`;
+            onCampaignNameChange(suggested);
+          }
+        }
+      } catch {}
+    })();
+  }, []);
 
   const timeframeError = useMemo(() => {
     if (!startDate || !endDate) return 'Please select both a start and end date/time';
@@ -104,6 +170,8 @@ export const CampaignNameAndObjective = ({
               placeholder="e.g., Holiday Sale 2024"
               className="mt-2"
             />
+            {/* Prefill helper from brand profiles */}
+            <PrefillFromBrand onPrefill={(name) => onCampaignNameChange(name)} />
           </CardContent>
         </Card>
 

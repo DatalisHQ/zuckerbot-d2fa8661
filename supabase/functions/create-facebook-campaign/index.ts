@@ -43,39 +43,62 @@ serve(async (req) => {
     
     let { adAccountId, campaign, adSets, ads } = payload;
 
-    // Normalize adAccountId in case 'act_' prefix was included by client
-    if (adAccountId.startsWith('act_')) {
-      adAccountId = adAccountId.replace('act_', '');
-    }
+    // Normalize adAccountId: strip any leading 'act_' (even if duplicated)
+    adAccountId = adAccountId.replace(/^act_+/i, '');
 
     // Validate required fields
     if (!adAccountId || !campaign || !adSets || !ads) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: adAccountId, campaign, adSets, ads' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Missing required fields: adAccountId, campaign, adSets, ads' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const accessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
     if (!accessToken) {
       return new Response(
-        JSON.stringify({ error: 'Facebook access token not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Facebook access token not configured' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const apiVersion = Deno.env.get('FACEBOOK_API_VERSION') || 'v21.0';
     const baseUrl = `https://graph.facebook.com/${apiVersion}`;
 
+    // Resolve interest names to valid numeric IDs using Facebook Interest Search
+    const interestCache = new Map<string, { id: string; name: string }>();
+    const isNumeric = (v: any) => /^\d+$/.test(String(v || ''));
+    const resolveInterest = async (term: string): Promise<{ id: string; name: string } | null> => {
+      const key = term.toLowerCase();
+      if (interestCache.has(key)) return interestCache.get(key)!;
+      try {
+        const url = new URL(`${baseUrl}/search`);
+        url.searchParams.set('type', 'adinterest');
+        url.searchParams.set('q', JSON.stringify([term]));
+        url.searchParams.set('limit', '1');
+        url.searchParams.set('access_token', accessToken!);
+        const res = await fetch(url.toString());
+        const data = await res.json().catch(() => ({}));
+        const first = data?.data?.[0];
+        if (first?.id && isNumeric(first.id)) {
+          const entry = { id: String(first.id), name: String(first.name || term) };
+          interestCache.set(key, entry);
+          return entry;
+        }
+      } catch { /* ignore */ }
+      return null;
+    };
+
     console.log('Starting Facebook campaign creation for account:', adAccountId);
 
     // Step 1: Create Campaign
     console.log('Creating campaign:', campaign.name);
 
-    // Map legacy objectives to Outcome-based ones (required on newer API versions)
+    // Map legacy/abstract objectives to valid Graph API values
     const normalizeObjective = (obj: string) => {
       const o = (obj || '').toUpperCase();
       const map: Record<string, string> = {
+        'AWARENESS': 'OUTCOME_AWARENESS',
         'TRAFFIC': 'OUTCOME_TRAFFIC',
         'LINK_CLICKS': 'OUTCOME_TRAFFIC',
         'CONVERSIONS': 'OUTCOME_SALES',
@@ -86,7 +109,19 @@ serve(async (req) => {
         'APP_INSTALLS': 'APP_INSTALLS',
         'ENGAGEMENT': 'OUTCOME_ENGAGEMENT'
       };
-      return map[o] || o;
+      const allowed = new Set([
+        'APP_INSTALLS','BRAND_AWARENESS','EVENT_RESPONSES','LEAD_GENERATION','LINK_CLICKS','LOCAL_AWARENESS','MESSAGES','OFFER_CLAIMS','PAGE_LIKES','POST_ENGAGEMENT','PRODUCT_CATALOG_SALES','REACH','STORE_VISITS','VIDEO_VIEWS','OUTCOME_AWARENESS','OUTCOME_ENGAGEMENT','OUTCOME_LEADS','OUTCOME_SALES','OUTCOME_TRAFFIC','OUTCOME_APP_PROMOTION','CONVERSIONS'
+      ]);
+      const normalized = map[o] || o;
+      // If still not allowed but looks like a known alias, fallback sensibly
+      if (!allowed.has(normalized)) {
+        if (normalized === 'AWARENESS') return 'OUTCOME_AWARENESS';
+        if (normalized === 'TRAFFIC') return 'OUTCOME_TRAFFIC';
+        if (normalized === 'ENGAGEMENT') return 'OUTCOME_ENGAGEMENT';
+        if (normalized === 'LEAD_GENERATION' || normalized === 'LEADS') return 'OUTCOME_LEADS';
+        if (normalized === 'SALES' || normalized === 'PURCHASE' || normalized === 'CONVERSIONS') return 'OUTCOME_SALES';
+      }
+      return normalized;
     };
 
     const normalizedObjective = normalizeObjective(campaign.objective);
@@ -113,11 +148,12 @@ serve(async (req) => {
     } catch (networkError) {
       return new Response(
         JSON.stringify({
+          success: false,
           error: 'Network error creating campaign',
           details: String(networkError),
           suggestion: 'Check network connectivity and Facebook API availability.'
         }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -127,11 +163,12 @@ serve(async (req) => {
       console.error('Campaign creation failed:', errorData);
       return new Response(
         JSON.stringify({
+          success: false,
           error: 'Failed to create campaign',
           details: fbMessage,
           suggestion: 'Check your Facebook ad account permissions, campaign objective, and naming conventions.'
         }),
-        { status: campaignResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -147,12 +184,45 @@ serve(async (req) => {
       console.log(`Creating ad set ${i + 1}/${adSets.length}:`, adSet.name);
 
       // Merge placements.publisher_platforms into targeting if present
-      const targetingObj = {
-        ...(adSet.targeting || {}),
+      const baseTargeting = { ...(adSet.targeting || {}) } as any;
+      // Resolve interests provided as names into numeric IDs
+      let validInterests: { id: string; name: string }[] = [];
+      if (Array.isArray(baseTargeting.interests)) {
+        const resolved: any[] = [];
+        for (const interest of baseTargeting.interests) {
+          if (isNumeric(interest?.id)) {
+            resolved.push({ id: String(interest.id), name: String(interest.name || '') });
+          } else if (typeof interest === 'string' && interest.trim()) {
+            const hit = await resolveInterest(interest.trim());
+            if (hit) resolved.push(hit);
+          } else if (interest?.name) {
+            const hit = await resolveInterest(String(interest.name));
+            if (hit) resolved.push(hit);
+          }
+        }
+        validInterests = resolved.filter((it: any) => isNumeric(it?.id));
+        // remove top-level interests; we'll add flexible_spec instead
+        delete baseTargeting.interests;
+      }
+
+      const targetingObj: any = {
+        ...baseTargeting,
         ...(adSet.placements && (adSet.placements as any).publisher_platforms
           ? { publisher_platforms: (adSet.placements as any).publisher_platforms }
           : {})
       };
+
+      // Ensure no stray top-level interests leak through to the Graph API
+      if (Object.prototype.hasOwnProperty.call(targetingObj, 'interests')) {
+        delete targetingObj.interests;
+      }
+
+      // If we have valid interests, attach them under flexible_spec as per current API
+      if (validInterests.length > 0) {
+        targetingObj.flexible_spec = [ { interests: validInterests } ];
+      }
+
+      console.log('Final targeting payload for ad set', i + 1, JSON.stringify(targetingObj).slice(0, 400));
 
       const adSetParams = new URLSearchParams({
         access_token: accessToken,
@@ -175,12 +245,13 @@ serve(async (req) => {
       } catch (networkError) {
         return new Response(
           JSON.stringify({
+            success: false,
             error: `Network error creating ad set ${i + 1}`,
             details: String(networkError),
             partialResults: { campaignId, adSetIds: createdAdSetIds },
             suggestion: 'Retry later or verify Facebook API status.'
           }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -190,12 +261,13 @@ serve(async (req) => {
         console.error(`Ad set ${i + 1} creation failed:`, errorData);
         return new Response(
           JSON.stringify({
+            success: false,
             error: `Failed to create ad set ${i + 1}`,
             details: fbMessage,
             partialResults: { campaignId, adSetIds: createdAdSetIds },
             suggestion: 'Check targeting, budget, and placement settings for this ad set.'
           }),
-          { status: adSetResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -223,12 +295,13 @@ serve(async (req) => {
       if (!creativeId || !/^\d+$/.test(String(creativeId))) {
         return new Response(
           JSON.stringify({
+            success: false,
             error: `Invalid creative_id for ad ${i + 1}`,
             details: 'creative_id must be a numeric ID of an existing AdCreative. Create the creative first, then pass its ID.',
             partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
             suggestion: 'Create image/video AdCreative via the /adcreatives endpoint and pass its ID in the payload.'
           }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -249,12 +322,13 @@ serve(async (req) => {
       } catch (networkError) {
         return new Response(
           JSON.stringify({
+            success: false,
             error: `Network error creating ad ${i + 1}`,
             details: String(networkError),
             partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
             suggestion: 'Retry later or verify Facebook API status.'
           }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -264,12 +338,13 @@ serve(async (req) => {
         console.error(`Ad ${i + 1} creation failed:`, errorData);
         return new Response(
           JSON.stringify({
+            success: false,
             error: `Failed to create ad ${i + 1}`,
             details: fbMessage,
             partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
             suggestion: 'Check creative assets, ad copy, and Facebook ad policies.'
           }),
-          { status: adResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -302,11 +377,12 @@ serve(async (req) => {
     console.error('Error in create-facebook-campaign function:', error);
     return new Response(
       JSON.stringify({
+        success: false,
         error: error.message || 'Unknown error',
         details: error.stack || null,
         suggestion: 'Try again or contact support if the issue persists.'
       }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

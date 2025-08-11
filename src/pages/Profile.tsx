@@ -298,20 +298,7 @@ export default function Profile() {
               
               <Separator />
               
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Conversations Used</span>
-                  <span>{profile.conversations_used}/{profile.conversation_limit}</span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-2">
-                  <div 
-                    className="bg-primary h-2 rounded-full" 
-                    style={{ 
-                      width: `${Math.min((profile.conversations_used / profile.conversation_limit) * 100, 100)}%` 
-                    }}
-                  />
-                </div>
-              </div>
+              {/* Chat usage removed */}
 
               <Button className="w-full" variant="outline" asChild>
                 <a href="/pricing">Upgrade Plan</a>

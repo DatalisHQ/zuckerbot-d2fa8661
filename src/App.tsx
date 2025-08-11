@@ -18,7 +18,9 @@ import Files from "./pages/Files";
 import Profile from "./pages/Profile";
 import ConversationLayout from "./pages/ConversationLayout";
 import AdPerformance from "./pages/AdPerformance";
-import { CompetitorFlow } from "./pages/CompetitorFlow";
+// import { CompetitorFlow } from "./pages/CompetitorFlow";
+import CompetitorAnalysis from "./pages/CompetitorAnalysis";
+import StrategicInsights from "./pages/StrategicInsights";
 import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
 import FAQ from "./pages/FAQ";
@@ -140,20 +142,24 @@ function App() {
           <BrowserRouter>
             <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/zuckerbot" />} />
+            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/dashboard" />} />
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
               <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
-              <Route path="/zuckerbot" element={user ? <ZuckerBot /> : <Navigate to="/auth" />} />
+              {/* Archive chat: route /zuckerbot to dashboard */}
+              <Route path="/zuckerbot" element={<Navigate to="/dashboard" replace />} />
               <Route path="/admin" element={user ? <AdminDashboard /> : <Navigate to="/auth" />} />
               <Route path="/campaign-flow" element={user ? <CampaignFlow /> : <Navigate to="/auth" />} />
               <Route path="/conversations" element={user ? <ConversationLayout><Conversations /></ConversationLayout> : <Navigate to="/auth" />} />
               <Route path="/files" element={user ? <ConversationLayout><Files /></ConversationLayout> : <Navigate to="/auth" />} />
               <Route path="/profile" element={user ? <ConversationLayout><Profile /></ConversationLayout> : <Navigate to="/auth" />} />
             <Route path="/ad-performance" element={user ? <AdPerformance /> : <Navigate to="/auth" />} />
-            <Route path="/competitor-flow" element={user ? <CompetitorFlow brandAnalysisId="" brandUrl="" onFlowComplete={() => {}} /> : <Navigate to="/auth" />} />
+            <Route path="/competitor-analysis" element={user ? <CompetitorAnalysis /> : <Navigate to="/auth" />} />
+            {/* Legacy redirect */}
+            <Route path="/competitor-flow" element={<Navigate to="/competitor-analysis" replace />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
             <Route path="/faq" element={<FAQ />} />
+            <Route path="/strategic-insights" element={user ? <StrategicInsights /> : <Navigate to="/auth" />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
             </Routes>

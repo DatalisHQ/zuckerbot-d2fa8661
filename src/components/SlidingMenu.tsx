@@ -42,8 +42,8 @@ export const SlidingMenu = () => {
       description: "Campaign overview and performance"
     },
     {
-      title: "Campaigns",
-      href: "/zuckerbot",
+      title: "Start Campaign",
+      href: "/campaign-flow",
       icon: Zap,
       description: "Create and manage ad campaigns"
     },
@@ -67,7 +67,7 @@ export const SlidingMenu = () => {
     },
     {
       title: "Competitor Analysis",
-      href: "/dashboard?section=competitor-analysis",
+      href: "/competitor-analysis",
       icon: Users,
       description: "Monitor and analyze competitors"
     },

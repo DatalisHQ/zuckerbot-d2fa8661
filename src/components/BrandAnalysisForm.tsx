@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,29 @@ interface BrandAnalysisFormProps {
 export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete }: BrandAnalysisFormProps = {}) => {
   const { toast } = useToast();
   const [url, setUrl] = useState('');
+  const [userBrands, setUserBrands] = useState<{ id: string; brand_name: string; brand_url: string }[]>([]);
+  // Prefill: load user brands from onboarding and offer quick selection for URL
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase
+          .from('brand_analysis')
+          .select('id, brand_name, brand_url')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        setUserBrands((data || []).filter(b => !!b.brand_url) as any);
+        // Auto-prefill URL with the most recent active brand
+        if ((data || []).length && !url) {
+          const first = (data || [])[0];
+          if (first?.brand_url) setUrl(first.brand_url.replace(/^https?:\/\//i, ''));
+        }
+      } catch {}
+    })();
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<BrandAnalysis | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
@@ -191,6 +214,22 @@ export const BrandAnalysisForm = ({ campaignId, existingData, onAnalysisComplete
                 disabled={isLoading}
                 className="flex-1"
               />
+              {/* Quick prefill from existing brands */}
+              {userBrands.length > 0 && (
+                <select
+                  className="h-10 border rounded px-2"
+                  onChange={(e) => {
+                    const sel = userBrands.find(b => b.id === e.target.value);
+                    if (sel?.brand_url) setUrl(sel.brand_url.replace(/^https?:\/\//i, ''));
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Select brand</option>
+                  {userBrands.map(b => (
+                    <option key={b.id} value={b.id}>{b.brand_name}</option>
+                  ))}
+                </select>
+              )}
               <Button type="submit" disabled={isLoading || !url}>
                 {isLoading ? (
                   <>

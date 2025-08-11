@@ -154,7 +154,7 @@ export const ReviewAndLaunch = ({
 
       // Step 2: Convert campaign data to launch format
       const launchPayload = {
-        adAccountId: selectedAdAccount,
+        adAccountId: selectedAdAccount.replace(/^act_+/i, ''),
         campaign: {
           name: campaignName,
           objective: objective,
@@ -175,7 +175,7 @@ export const ReviewAndLaunch = ({
               ? t.genders.map(g => (g === 'male' ? 1 : 2))
               : undefined;
             const interests = Array.isArray(t.interests) && t.interests.length > 0
-              ? t.interests.map((name) => ({ id: name, name }))
+              ? t.interests.map((name) => ({ name }))
               : undefined;
             const countries = Array.isArray(t.countries) && t.countries.length > 0 ? t.countries : ['US'];
             return {

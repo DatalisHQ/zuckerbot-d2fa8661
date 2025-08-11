@@ -169,8 +169,8 @@ export function CampaignLaunchManager({
     }
 
     // Prepare campaign payload
-    const campaignPayload = {
-      adAccountId: selectedAdAccount,
+      const campaignPayload = {
+        adAccountId: selectedAdAccount.replace(/^act_+/i, ''),
       campaign: {
         name: campaignName,
         objective: campaignObjective,
@@ -186,10 +186,8 @@ export function CampaignLaunchManager({
           age_min: segment.targeting_data.age_min,
           age_max: segment.targeting_data.age_max,
           genders: segment.targeting_data.genders.map(g => g === 'male' ? 1 : 2),
-          interests: segment.targeting_data.interests.map(interest => ({
-            id: interest,
-            name: interest
-          })),
+          // Send raw keywords as strings; backend resolves to IDs and nests under flexible_spec
+          interests: (segment.targeting_data.interests || []).filter(Boolean),
           custom_audiences: audiencesToUse.find(aud => 
             aud.segmentName === segment.segment
           )?.audienceId ? [audiencesToUse.find(aud => 

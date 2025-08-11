@@ -42,6 +42,9 @@ export const Navbar = () => {
               </Button>
             )}
             <Button variant="ghost" asChild>
+              <Link to="/competitor-analysis">Competitor Analysis</Link>
+            </Button>
+            <Button variant="ghost" asChild>
               <Link to="/profile">
                 <User className="h-4 w-4 mr-2" />
                 Profile
