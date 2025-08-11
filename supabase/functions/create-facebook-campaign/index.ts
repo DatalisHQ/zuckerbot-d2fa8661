@@ -248,6 +248,29 @@ serve(async (req) => {
         ...baseTargeting,
       };
 
+      // Ensure required geo_locations with safe fallback
+      const hasGeo = targetingObj?.geo_locations && (
+        Array.isArray(targetingObj.geo_locations.countries) ? targetingObj.geo_locations.countries.length > 0 : true
+      );
+      if (!hasGeo) {
+        targetingObj.geo_locations = { countries: ['US'] };
+      }
+
+      // Normalize age range defaults
+      if (typeof targetingObj.age_min !== 'number' || targetingObj.age_min < 13) targetingObj.age_min = 18;
+      if (typeof targetingObj.age_max !== 'number' || targetingObj.age_max < targetingObj.age_min) targetingObj.age_max = 65;
+
+      // Normalize genders: allow 1 or 2; if both/all -> omit
+      if (Array.isArray(targetingObj.genders)) {
+        const vals = (targetingObj.genders as any[]).map((v) => Number(v)).filter((v) => v === 1 || v === 2);
+        const unique = Array.from(new Set(vals));
+        if (unique.length !== 1) {
+          delete targetingObj.genders;
+        } else {
+          targetingObj.genders = unique;
+        }
+      }
+
       // Merge placements into targeting as per Graph API spec
       if (placements && Array.isArray((placements as any).publisher_platforms) && (placements as any).publisher_platforms.length > 0) {
         (targetingObj as any).publisher_platforms = (placements as any).publisher_platforms;
@@ -295,7 +318,7 @@ serve(async (req) => {
       });
 
       // Use validate_only to get detailed errors without creating objects
-      adSetParams.append('execution_options', JSON.stringify(['validate_only']));
+      adSetParams.append('execution_options', 'validate_only');
 
       // Placements are included in targetingObj; no top-level placement params
 
