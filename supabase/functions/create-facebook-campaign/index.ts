@@ -188,11 +188,21 @@ serve(async (req) => {
 
       // Normalize targeting
       const baseTargeting = { ...(adSet.targeting || {}) } as any;
+      // Hard sanitize: never allow top-level interests to pass to Graph
+      if (Object.prototype.hasOwnProperty.call(baseTargeting, 'interests')) {
+        delete (baseTargeting as any).interests;
+      }
+      // Support alternate key from clients
+      const incomingInterestTerms = Array.isArray((adSet.targeting as any)?.interest_terms)
+        ? (adSet.targeting as any).interest_terms
+        : Array.isArray((adSet.targeting as any)?.interests)
+          ? (adSet.targeting as any).interests
+          : [];
       // Resolve interests provided as names into numeric IDs
       let validInterests: { id: string; name: string }[] = [];
-      if (Array.isArray(baseTargeting.interests)) {
+      if (Array.isArray(incomingInterestTerms)) {
         const resolved: any[] = [];
-        for (const interest of baseTargeting.interests) {
+        for (const interest of incomingInterestTerms) {
           if (isNumeric(interest?.id)) {
             resolved.push({ id: String(interest.id), name: String(interest.name || '') });
           } else if (typeof interest === 'string' && interest.trim()) {
@@ -204,8 +214,9 @@ serve(async (req) => {
           }
         }
         validInterests = resolved.filter((it: any) => isNumeric(it?.id));
-        // remove top-level interests; we'll add flexible_spec instead
-        delete baseTargeting.interests;
+        // Ensure both potential keys are removed from targeting clone
+        delete (baseTargeting as any).interests;
+        delete (baseTargeting as any).interest_terms;
       }
 
       const targetingObj: any = {
@@ -224,9 +235,8 @@ serve(async (req) => {
       }
 
       // Ensure no stray top-level interests leak through to the Graph API
-      if (Object.prototype.hasOwnProperty.call(targetingObj, 'interests')) {
-        delete targetingObj.interests;
-      }
+      delete (targetingObj as any).interests;
+      delete (targetingObj as any).interest_terms;
 
       // If we have valid interests, attach them under flexible_spec as per current API
       if (validInterests.length > 0) {

@@ -174,8 +174,8 @@ export const ReviewAndLaunch = ({
             const genders = Array.isArray(t.genders) && t.genders.length > 0
               ? t.genders.map(g => (g === 'male' ? 1 : 2))
               : undefined;
-            const interests = Array.isArray(t.interests) && t.interests.length > 0
-              ? t.interests.map((name) => ({ name }))
+            const interest_terms = Array.isArray(t.interests) && t.interests.length > 0
+              ? t.interests
               : undefined;
             const countries = Array.isArray(t.countries) && t.countries.length > 0 ? t.countries : ['US'];
             return {
@@ -183,8 +183,8 @@ export const ReviewAndLaunch = ({
               age_min,
               age_max,
               ...(genders ? { genders } : {}),
-              // Backend resolves interests to IDs and nests under flexible_spec
-              ...(interests ? { interests } : {})
+              // Backend resolves interest_terms and nests under flexible_spec
+              ...(interest_terms ? { interest_terms } : {})
             };
           })(),
           placements: {

@@ -186,8 +186,8 @@ export function CampaignLaunchManager({
           age_min: segment.targeting_data.age_min,
           age_max: segment.targeting_data.age_max,
           genders: segment.targeting_data.genders.map(g => g === 'male' ? 1 : 2),
-          // Send raw keywords as strings; backend resolves to IDs and nests under flexible_spec
-          interests: (segment.targeting_data.interests || []).filter(Boolean),
+          // Send raw interest keywords under a separate key to avoid Graph API validation
+          interest_terms: (segment.targeting_data.interests || []).filter(Boolean),
           custom_audiences: (() => {
             const match = audiencesToUse.find(aud => aud.segmentName === segment.segment);
             const id = match?.audienceId;
