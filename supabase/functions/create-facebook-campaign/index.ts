@@ -248,6 +248,17 @@ serve(async (req) => {
         ...baseTargeting,
       };
 
+      // Merge placements into targeting as per Graph API spec
+      if (placements && Array.isArray((placements as any).publisher_platforms) && (placements as any).publisher_platforms.length > 0) {
+        (targetingObj as any).publisher_platforms = (placements as any).publisher_platforms;
+      }
+      if (placements && Array.isArray((placements as any).facebook_positions) && (placements as any).facebook_positions.length > 0) {
+        (targetingObj as any).facebook_positions = (placements as any).facebook_positions;
+      }
+      if (placements && Array.isArray((placements as any).instagram_positions) && (placements as any).instagram_positions.length > 0) {
+        (targetingObj as any).instagram_positions = (placements as any).instagram_positions;
+      }
+
       // Normalize custom_audiences to expected array of objects with id
       if (Array.isArray((targetingObj as any).custom_audiences)) {
         (targetingObj as any).custom_audiences = (targetingObj as any).custom_audiences
@@ -283,16 +294,10 @@ serve(async (req) => {
         status: adSet.status || 'PAUSED'
       });
 
-      // Apply placements as top-level params if present
-      if (placements && Array.isArray((placements as any).publisher_platforms) && (placements as any).publisher_platforms.length > 0) {
-        adSetParams.append('publisher_platforms', JSON.stringify((placements as any).publisher_platforms));
-      }
-      if (placements && Array.isArray((placements as any).facebook_positions) && (placements as any).facebook_positions.length > 0) {
-        adSetParams.append('facebook_positions', JSON.stringify((placements as any).facebook_positions));
-      }
-      if (placements && Array.isArray((placements as any).instagram_positions) && (placements as any).instagram_positions.length > 0) {
-        adSetParams.append('instagram_positions', JSON.stringify((placements as any).instagram_positions));
-      }
+      // Use validate_only to get detailed errors without creating objects
+      adSetParams.append('execution_options', JSON.stringify(['validate_only']));
+
+      // Placements are included in targetingObj; no top-level placement params
 
       let adSetResponse: Response;
       try {
@@ -329,7 +334,7 @@ serve(async (req) => {
             error: `Failed to create ad set ${i + 1}`,
             details,
             partialResults: { campaignId, adSetIds: createdAdSetIds },
-            suggestion: 'Check targeting, budget, and placement settings for this ad set.'
+            suggestion: 'Enable fewer placements, verify geo_locations, age/gender, budget min, and interest keywords.'
           }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
