@@ -363,6 +363,19 @@ useEffect(() => {
             </div>
           </section>
 
+          {/* Performance Overview (moved up) */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold">Performance Overview</h3>
+              {selectedCampaign && (
+                <Badge variant="outline" className="text-sm">
+                  Viewing: {selectedCampaign.campaign_name}
+                </Badge>
+              )}
+            </div>
+            <FacebookAdsPerformance selectedCampaign={selectedCampaign} />
+          </section>
+
           {/* Campaigns Section */}
           <section>
             <div className="flex items-center justify-between mb-4">
@@ -588,18 +601,7 @@ useEffect(() => {
             )}
           </section>
 
-          {/* Facebook Ads Performance */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Performance Overview</h3>
-              {selectedCampaign && (
-                <Badge variant="outline" className="text-sm">
-                  Viewing: {selectedCampaign.campaign_name}
-                </Badge>
-              )}
-            </div>
-            <FacebookAdsPerformance selectedCampaign={selectedCampaign} />
-          </section>
+          {/* Performance Overview moved above */}
         </div>
       </main>
     </div>
