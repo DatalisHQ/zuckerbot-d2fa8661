@@ -150,6 +150,26 @@ serve(async (req) => {
       }
     };
     const defaultAdsetGoals = deriveAdsetGoals(normalizedObjective);
+
+    // Cache a discovered pixel id per request if needed for CONVERSIONS
+    let discoveredPixelId: string | null = null;
+    const getDefaultPixelId = async (): Promise<string | null> => {
+      if (discoveredPixelId) return discoveredPixelId;
+      try {
+        const url = new URL(`${baseUrl}/act_${adAccountId}/adspixels`);
+        url.searchParams.set('fields', 'id');
+        url.searchParams.set('limit', '1');
+        url.searchParams.set('access_token', accessToken!);
+        const res = await fetch(url.toString());
+        const data = await res.json().catch(() => ({}));
+        const first = data?.data?.[0];
+        if (first?.id) {
+          discoveredPixelId = String(first.id);
+          return discoveredPixelId;
+        }
+      } catch { /* ignore */ }
+      return null;
+    };
     const campaignParams = new URLSearchParams({
       access_token: accessToken,
       name: campaign.name,
@@ -319,6 +339,16 @@ serve(async (req) => {
 
       // Use validate_only to get detailed errors without creating objects
       adSetParams.append('execution_options', 'validate_only');
+      // Add debug output from Graph
+      adSetParams.append('debug', 'all');
+
+      // For CONVERSIONS optimization, try to attach a pixel as promoted_object
+      if (defaultAdsetGoals.optimization_goal === 'CONVERSIONS') {
+        const pixelId = await getDefaultPixelId();
+        if (pixelId) {
+          adSetParams.append('promoted_object', JSON.stringify({ pixel_id: pixelId }));
+        }
+      }
 
       // Placements are included in targetingObj; no top-level placement params
 
@@ -349,6 +379,8 @@ serve(async (req) => {
         const detailParts = [fbMessage];
         if (fbUser) detailParts.push(String(fbUser));
         if (fbData) detailParts.push(typeof fbData === 'string' ? fbData : JSON.stringify(fbData));
+        const traceId = adSetResponse.headers.get('x-fb-trace-id');
+        if (traceId) detailParts.push(`trace_id:${traceId}`);
         const details = detailParts.join(' | ');
         console.error(`Ad set ${i + 1} creation failed:`, errorData);
         return new Response(
