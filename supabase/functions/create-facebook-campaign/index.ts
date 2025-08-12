@@ -1,10 +1,90 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { z } from "https://deno.land/x/zod@v3.23.8/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// BUILD signature for troubleshooting/deployment tracing
+const BUILD = {
+  deployedAt: new Date().toISOString(),
+  versionTag: Deno.env.get('VERSION_TAG') || Deno.env.get('COMMIT_SHA') || 'dev'
+};
+
+// Meta Graph Client
+const GRAPH_VERSION = Deno.env.get('FACEBOOK_API_VERSION') || 'v22.0';
+const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+
+class MetaGraphClient {
+  constructor(private accessToken: string) {}
+
+  async get(path: string, params: Record<string, string> = {}) {
+    const url = new URL(`${GRAPH_BASE}${path}`);
+    url.searchParams.set('access_token', this.accessToken);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    const res = await fetch(url.toString());
+    const fbtrace_id = res.headers.get('x-fb-trace-id') || undefined;
+    const json = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, json, fbtrace_id } as const;
+  }
+
+  async postForm(path: string, form: URLSearchParams) {
+    form.set('access_token', this.accessToken);
+    const res = await fetch(`${GRAPH_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    const fbtrace_id = res.headers.get('x-fb-trace-id') || undefined;
+    const json = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, json, fbtrace_id } as const;
+  }
+}
+
+// Zod Schemas to validate incoming payload
+const TargetingSchema = z.object({
+  geo_locations: z.object({ countries: z.array(z.string()).min(1) }).or(z.any()).optional(),
+  age_min: z.coerce.number().int().min(13).optional(),
+  age_max: z.coerce.number().int().optional(),
+  genders: z.array(z.coerce.number()).optional(),
+  // interest_terms are raw strings; converted server-side
+  interest_terms: z.array(z.string()).optional(),
+  custom_audiences: z.array(z.union([z.string(), z.number(), z.object({ id: z.union([z.string(), z.number()]) })])).optional(),
+}).passthrough();
+
+const AdSetCreateInput = z.object({
+  name: z.string().min(1),
+  daily_budget: z.coerce.number().int().positive(),
+  billing_event: z.string().optional(),
+  optimization_goal: z.string().optional(),
+  targeting: TargetingSchema,
+  placements: z.any().optional(),
+  status: z.enum(['PAUSED', 'ACTIVE']).optional(),
+});
+
+const CampaignSchema = z.object({
+  name: z.string().min(1),
+  objective: z.string().min(1),
+  status: z.enum(['PAUSED', 'ACTIVE']),
+  start_time: z.string().optional(),
+  end_time: z.string().optional(),
+});
+
+const AdCreateInput = z.object({
+  name: z.string().min(1),
+  adset_index: z.coerce.number().int().min(0),
+  creative: z.object({ creative_id: z.string().min(1) }),
+  status: z.enum(['PAUSED', 'ACTIVE'])
+});
+
+const PayloadSchema = z.object({
+  adAccountId: z.string().min(1),
+  campaign: CampaignSchema,
+  adSets: z.array(AdSetCreateInput).min(1),
+  ads: z.array(AdCreateInput).min(1),
+});
 
 interface CampaignPayload {
   adAccountId: string;
@@ -39,7 +119,20 @@ serve(async (req) => {
   }
 
   try {
-    const payload: CampaignPayload = await req.json();
+    const raw = await req.json();
+    const parsed = PayloadSchema.safeParse(raw);
+    if (!parsed.success) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Invalid payload',
+          issues: parsed.error.issues.map(i => ({ path: i.path.join('.'), message: i.message })),
+          build: BUILD,
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const payload: CampaignPayload = parsed.data as any;
     
     let { adAccountId, campaign, adSets, ads } = payload;
 
@@ -57,7 +150,7 @@ serve(async (req) => {
     const accessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
     if (!accessToken) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Facebook access token not configured' }),
+        JSON.stringify({ success: false, error: 'Facebook access token not configured', build: BUILD }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -184,18 +277,17 @@ serve(async (req) => {
       campaignParams.append('end_time', campaign.end_time);
     }
 
-    let campaignResponse: Response;
+    const mg = new MetaGraphClient(accessToken);
+    let campaignResponse;
     try {
-      campaignResponse = await fetch(
-        `${baseUrl}/act_${adAccountId}/campaigns?${campaignParams.toString()}`,
-        { method: 'POST' }
-      );
+      campaignResponse = await mg.postForm(`/act_${adAccountId}/campaigns`, campaignParams);
     } catch (networkError) {
       return new Response(
         JSON.stringify({
           success: false,
           error: 'Network error creating campaign',
           details: String(networkError),
+          build: BUILD,
           suggestion: 'Check network connectivity and Facebook API availability.'
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -203,21 +295,23 @@ serve(async (req) => {
     }
 
     if (!campaignResponse.ok) {
-      const errorData = await campaignResponse.json().catch(() => ({}));
-      const fbMessage = errorData?.error?.message || errorData?.message || errorData || 'Unknown Facebook API error';
+      const errorData = campaignResponse.json;
+      const fbMessage = errorData?.error?.message || errorData?.message || 'Unknown Facebook API error';
       console.error('Campaign creation failed:', errorData);
       return new Response(
         JSON.stringify({
           success: false,
           error: 'Failed to create campaign',
           details: fbMessage,
+          fbtrace_id: campaignResponse.fbtrace_id,
+          build: BUILD,
           suggestion: 'Check your Facebook ad account permissions, campaign objective, and naming conventions.'
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const campaignData = await campaignResponse.json();
+    const campaignData = campaignResponse.json;
     const campaignId = campaignData.id;
     console.log('Campaign created successfully:', campaignId);
 
@@ -361,18 +455,16 @@ serve(async (req) => {
 
       // Placements are included in targetingObj; no top-level placement params
 
-      let adSetResponse: Response;
+      let adSetResponse;
       try {
-        adSetResponse = await fetch(
-          `${baseUrl}/act_${adAccountId}/adsets?${adSetParams.toString()}`,
-          { method: 'POST' }
-        );
+        adSetResponse = await mg.postForm(`/act_${adAccountId}/adsets`, adSetParams);
       } catch (networkError) {
         return new Response(
           JSON.stringify({
             success: false,
             error: `Network error creating ad set ${i + 1}`,
             details: String(networkError),
+            build: BUILD,
             partialResults: { campaignId, adSetIds: createdAdSetIds },
             suggestion: 'Retry later or verify Facebook API status.'
           }),
@@ -381,15 +473,20 @@ serve(async (req) => {
       }
 
       if (!adSetResponse.ok) {
-        const errorData = await adSetResponse.json().catch(() => ({}));
+        const errorData = adSetResponse.json;
         const fbMessage = errorData?.error?.message || errorData?.message || 'Unknown Facebook API error';
         const fbUser = errorData?.error?.error_user_msg || errorData?.error_user_msg;
         const fbData = errorData?.error?.error_data || errorData?.error_data;
+        const fbCode = errorData?.error?.code;
+        const fbSub = errorData?.error?.error_subcode;
+        const fbUserTitle = errorData?.error?.error_user_title;
         const detailParts = [fbMessage];
         if (fbUser) detailParts.push(String(fbUser));
         if (fbData) detailParts.push(typeof fbData === 'string' ? fbData : JSON.stringify(fbData));
-        const traceId = adSetResponse.headers.get('x-fb-trace-id');
-        if (traceId) detailParts.push(`trace_id:${traceId}`);
+        if (fbCode) detailParts.push(`code:${fbCode}`);
+        if (fbSub) detailParts.push(`sub:${fbSub}`);
+        if (fbUserTitle) detailParts.push(`title:${fbUserTitle}`);
+        if (adSetResponse.fbtrace_id) detailParts.push(`trace_id:${adSetResponse.fbtrace_id}`);
         const details = detailParts.join(' | ');
         console.error(`Ad set ${i + 1} creation failed:`, errorData);
         return new Response(
@@ -397,6 +494,7 @@ serve(async (req) => {
             success: false,
             error: `Failed to create ad set ${i + 1}`,
             details,
+            fbtrace_id: adSetResponse.fbtrace_id,
             raw: errorData,
             sent: {
               billing_event: goals.billing_event,
@@ -405,6 +503,7 @@ serve(async (req) => {
               placements: placements || null,
               promoted_object: promotedObject || null
             },
+            build: BUILD,
             partialResults: { campaignId, adSetIds: createdAdSetIds },
             suggestion: 'Enable fewer placements, verify geo_locations, age/gender, budget min, and interest keywords.'
           }),
@@ -412,7 +511,7 @@ serve(async (req) => {
         );
       }
 
-      const adSetData = await adSetResponse.json();
+      const adSetData = adSetResponse.json;
       createdAdSetIds.push(adSetData.id);
       console.log(`Ad set ${i + 1} created successfully:`, adSetData.id);
     }
@@ -454,18 +553,16 @@ serve(async (req) => {
         status: ad.status
       });
 
-      let adResponse: Response;
+      let adResponse;
       try {
-        adResponse = await fetch(
-          `${baseUrl}/act_${adAccountId}/ads?${adParams.toString()}`,
-          { method: 'POST' }
-        );
+        adResponse = await mg.postForm(`/act_${adAccountId}/ads`, adParams);
       } catch (networkError) {
         return new Response(
           JSON.stringify({
             success: false,
             error: `Network error creating ad ${i + 1}`,
             details: String(networkError),
+            build: BUILD,
             partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
             suggestion: 'Retry later or verify Facebook API status.'
           }),
@@ -474,14 +571,16 @@ serve(async (req) => {
       }
 
       if (!adResponse.ok) {
-        const errorData = await adResponse.json().catch(() => ({}));
-        const fbMessage = errorData?.error?.message || errorData?.message || errorData || 'Unknown Facebook API error';
+        const errorData = adResponse.json;
+        const fbMessage = errorData?.error?.message || errorData?.message || 'Unknown Facebook API error';
         console.error(`Ad ${i + 1} creation failed:`, errorData);
         return new Response(
           JSON.stringify({
             success: false,
             error: `Failed to create ad ${i + 1}`,
             details: fbMessage,
+            fbtrace_id: adResponse.fbtrace_id,
+            build: BUILD,
             partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
             suggestion: 'Check creative assets, ad copy, and Facebook ad policies.'
           }),
@@ -489,7 +588,7 @@ serve(async (req) => {
         );
       }
 
-      const adData = await adResponse.json();
+      const adData = adResponse.json;
       createdAdIds.push(adData.id);
       console.log(`Ad ${i + 1} created successfully:`, adData.id);
     }

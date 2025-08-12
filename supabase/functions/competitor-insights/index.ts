@@ -178,7 +178,10 @@ serve(async (req) => {
 
     const result = { competitorInsights, overallInsights, suggestedAngles, status: 'completed' };
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({
+      ...result,
+      build: { deployedAt: new Date().toISOString(), versionTag: Deno.env.get('VERSION_TAG') || 'dev' }
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
