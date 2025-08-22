@@ -344,22 +344,37 @@ serve(async (req) => {
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check for required Facebook credentials
-    const facebookAccessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
-    const facebookAppId = Deno.env.get('FACEBOOK_APP_ID');
+    // Get user's Facebook token from database
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('facebook_access_token, facebook_token_expires_at')
+      .eq('user_id', userId)
+      .single();
+
+    if (profileError || !profile) {
+      console.error('Error fetching user profile:', profileError);
+      throw new Error('User profile not found. Please reconnect your Facebook account.');
+    }
+
+    const facebookAccessToken = profile.facebook_access_token;
     
     if (!facebookAccessToken) {
-      console.error('FACEBOOK_ACCESS_TOKEN environment variable is not set');
-      throw new Error('Facebook Access Token is required but not configured. Please set FACEBOOK_ACCESS_TOKEN environment variable.');
+      console.error('No Facebook access token found for user');
+      throw new Error('Facebook not connected. Please connect your Facebook account first.');
     }
-    
-    if (!facebookAppId) {
-      console.error('FACEBOOK_APP_ID environment variable is not set');
-      throw new Error('Facebook App ID is required but not configured. Please set FACEBOOK_APP_ID environment variable.');
+
+    // Check if token is expired
+    if (profile.facebook_token_expires_at) {
+      const expiresAt = new Date(profile.facebook_token_expires_at);
+      const now = new Date();
+      if (now >= expiresAt) {
+        console.error('Facebook token has expired');
+        throw new Error('Facebook token expired. Please reconnect your Facebook account.');
+      }
     }
 
     console.log('Facebook credentials found - Access Token:', facebookAccessToken ? 'SET' : 'MISSING');
-    console.log('Facebook credentials found - App ID:', facebookAppId ? 'SET' : 'MISSING');
+    console.log('Token expires at:', profile.facebook_token_expires_at);
 
     console.log('Fetching ads from Meta Ad Library for:', competitorName);
 

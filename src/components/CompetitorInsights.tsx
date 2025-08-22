@@ -132,9 +132,25 @@ export const CompetitorInsights = ({
       });
     } catch (error) {
       console.error('Error fetching competitor insights:', error);
+      
+      let errorMessage = error.message || "An error occurred during competitor analysis";
+      let errorTitle = "Analysis failed";
+      
+      // Handle specific error cases
+      if (errorMessage.includes('Facebook not connected')) {
+        errorTitle = "Facebook Connection Required";
+        errorMessage = "Please connect your Facebook account to analyze competitors.";
+      } else if (errorMessage.includes('token expired')) {
+        errorTitle = "Facebook Token Expired";  
+        errorMessage = "Your Facebook connection has expired. Please reconnect your account.";
+      } else if (errorMessage.includes('Invalid OAuth access token')) {
+        errorTitle = "Facebook Authentication Issue";
+        errorMessage = "There's an issue with your Facebook connection. Please try reconnecting your account.";
+      }
+      
       toast({
-        title: "Analysis failed",
-        description: error.message || "Please check Facebook API credentials and try again.",
+        title: errorTitle,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
