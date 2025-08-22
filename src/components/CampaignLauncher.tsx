@@ -91,7 +91,19 @@ export const CampaignLauncher = ({ campaignConfig, onLaunchComplete }: CampaignL
       ads: campaignConfig.ads?.map((ad: any, index: number) => ({
         name: ad.name || `Ad ${index + 1}`,
         adset_index: ad.adset_index || 0,
-        creative: ad.creative || { creative_id: 'placeholder' },
+        creative: {
+          object_story_spec: {
+            page_id: 'auto', // Will be resolved by edge function
+            link_data: {
+              name: ad.headline || campaignConfig.campaign?.name || 'Try Our Product Today',
+              message: ad.primary_text || 'Discover amazing products and services.',
+              link: ad.link_url || 'https://example.com',
+              call_to_action: {
+                type: ad.call_to_action || 'LEARN_MORE'
+              }
+            }
+          }
+        },
         status: 'PAUSED'
       })) || []
     };

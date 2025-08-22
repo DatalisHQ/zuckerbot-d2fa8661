@@ -396,7 +396,7 @@ export const WorkflowOrchestrator = ({ brandAnalysisId, brandUrl, onFlowComplete
                 Create your campaign using all the insights gathered
               </p>
             </div>
-            {console.log('[WorkflowOrchestrator] Rendering CampaignBuilder with audienceSegments:', workflowState.audienceSegments)}
+            {null}
             <CampaignBuilder
               brandAnalysisId={workflowState.brandAnalysisId}
               brandUrl={workflowState.brandUrl}

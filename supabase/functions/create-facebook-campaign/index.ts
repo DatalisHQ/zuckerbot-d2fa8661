@@ -75,7 +75,10 @@ const CampaignSchema = z.object({
 const AdCreateInput = z.object({
   name: z.string().min(1),
   adset_index: z.coerce.number().int().min(0),
-  creative: z.object({ creative_id: z.string().min(1) }),
+  creative: z.union([
+    z.object({ creative_id: z.string().min(1) }),
+    z.object({ object_story_spec: z.any() })
+  ]),
   status: z.enum(['PAUSED', 'ACTIVE'])
 });
 
@@ -107,7 +110,7 @@ interface CampaignPayload {
   ads: Array<{
     name: string;
     adset_index: number; // Index to match with adSets array
-    creative: { creative_id: string };
+    creative: { creative_id?: string; object_story_spec?: any };
     status: 'PAUSED' | 'ACTIVE';
   }>;
 }
@@ -530,16 +533,128 @@ serve(async (req) => {
 
       console.log(`Creating ad ${i + 1}/${ads.length}:`, ad.name);
 
-      // Validate creative_id; must be an existing creative ID in this ad account
-      const creativeId = ad?.creative?.creative_id;
-      if (!creativeId || !/^\d+$/.test(String(creativeId))) {
+      // Handle creative - either creative_id or object_story_spec
+      let creativeParams: any = {};
+      
+      if (ad.creative.creative_id) {
+        // Existing creative ID case
+        const creativeId = ad.creative.creative_id;
+        if (!/^\d+$/.test(String(creativeId))) {
+          console.error(`Creative resolution failed for ad ${i + 1}:`, {
+            scope: 'creative',
+            message: 'Invalid creative_id format',
+            details: 'creative_id must be a numeric ID',
+            status: 400
+          });
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: `Failed to create creative for ad ${i + 1}`,
+              details: 'Invalid creative_id format',
+              partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
+              raw: {},
+              build: BUILD
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        creativeParams.creative = JSON.stringify({ creative_id: String(creativeId) });
+        
+      } else if (ad.creative.object_story_spec) {
+        // Inline creative case - create AdCreative first
+        const objectStorySpec = ad.creative.object_story_spec;
+        
+        // Resolve page_id if set to 'auto'
+        if (objectStorySpec.page_id === 'auto') {
+          try {
+            const pagesUrl = new URL(`${baseUrl}/me/accounts`);
+            pagesUrl.searchParams.set('fields', 'id,name');
+            pagesUrl.searchParams.set('access_token', accessToken!);
+            const pagesRes = await fetch(pagesUrl.toString());
+            const pagesData = await pagesRes.json();
+            const firstPage = pagesData?.data?.[0];
+            if (firstPage?.id) {
+              objectStorySpec.page_id = firstPage.id;
+            } else {
+              // Fallback to ad account ID if no pages found
+              objectStorySpec.page_id = adAccountId;
+            }
+          } catch (e) {
+            console.log('Could not auto-resolve page_id, using ad account ID');
+            objectStorySpec.page_id = adAccountId;
+          }
+        }
+        
+        // Create AdCreative
+        const creativeCreateParams = new URLSearchParams({
+          access_token: accessToken,
+          name: `Creative for ${ad.name}`,
+          object_story_spec: JSON.stringify(objectStorySpec)
+        });
+        
+        let creativeResponse;
+        try {
+          creativeResponse = await mg.postForm(`/act_${adAccountId}/adcreatives`, creativeCreateParams);
+        } catch (networkError) {
+          console.error(`Creative creation failed for ad ${i + 1}:`, {
+            scope: 'creative',
+            message: 'Network error creating creative',
+            details: String(networkError),
+            status: 500
+          });
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: `Failed to create creative for ad ${i + 1}`,
+              details: 'Network error creating creative',
+              partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
+              raw: {},
+              build: BUILD
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        if (!creativeResponse.ok) {
+          const errorData = creativeResponse.json;
+          const fbMessage = errorData?.error?.message || 'Creative creation failed';
+          console.error(`Creative resolution failed for ad ${i + 1}:`, {
+            scope: 'creative',
+            message: fbMessage,
+            details: errorData,
+            status: creativeResponse.status
+          });
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: `Failed to create creative for ad ${i + 1}`,
+              details: fbMessage,
+              partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
+              raw: errorData || {},
+              build: BUILD
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        const creativeData = creativeResponse.json;
+        creativeParams.creative = JSON.stringify({ creative_id: creativeData.id });
+        
+      } else {
+        console.error(`Creative resolution failed for ad ${i + 1}:`, {
+          scope: 'creative',
+          message: 'Missing creative or object_story_spec',
+          details: null,
+          status: 400
+        });
         return new Response(
           JSON.stringify({
             success: false,
-            error: `Invalid creative_id for ad ${i + 1}`,
-            details: 'creative_id must be a numeric ID of an existing AdCreative. Create the creative first, then pass its ID.',
+            error: `Failed to create creative for ad ${i + 1}`,
+            details: 'Missing creative or object_story_spec',
             partialResults: { campaignId, adSetIds: createdAdSetIds, adIds: createdAdIds },
-            suggestion: 'Create image/video AdCreative via the /adcreatives endpoint and pass its ID in the payload.'
+            raw: {},
+            build: BUILD
           }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -549,8 +664,8 @@ serve(async (req) => {
         access_token: accessToken,
         name: ad.name,
         adset_id: adSetId,
-        creative: JSON.stringify({ creative_id: String(creativeId) }),
-        status: ad.status
+        status: ad.status,
+        ...creativeParams
       });
 
       let adResponse;

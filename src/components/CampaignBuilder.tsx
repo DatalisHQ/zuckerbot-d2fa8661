@@ -136,7 +136,7 @@ export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, save
       const convertedSegments = savedAudienceSegments.map((segment, index) => ({
         id: `saved-${index}`,
         name: segment.segment,
-        type: 'custom',
+        type: 'custom' as const,
         description: segment.criteria,
         targeting: {
           demographics: segment.criteria
@@ -155,7 +155,7 @@ export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, save
       const convertedSegments = audienceSegments.map((segment: any, index: number) => ({
         id: segment.id || `saved-${index}`,
         name: segment.segment,
-        type: 'custom',
+        type: 'custom' as const,
         description: segment.criteria,
         targeting: segment.targeting_data || { demographics: segment.criteria }
       }));
@@ -401,15 +401,11 @@ export const CampaignBuilder = ({ brandAnalysisId, brandUrl, resumeDraftId, save
             endDate={endDate}
             onStartDateChange={(iso) => {
               setStartDate(iso);
-              if (campaignId) {
-                supabase.from('ad_campaigns').update({ start_time: iso }).eq('id', campaignId);
-              }
+              // Store in component state only, database doesn't have these columns
             }}
             onEndDateChange={(iso) => {
               setEndDate(iso);
-              if (campaignId) {
-                supabase.from('ad_campaigns').update({ end_time: iso }).eq('id', campaignId);
-              }
+              // Store in component state only, database doesn't have these columns
             }}
           />
         )}

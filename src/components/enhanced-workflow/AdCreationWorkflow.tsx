@@ -103,10 +103,10 @@ export function AdCreationWorkflow({
           segment: audience.segment,
           criteria: audience.criteria,
           targeting: audience.targeting_data,
-          insights: audience.insights, // Add audience insights if available
+          insights: (audience as any).insights || null, // Add audience insights if available
         },
         competitorInsights: competitorData?.insights,
-        selectedAngle: brandData?.selectedAngle || competitorData?.selectedAngle || audience.selectedAngle,
+        selectedAngle: brandData?.selectedAngle || competitorData?.selectedAngle || (audience as any).selectedAngle || null,
         creativeAsset: asset
       }
     });

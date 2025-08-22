@@ -88,8 +88,7 @@ export function UpgradeModal({ open, onClose, reason }: UpgradeModalProps) {
               </div>
               <Button
                 onClick={() => handleCheckout(option.id, option.planType)}
-                disabled={!!loading}
-                loading={loading === option.id}
+                disabled={!!loading || loading === option.id}
               >
                 {loading === option.id ? 'Redirecting...' : `Upgrade (${option.price})`}
               </Button>
