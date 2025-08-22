@@ -281,6 +281,12 @@ async function scrapeFacebookAdsLibrary(pageId: string): Promise<any[]> {
     }
     console.error('❌ Facebook Ads Library scraper failed after retries:', lastError);
     return [];
+  } catch (error) {
+    console.error('Fatal error in Facebook Ads Library scraper:', error);
+    if (browser) {
+      try { await browser.close(); } catch { /* ignore */ }
+    }
+    return [];
   }
 }
 
