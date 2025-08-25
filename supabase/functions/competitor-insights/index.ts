@@ -56,7 +56,6 @@ serve(async (req) => {
       console.log(`Processing competitor: ${competitor.name}`);
       
       let websiteData: any = null;
-      let adsData: any = null;
 
       // Step 2: Website Scraping & Analysis (with timeout protection)
       if (competitor.url) {
@@ -80,7 +79,32 @@ serve(async (req) => {
           }
         } catch (error) {
           console.error(`Failed to scrape website for ${competitor.name}:`, error);
-          // Continue processing without website data
+          // Fallback: Check for existing competitor profile in database
+          try {
+            const { data: existingProfile } = await supabase
+              .from('competitor_profiles')
+              .select('*')
+              .eq('competitor_name', competitor.name)
+              .eq('user_id', userId)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .single();
+            
+            if (existingProfile) {
+              websiteData = {
+                analysis: {
+                  niche: existingProfile.niche,
+                  audience: existingProfile.audience,  
+                  value_props: existingProfile.value_props,
+                  tone: existingProfile.tone,
+                  screenshot_url: existingProfile.screenshot_url
+                }
+              };
+              console.log(`Using existing profile data for ${competitor.name}`);
+            }
+          } catch (profileError) {
+            console.log(`No existing profile found for ${competitor.name}`);
+          }
         }
       }
 
