@@ -41,6 +41,8 @@ interface ActionCard {
 interface AuditResult {
   health: 'healthy' | 'watch' | 'critical';
   actions: ActionCard[];
+  placeholders?: boolean;
+  message?: string;
 }
 
 export default function Copilot() {
@@ -60,28 +62,25 @@ export default function Copilot() {
         (selectedAdAccount.id.startsWith('act_') ? selectedAdAccount.id : `act_${selectedAdAccount.id}`) : 
         null;
 
-      // Use fetch with proper URL construction for edge functions
-      const supabaseUrl = 'https://wrjqevcpxkfvfudbmdhp.supabase.co';
-      const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndyanFldmNweGtmdmZ1ZGJtZGhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzMjY2NjEsImV4cCI6MjA2ODkwMjY2MX0.uzcHoe0b0vjjZ5EzFEf343SlKlyQY11arQzRvbM03tw';
-      
-      const url = `${supabaseUrl}/functions/v1/dashboard-audit${actParam ? `?act=${encodeURIComponent(actParam)}` : ''}`;
-      
-      const response = await fetch(url, {
+      // Use Supabase client to properly handle authentication
+      const { data, error } = await supabase.functions.invoke('dashboard-audit', {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
-          'apikey': supabaseKey,
-          'Content-Type': 'application/json',
-        },
+        body: actParam ? { act: actParam } : undefined,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch audit');
+      if (error) {
+        // Handle gracefully - don't throw for expected states
+        console.warn('Audit call resulted in error:', error);
+        setAuditResult({
+          health: 'critical',
+          actions: [],
+          placeholders: true,
+          message: error.message || 'Unable to fetch audit data'
+        });
+        return;
       }
 
-      const auditData = await response.json();
-      setAuditResult(auditData);
+      setAuditResult(data);
     } catch (error) {
       console.error('Audit error:', error);
       toast({
@@ -319,7 +318,23 @@ export default function Copilot() {
 
               {isLoading && renderLoadingSkeleton()}
 
-              {auditResult && auditResult.actions.length === 0 && (
+              {auditResult && auditResult.placeholders && (
+                <div className="text-center py-12">
+                  <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <h3 className="font-medium mb-2">Unable to Generate Audit</h3>
+                  <p className="text-muted-foreground mb-4">{auditResult.message}</p>
+                  {auditResult.message?.includes('No ad account') && (
+                    <FacebookConnector 
+                      variant="card"
+                      title="Connect Facebook Business"
+                      description="Get instant access to performance insights"
+                      buttonText="Connect Account"
+                    />
+                  )}
+                </div>
+              )}
+
+              {auditResult && !auditResult.placeholders && auditResult.actions.length === 0 && (
                 <div className="text-center py-12 text-green-600">
                   <CheckCircle className="w-16 h-16 mx-auto mb-4" />
                   <h3 className="font-medium mb-2">All Systems Green!</h3>
