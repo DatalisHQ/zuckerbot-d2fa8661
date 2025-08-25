@@ -41,31 +41,22 @@ export function useLaunchCampaign() {
   return useMutation<LaunchResult, Error, LaunchPayload>({
     mutationFn: async (payload) => {
       try {
-        // Get user's Facebook access token from profile
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          throw new Error('User not authenticated');
+        // Get current Supabase session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError || !session?.access_token) {
+          throw new Error('No valid Supabase session found. Please log in again.');
         }
 
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('facebook_access_token')
-          .eq('user_id', user.id)
-          .single();
-
-        if (profileError || !profile?.facebook_access_token) {
-          throw new Error('Facebook access token not found. Please reconnect your Facebook account.');
-        }
-
-        console.log('🚀 Launching campaign with user token');
-        console.log('- Token length:', profile.facebook_access_token.length);
-        console.log('- Token prefix:', profile.facebook_access_token.slice(0, 5));
-        console.log('- Token suffix:', profile.facebook_access_token.slice(-5));
+        console.log('🚀 Launching campaign with Supabase session');
+        console.log('- Session token length:', session.access_token.length);
+        console.log('- Session token prefix:', session.access_token.slice(0, 4));
+        console.log('- Session token suffix:', session.access_token.slice(-4));
 
         const { data, error } = await supabase.functions.invoke('create-facebook-campaign', {
           body: payload,
           headers: {
-            'Authorization': `Bearer ${profile.facebook_access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           }
         });
 

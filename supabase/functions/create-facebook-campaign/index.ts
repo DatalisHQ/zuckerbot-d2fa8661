@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { z } from "https://deno.land/x/zod@v3.23.8/mod.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -142,42 +143,93 @@ serve(async (req) => {
     console.log('=== FACEBOOK CAMPAIGN CREATION START ===');
     console.log('Request timestamp:', new Date().toISOString());
     
-    // Extract user's access token from Authorization header
+    // Extract Supabase session token from Authorization header
     const authHeader = req.headers.get('authorization');
-    console.log('Authorization header present:', !!authHeader);
+    console.log('🔐 Auth validation:');
+    console.log('- Authorization header present:', !!authHeader);
+    console.log('- Header starts with Bearer:', !!authHeader?.startsWith('Bearer '));
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       console.error('❌ Missing or malformed Authorization header');
       return new Response(
         JSON.stringify({ 
-          success: false, 
-          error: 'Missing Authorization header. Please provide Bearer token.',
-          build: BUILD 
+          error: 'Missing or invalid Supabase session token'
         }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Extract and validate the user's token
-    const userToken = authHeader.slice(7); // Remove 'Bearer ' prefix
-    console.log('User token extracted from header:');
-    console.log('- Length:', userToken.length);
-    console.log('- Prefix:', userToken.slice(0, 5));
-    console.log('- Suffix:', userToken.slice(-5));
-    console.log('- Is empty/undefined:', !userToken || userToken === 'undefined' || userToken === 'null');
+    // Extract Supabase session token
+    const sessionToken = authHeader.slice(7); // Remove 'Bearer ' prefix
+    console.log('- Session token length:', sessionToken.length);
+    console.log('- Session token prefix:', sessionToken.slice(0, 4));
+    console.log('- Session token suffix:', sessionToken.slice(-4));
+    console.log('- Token is empty/undefined:', !sessionToken || sessionToken === 'undefined' || sessionToken === 'null');
 
-    if (!userToken || userToken === 'undefined' || userToken === 'null' || userToken.length < 10) {
-      console.error('❌ Invalid user token detected');
+    if (!sessionToken || sessionToken === 'undefined' || sessionToken === 'null') {
+      console.error('❌ Invalid session token');
       return new Response(
         JSON.stringify({ 
-          success: false, 
-          error: 'Invalid access token provided. Please reconnect your Facebook account.',
-          reconnectRequired: true,
-          build: BUILD 
+          error: 'Unauthorized: no valid Supabase session'
         }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Initialize Supabase client with session token
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: { Authorization: authHeader }
+      }
+    });
+
+    // Validate Supabase session and get user
+    console.log('🔍 Validating Supabase session...');
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      console.error('❌ Supabase auth failed:', authError?.message || 'No user found');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Unauthorized: no valid Supabase session'
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('✅ Supabase auth successful');
+    console.log('- User ID:', user.id);
+    console.log('- User email:', user.email);
+
+    // Get user's Facebook access token from profile
+    console.log('🔍 Fetching Facebook access token from profile...');
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('facebook_access_token')
+      .eq('user_id', user.id)
+      .single();
+
+    if (profileError || !profile?.facebook_access_token) {
+      console.error('❌ Facebook token not found:', profileError?.message || 'No token in profile');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Facebook access token not found. Please reconnect your Facebook account.',
+          reconnectRequired: true,
+          build: BUILD,
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const userFacebookToken = profile.facebook_access_token;
+    console.log('✅ Facebook token retrieved from profile');
+    console.log('- Facebook token length:', userFacebookToken.length);
+    console.log('- Facebook token prefix:', userFacebookToken.slice(0, 5));
+    console.log('- Facebook token suffix:', userFacebookToken.slice(-5));
 
     // Get Facebook app credentials for token validation
     const appId = Deno.env.get('FACEBOOK_APP_ID');
@@ -198,15 +250,15 @@ serve(async (req) => {
     // Generate app access token for validation
     const appAccessToken = `${appId}|${appSecret}`;
     
-    // Validate user token with Facebook debug endpoint
-    console.log('🔍 Validating user token with Facebook...');
-    const debugUrl = `https://graph.facebook.com/${GRAPH_VERSION}/debug_token?input_token=${userToken}&access_token=${appAccessToken}`;
+    // Validate Facebook token with Facebook debug endpoint
+    console.log('🔍 Validating Facebook token with Facebook...');
+    const debugUrl = `https://graph.facebook.com/${GRAPH_VERSION}/debug_token?input_token=${userFacebookToken}&access_token=${appAccessToken}`;
     
     let debugResponse;
     try {
       debugResponse = await fetch(debugUrl);
     } catch (networkError) {
-      console.error('❌ Network error during token validation:', networkError);
+      console.error('❌ Network error during Facebook token validation:', networkError);
       return new Response(
         JSON.stringify({
           success: false,
@@ -222,8 +274,8 @@ serve(async (req) => {
     console.log('Facebook token debug response:', JSON.stringify(debugData, null, 2));
 
     if (!debugResponse.ok || !debugData?.data?.is_valid) {
-      const errorMsg = debugData?.data?.error?.message || debugData?.error?.message || 'Token validation failed';
-      console.error('❌ Token validation failed:', errorMsg);
+      const errorMsg = debugData?.data?.error?.message || debugData?.error?.message || 'Facebook token validation failed';
+      console.error('❌ Facebook token validation failed:', errorMsg);
       
       return new Response(
         JSON.stringify({
@@ -241,7 +293,7 @@ serve(async (req) => {
     
     // Check token expiry
     if (tokenData.expires_at && tokenData.expires_at <= now) {
-      console.error('❌ Token has expired');
+      console.error('❌ Facebook token has expired');
       return new Response(
         JSON.stringify({
           success: false,
@@ -259,11 +311,11 @@ serve(async (req) => {
     const missingScopes = requiredScopes.filter(scope => !tokenScopes.includes(scope));
     
     if (missingScopes.length > 0) {
-      console.error('❌ Missing required scopes:', missingScopes);
+      console.error('❌ Missing required Facebook scopes:', missingScopes);
       return new Response(
         JSON.stringify({
           success: false,
-          error: `Missing required permissions: ${missingScopes.join(', ')}. Please reconnect with full permissions.`,
+          error: `Missing required Facebook permissions: ${missingScopes.join(', ')}. Please reconnect with full permissions.`,
           reconnectRequired: true,
           build: BUILD,
         }),
@@ -271,9 +323,9 @@ serve(async (req) => {
       );
     }
 
-    console.log('✅ Token validation successful');
+    console.log('✅ Facebook token validation successful');
     console.log('- App ID:', tokenData.app_id);
-    console.log('- User ID:', tokenData.user_id);
+    console.log('- Facebook User ID:', tokenData.user_id);
     console.log('- Expires at:', new Date(tokenData.expires_at * 1000).toISOString());
     console.log('- Scopes:', tokenScopes.join(', '));
 
@@ -305,8 +357,8 @@ serve(async (req) => {
       );
     }
 
-    // Use the validated user token instead of env variable
-    const accessToken = userToken;
+    // Use the validated Facebook token for Meta API calls
+    const accessToken = userFacebookToken;
 
     const apiVersion = Deno.env.get('FACEBOOK_API_VERSION') || 'v21.0';
     const baseUrl = `https://graph.facebook.com/${apiVersion}`;
