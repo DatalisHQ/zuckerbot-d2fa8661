@@ -188,10 +188,34 @@ Deno.serve(async (req) => {
 
     // Get ad account ID from query params
     const url = new URL(req.url)
-    const adAccountId = url.searchParams.get('act')
+    const adAccountId = url.searchParams.get('act')?.trim()
     
+    // Handle missing ad account ID with graceful fallback
     if (!adAccountId) {
-      throw new Error('Ad account ID is required')
+      return new Response(
+        JSON.stringify({
+          health: 'watch',
+          actions: [],
+          placeholders: true,
+          message: 'No ad account connected. Connect to see live insights.'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Validate ad account ID format
+    if (!/^act_\d+$/.test(adAccountId)) {
+      return new Response(
+        JSON.stringify({
+          error: 'Invalid ad account format. Expected act_<number>.',
+          health: 'critical',
+          actions: []
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
     }
 
     console.log(`Dashboard audit requested for user ${user.id}, account ${adAccountId}`)

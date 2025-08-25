@@ -53,29 +53,35 @@ export default function Copilot() {
   const selectedAdAccount = adAccounts?.[0]; // Use first account for now
 
   const fetchAudit = async () => {
-    if (!selectedAdAccount) {
-      toast({
-        title: "No Ad Account",
-        description: "Please connect your Facebook account to run audit",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('dashboard-audit', {
+      // Prepare the ad account ID parameter
+      const actParam = selectedAdAccount?.id ? 
+        (selectedAdAccount.id.startsWith('act_') ? selectedAdAccount.id : `act_${selectedAdAccount.id}`) : 
+        null;
+
+      // Use fetch with proper URL construction for edge functions
+      const supabaseUrl = 'https://wrjqevcpxkfvfudbmdhp.supabase.co';
+      const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndyanFldmNweGtmdmZ1ZGJtZGhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzMjY2NjEsImV4cCI6MjA2ODkwMjY2MX0.uzcHoe0b0vjjZ5EzFEf343SlKlyQY11arQzRvbM03tw';
+      
+      const url = `${supabaseUrl}/functions/v1/dashboard-audit${actParam ? `?act=${encodeURIComponent(actParam)}` : ''}`;
+      
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': supabaseKey,
           'Content-Type': 'application/json',
         },
       });
 
-      if (error) {
-        throw new Error(error.message || 'Failed to fetch audit');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch audit');
       }
 
-      setAuditResult(data);
+      const auditData = await response.json();
+      setAuditResult(auditData);
     } catch (error) {
       console.error('Audit error:', error);
       toast({
