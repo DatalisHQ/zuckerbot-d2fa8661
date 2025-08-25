@@ -26,6 +26,7 @@ import Billing from "./pages/Billing";
 import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/AdminDashboard";
+import Copilot from "./pages/Copilot";
 
 const queryClient = new QueryClient();
 
@@ -160,6 +161,7 @@ function App() {
             <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
             <Route path="/faq" element={<FAQ />} />
             <Route path="/strategic-insights" element={user ? <StrategicInsights /> : <Navigate to="/auth" />} />
+            <Route path="/copilot" element={user ? <Copilot /> : <Navigate to="/auth" />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
             </Routes>

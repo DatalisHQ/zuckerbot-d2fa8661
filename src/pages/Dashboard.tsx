@@ -23,7 +23,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useCampaignDrafts } from "@/hooks/useCampaignDrafts";
 import { DraftCampaignCard } from "@/components/DraftCampaignCard";
 import { FacebookConnector } from "@/components/FacebookConnector";
-import { DashboardAuditCard } from "@/components/DashboardAuditCard";
+import { Link } from "react-router-dom";
 import { CompetitorAnalysisOutcomes } from "@/components/CompetitorAnalysisOutcomes";
 
 interface Campaign {
@@ -352,7 +352,9 @@ useEffect(() => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Button className="w-full">Launch Copilot</Button>
+                  <Link to="/copilot">
+                    <Button className="w-full">Launch Copilot</Button>
+                  </Link>
                 </CardContent>
               </Card>
 
