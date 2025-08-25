@@ -20,65 +20,52 @@ serve(async (req) => {
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    // Pull latest competitor_ad_insights rows for this list
-    const { data: insightsRows, error } = await supabase
+    // Try ad insights first (may be empty if ads analysis is disabled)
+    const { data: insightsRows, error: insightsErr } = await supabase
       .from('competitor_ad_insights')
       .select('*')
       .eq('competitor_list_id', competitorListId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (insightsErr) throw insightsErr;
 
-    const allAds = (insightsRows || []).flatMap(r => Array.isArray(r.ads_data) ? r.ads_data : []);
-    const hooks = (insightsRows || []).flatMap(r => (r.hooks as any[]) || []);
-    const ctas = (insightsRows || []).flatMap(r => (r.ctas as any[]) || []);
-    const creativeTrends = (insightsRows || []).flatMap(r => (r.creative_trends as any[]) || []);
+    let allAds: any[] = (insightsRows || []).flatMap(r => Array.isArray(r.ads_data) ? r.ads_data : []);
+    let hooks: string[] = (insightsRows || []).flatMap(r => (r.hooks as any[]) || []);
+    let ctas: string[] = (insightsRows || []).flatMap(r => (r.ctas as any[]) || []);
+    let creativeTrends: string[] = (insightsRows || []).flatMap(r => (r.creative_trends as any[]) || []);
 
-    // Top-N helpers
-    const countMap = (arr: string[]) => arr.reduce((acc: Record<string, number>, v) => { if (!v) return acc; acc[v] = (acc[v] || 0) + 1; return acc; }, {});
+    // Fallback to website profiles when ad insights are not available
+    if (allAds.length === 0 && hooks.length === 0 && ctas.length === 0 && creativeTrends.length === 0) {
+      const { data: profilesRows, error: profilesErr } = await supabase
+        .from('competitor_profiles')
+        .select('competitor_name, value_props, tone')
+        .eq('competitor_list_id', competitorListId)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (profilesErr) throw profilesErr;
+
+      const valueProps = (profilesRows || []).flatMap(r => Array.isArray(r.value_props) ? r.value_props : []);
+      hooks = valueProps; // treat value props as hooks for playbook
+      ctas = []; // not derivable reliably from websites
+      creativeTrends = (profilesRows || []).map(r => r.tone).filter(Boolean) as string[];
+      allAds = [];
+    }
+
+    // Helpers
+    const countMap = (arr: string[]) => arr.reduce((acc: Record<string, number>, v) => { if (!v) return acc; acc[v] = (acc[v] || 0) + 1; return acc; }, {} as Record<string, number>);
     const topN = (arr: string[], n: number) => Object.entries(countMap(arr)).sort((a,b) => b[1]-a[1]).slice(0, n).map(([k]) => k);
 
-    const topHooks = topN(hooks, 5);
-    const topCTAs = topN(ctas, 5);
-    const visualThemes = topN(creativeTrends, 5);
-
-    // Creative fatigue: ads running >30 days with decreasing visible engagement proxy (impressions upper bound not growing vs long run)
-    const parseDate = (s?: string) => (s ? new Date(s) : null);
-    const now = new Date();
-    const fatigueCandidates = allAds.filter((ad: any) => {
-      const start = parseDate(ad?.run_window?.start);
-      if (!start) return false;
-      const days = Math.floor((now.getTime() - start.getTime()) / (1000*60*60*24));
-      return days > 30;
-    }).map((ad: any) => ({ ad_id: ad.id, reason: 'running >30 days; monitor for fatigue' }));
-
-    // Positioning opportunities: look for gaps where common CTAs/hooks are missing
-    const opportunityPool = [
-      'Offer risk-reversal/guarantee messaging',
-      'Emphasize speed-to-value or time savings',
-      'Leverage social proof (reviews, UGC) prominently',
-      'Introduce scarcity or limited-time incentives',
-      'Highlight unique feature parity gaps'
-    ];
-    const positioningOpportunities = opportunityPool.filter(op => !hooks.some(h => h.toLowerCase().includes(op.split(' ')[0].toLowerCase()))).slice(0,3);
-
     const playbook = {
-      top_hooks: topHooks,
-      top_ctas: topCTAs,
-      visual_themes: visualThemes,
-      creative_fatigue_flags: fatigueCandidates.slice(0, 10),
-      positioning_opportunities: positioningOpportunities,
+      top_hooks: topN(hooks, 5),
+      top_ctas: topN(ctas, 5),
+      visual_themes: topN(creativeTrends, 5),
+      creative_fatigue_flags: [], // not applicable without ad history
+      positioning_opportunities: hooks.length > 0 ? [
+        'Differentiate with a stronger proof-driven message',
+        'Emphasize unique outcomes not highlighted by competitors',
+        'Address objections competitors ignore'
+      ] : [],
       totals: { competitors: insightsRows?.length || 0, ads: allAds.length }
     };
-
-    // Snapshot to history for trend tracking
-    await supabase.from('competitor_analysis_history').insert({
-      user_id: userId,
-      competitor_list_id: competitorListId,
-      competitor_name: 'PLAYBOOK_SUMMARY',
-      ads_data: [],
-      insights: playbook,
-      metrics: { groups: insightsRows?.length || 0 }
-    });
 
     return new Response(JSON.stringify({ success: true, playbook }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err: any) {
@@ -86,5 +73,3 @@ serve(async (req) => {
     return new Response(JSON.stringify({ success: false, error: err.message || 'internal error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
-
-

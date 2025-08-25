@@ -84,94 +84,65 @@ serve(async (req) => {
         }
       }
 
-      // Step 3: Meta Ad Library Analysis (with timeout protection)
-      try {
-        const adsResponse: any = await Promise.race([
-          supabase.functions.invoke('analyze-meta-ads', {
-            body: { 
-              competitorName: competitor.name,
-              competitorUrl: competitor.url,
-              competitorListId: competitorListId,
-              userId: userId
-            }
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Ad analysis timeout')), 30000)
-          )
-        ]);
-        
-        if (adsResponse?.data?.success) {
-          adsData = adsResponse.data.data;
-        }
-      } catch (error) {
-        console.error(`Failed to analyze ads for ${competitor.name}:`, error);
-        adsData = {
-          ads: [],
-          insights: { 
-            common_hooks: [],
-            common_ctas: [],
-            dominant_tones: [],
-            avg_text_length: 0
-          },
-          total_ads_found: 0,
-          error: (error as Error).message
-        };
-      }
+      // Step 3: Meta Ad Library Analysis is disabled (no API access)
+      const adsData = {
+        ads: [],
+        insights: null,
+        total_ads_found: 0,
+      };
 
-      // Only use fallback data when absolutely necessary
+      // Only website-based insights
       const hasValidWebsiteData = websiteData?.analysis && 
         websiteData.analysis.niche !== "Unknown" && 
         websiteData.analysis.audience !== "General";
-      
-      const hasValidAdsData = adsData?.ads && adsData.ads.length > 0;
       
       competitorInsights.push({
         name: competitor.name,
         url: competitor.url,
         websiteAnalysis: hasValidWebsiteData ? websiteData.analysis : null,
-        ads: adsData?.ads || [],
-        insights: hasValidAdsData ? adsData.insights : null,
-        total_ads_found: adsData?.total_ads_found || 0,
-        no_ads_message: adsData?.error || (!hasValidAdsData ? `No active ads found for ${competitor.name}. They may not be running Facebook ads currently, or their ads are not publicly visible in the Ad Library.` : null),
-        analysis_error: (!hasValidWebsiteData && !hasValidAdsData) ? `Limited data available for ${competitor.name}. This could indicate the website couldn't be properly analyzed or they're not running Facebook ads.` : null
+        ads: [],
+        insights: null,
+        total_ads_found: 0,
+        no_ads_message: null,
+        analysis_error: (!hasValidWebsiteData) ? `Limited data available for ${competitor.name}. The website couldn't be properly analyzed.` : null
       });
     }
 
-    // Generate overall patterns and trends  
+    // Generate overall patterns and trends based on website analysis only
     const overallInsights = generateOverallInsights(competitorInsights) || {
       trending_hooks: [],
       trending_tones: [],
       trending_ctas: [],
-      key_patterns: ["Not enough competitor ad data to generate intelligence summary. Most competitors either don't have active Facebook ads or couldn't be accessed due to API limitations."],
+      key_patterns: ["Not enough competitor website data to generate intelligence summary."],
       data_quality: {
         competitors_analyzed: competitorInsights.length,
-        competitors_with_ad_data: competitorInsights.filter(c => c.total_ads_found > 0).length,
+        competitors_with_ad_data: 0,
         total_hooks: 0,
         total_ctas: 0
       }
     };
     
-    // Step 4: Generate angle suggestions for user selection
+    // Angle suggestions remain, based on website insights
     const suggestedAngles = [
       {
         type: 'competitor-inspired',
         title: 'Competitor-Inspired',
-        description: 'Use proven angles and tactics that competitors are using successfully.',
-        strategy: 'Leverage competitor-validated messaging patterns and successful ad formats.',
+        description: 'Use proven angles and tactics surfaced from competitor websites.',
+        strategy: 'Leverage common value propositions and tones seen across competitor sites.',
         confidence: 85
       },
       {
         type: 'differentiated', 
         title: 'Differentiated',
-        description: 'Stand out by taking a unique position that competitors are not addressing.',
-        strategy: 'Identify gaps in competitor messaging and position your brand as the unique solution.',
+        description: 'Stand out by taking a unique position competitors are not addressing.',
+        strategy: 'Identify gaps in competitor website messaging and position as the unique solution.',
         confidence: 75
       },
       {
         type: 'hybrid',
         title: 'Hybrid',
-        description: 'Combine proven competitor tactics with your unique brand positioning.',
-        strategy: 'Use competitor-validated hooks but differentiate through your unique approach and value props.',
+        description: 'Combine proven competitor tactics with your brand positioning.',
+        strategy: 'Use competitor-validated messaging patterns but differentiate via approach and value props.',
         confidence: 90
       }
     ];

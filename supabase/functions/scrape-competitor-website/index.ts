@@ -33,34 +33,61 @@ serve(async (req) => {
       throw new Error('Firecrawl API key not configured');
     }
 
-    const scrapeResponse = await fetch('https://api.firecrawl.dev/v0/scrape', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${firecrawlApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: competitorUrl,
-        formats: ['markdown', 'html'],
-        onlyMainContent: true,
-        includeTags: ['h1', 'h2', 'h3', 'p', 'meta'],
-        excludeTags: ['nav', 'footer', 'script', 'style']
-      })
-    });
+    // Try Firecrawl first, then gracefully fall back to direct HTML fetch
+    let content = '';
+    let metadata: any = {};
+    try {
+      const scrapeResponse = await fetch('https://api.firecrawl.dev/v0/scrape', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${firecrawlApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: competitorUrl,
+          formats: ['markdown', 'html'],
+          onlyMainContent: true,
+          includeTags: ['h1', 'h2', 'h3', 'p', 'meta'],
+          excludeTags: ['nav', 'footer', 'script', 'style']
+        })
+      });
 
-    if (!scrapeResponse.ok) {
-      throw new Error(`Firecrawl API error: ${scrapeResponse.statusText}`);
+      if (scrapeResponse.ok) {
+        const scrapeData = await scrapeResponse.json();
+        if (scrapeData.success) {
+          content = scrapeData.data.markdown || scrapeData.data.html || '';
+          metadata = scrapeData.data.metadata || {};
+        } else {
+          console.warn('Firecrawl responded but did not succeed; falling back to direct fetch');
+        }
+      } else {
+        console.warn(`Firecrawl API non-OK (${scrapeResponse.statusText}); falling back to direct fetch`);
+      }
+    } catch (fcErr) {
+      console.warn('Firecrawl failed, using direct HTML fetch fallback:', fcErr);
     }
 
-    const scrapeData = await scrapeResponse.json();
-    
-    if (!scrapeData.success) {
-      throw new Error('Failed to scrape website');
+    // Fallback: direct HTML fetch and simple parsing
+    if (!content) {
+      try {
+        const resp = await fetch(competitorUrl, { method: 'GET' });
+        const html = await resp.text();
+        // Basic sanitization: strip scripts/styles/nav/footer and compress whitespace
+        const cleaned = html
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+          .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        content = cleaned.slice(0, 20000); // keep reasonable size
+      } catch (htmlErr) {
+        console.error('Direct HTML fetch fallback failed:', htmlErr);
+        // As a last resort, keep content empty; analysis will use heuristic fallback later
+        content = '';
+      }
     }
-
-    // Extract key information from scraped content
-    const content = scrapeData.data.markdown || scrapeData.data.html || '';
-    const metadata = scrapeData.data.metadata || {};
 
     // Take screenshot of the homepage using Playwright
     let screenshotUrl = null;
