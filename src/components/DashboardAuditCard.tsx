@@ -39,7 +39,7 @@ interface AuditResult {
 }
 
 interface DashboardAuditCardProps {
-  adAccountId: string;
+  adAccountId?: string | null;
 }
 
 export function DashboardAuditCard({ adAccountId }: DashboardAuditCardProps) {
@@ -47,6 +47,8 @@ export function DashboardAuditCard({ adAccountId }: DashboardAuditCardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isQueuing, setIsQueuing] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const isConnected = !!adAccountId;
 
   const fetchAudit = async () => {
     setIsLoading(true);
@@ -163,6 +165,35 @@ export function DashboardAuditCard({ adAccountId }: DashboardAuditCardProps) {
         return <Clock className="w-4 h-4 text-gray-600" />;
     }
   };
+
+  if (!isConnected) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Dashboard Copilot Audit
+            <Badge variant="secondary" className="text-xs">Connect Required</Badge>
+          </CardTitle>
+          <CardDescription>
+            AI-powered recommendations for optimizing your ad performance
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <h4 className="font-medium mb-2">Connect Facebook to Unlock Audit</h4>
+            <p className="text-muted-foreground mb-4">
+              Connect your Facebook Business account to get AI-powered optimization recommendations for your ad campaigns.
+            </p>
+            <Button variant="outline" disabled>
+              <ExternalLink className="w-4 h-4 mr-2" />
+              Facebook Connection Required
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

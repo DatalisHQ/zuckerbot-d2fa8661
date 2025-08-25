@@ -317,59 +317,63 @@ useEffect(() => {
             />
           )}
 
-          {/* Quick Actions */}
+          {/* Quick Actions and Dashboard Copilot Audit */}
           <section>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Quick Actions</h3>
+              <h3 className="text-xl font-semibold">Quick Actions & Dashboard Copilot</h3>
               <Button onClick={() => navigate("/campaign-flow")}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create New Campaign
               </Button>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              <Card 
-                className="cursor-pointer hover:shadow-md transition-shadow opacity-50" 
-                title="Coming Soon"
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <TrendingUp className="h-5 w-5" />
-                    Strategic Insights
-                    <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    AI-powered market intelligence and recommendations
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full" disabled>Coming Soon</Button>
-                </CardContent>
-              </Card>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {/* Quick Actions */}
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card 
+                    className="cursor-pointer hover:shadow-md transition-shadow opacity-50" 
+                    title="Coming Soon"
+                  >
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <TrendingUp className="h-5 w-5" />
+                        Strategic Insights
+                        <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
+                      </CardTitle>
+                      <CardDescription>
+                        AI-powered market intelligence and recommendations
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button className="w-full" disabled>Coming Soon</Button>
+                    </CardContent>
+                  </Card>
 
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/campaign-flow")}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <PlayCircle className="h-5 w-5" />
-                    Launch Campaign
-                  </CardTitle>
-                  <CardDescription>
-                    Start a new ZuckerBot campaign flow
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full">Get Started</Button>
-                </CardContent>
-              </Card>
+                  <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/campaign-flow")}>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <PlayCircle className="h-5 w-5" />
+                        Launch Campaign
+                      </CardTitle>
+                      <CardDescription>
+                        Start a new ZuckerBot campaign flow
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button className="w-full">Get Started</Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
 
+              {/* Dashboard Copilot Audit */}
+              <div>
+                <DashboardAuditCard 
+                  adAccountId={profile?.facebook_connected && profile?.selected_ad_account_id ? profile.selected_ad_account_id : null} 
+                />
+              </div>
             </div>
           </section>
-
-          {/* Dashboard Copilot Audit */}
-          {profile?.facebook_connected && profile?.selected_ad_account_id && (
-            <section>
-              <DashboardAuditCard adAccountId={profile.selected_ad_account_id} />
-            </section>
-          )}
 
           {/* Performance Overview (moved up) */}
           <section>
