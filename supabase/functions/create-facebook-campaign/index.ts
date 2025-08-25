@@ -18,11 +18,27 @@ const GRAPH_VERSION = Deno.env.get('FACEBOOK_API_VERSION') || 'v22.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 class MetaGraphClient {
-  constructor(private accessToken: string) {}
+  constructor(private accessToken: string, private appSecret: string) {}
+
+  // Generate appsecret_proof for enhanced security
+  private async generateAppSecretProof(): Promise<string> {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(this.appSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(this.accessToken));
+    const hashArray = Array.from(new Uint8Array(signature));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
 
   async get(path: string, params: Record<string, string> = {}) {
     const url = new URL(`${GRAPH_BASE}${path}`);
     url.searchParams.set('access_token', this.accessToken);
+    url.searchParams.set('appsecret_proof', await this.generateAppSecretProof());
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     const res = await fetch(url.toString());
     const fbtrace_id = res.headers.get('x-fb-trace-id') || undefined;
@@ -32,6 +48,7 @@ class MetaGraphClient {
 
   async postForm(path: string, form: URLSearchParams) {
     form.set('access_token', this.accessToken);
+    form.set('appsecret_proof', await this.generateAppSecretProof());
     const res = await fetch(`${GRAPH_BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -122,6 +139,144 @@ serve(async (req) => {
   }
 
   try {
+    console.log('=== FACEBOOK CAMPAIGN CREATION START ===');
+    console.log('Request timestamp:', new Date().toISOString());
+    
+    // Extract user's access token from Authorization header
+    const authHeader = req.headers.get('authorization');
+    console.log('Authorization header present:', !!authHeader);
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error('❌ Missing or malformed Authorization header');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Missing Authorization header. Please provide Bearer token.',
+          build: BUILD 
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Extract and validate the user's token
+    const userToken = authHeader.slice(7); // Remove 'Bearer ' prefix
+    console.log('User token extracted from header:');
+    console.log('- Length:', userToken.length);
+    console.log('- Prefix:', userToken.slice(0, 5));
+    console.log('- Suffix:', userToken.slice(-5));
+    console.log('- Is empty/undefined:', !userToken || userToken === 'undefined' || userToken === 'null');
+
+    if (!userToken || userToken === 'undefined' || userToken === 'null' || userToken.length < 10) {
+      console.error('❌ Invalid user token detected');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Invalid access token provided. Please reconnect your Facebook account.',
+          reconnectRequired: true,
+          build: BUILD 
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get Facebook app credentials for token validation
+    const appId = Deno.env.get('FACEBOOK_APP_ID');
+    const appSecret = Deno.env.get('FACEBOOK_APP_SECRET');
+    
+    if (!appId || !appSecret) {
+      console.error('❌ Missing Facebook app credentials');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Facebook app not configured properly', 
+          build: BUILD 
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Generate app access token for validation
+    const appAccessToken = `${appId}|${appSecret}`;
+    
+    // Validate user token with Facebook debug endpoint
+    console.log('🔍 Validating user token with Facebook...');
+    const debugUrl = `https://graph.facebook.com/${GRAPH_VERSION}/debug_token?input_token=${userToken}&access_token=${appAccessToken}`;
+    
+    let debugResponse;
+    try {
+      debugResponse = await fetch(debugUrl);
+    } catch (networkError) {
+      console.error('❌ Network error during token validation:', networkError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Network error validating Facebook token',
+          details: String(networkError),
+          build: BUILD,
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const debugData = await debugResponse.json();
+    console.log('Facebook token debug response:', JSON.stringify(debugData, null, 2));
+
+    if (!debugResponse.ok || !debugData?.data?.is_valid) {
+      const errorMsg = debugData?.data?.error?.message || debugData?.error?.message || 'Token validation failed';
+      console.error('❌ Token validation failed:', errorMsg);
+      
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Invalid Facebook access token: ${errorMsg}`,
+          reconnectRequired: true,
+          build: BUILD,
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const tokenData = debugData.data;
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Check token expiry
+    if (tokenData.expires_at && tokenData.expires_at <= now) {
+      console.error('❌ Token has expired');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Facebook access token has expired. Please reconnect your account.',
+          reconnectRequired: true,
+          build: BUILD,
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check required scopes
+    const requiredScopes = ['ads_management'];
+    const tokenScopes = tokenData.scopes || [];
+    const missingScopes = requiredScopes.filter(scope => !tokenScopes.includes(scope));
+    
+    if (missingScopes.length > 0) {
+      console.error('❌ Missing required scopes:', missingScopes);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Missing required permissions: ${missingScopes.join(', ')}. Please reconnect with full permissions.`,
+          reconnectRequired: true,
+          build: BUILD,
+        }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('✅ Token validation successful');
+    console.log('- App ID:', tokenData.app_id);
+    console.log('- User ID:', tokenData.user_id);
+    console.log('- Expires at:', new Date(tokenData.expires_at * 1000).toISOString());
+    console.log('- Scopes:', tokenScopes.join(', '));
+
     const raw = await req.json();
     const parsed = PayloadSchema.safeParse(raw);
     if (!parsed.success) {
@@ -150,13 +305,8 @@ serve(async (req) => {
       );
     }
 
-    const accessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
-    if (!accessToken) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Facebook access token not configured', build: BUILD }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Use the validated user token instead of env variable
+    const accessToken = userToken;
 
     const apiVersion = Deno.env.get('FACEBOOK_API_VERSION') || 'v21.0';
     const baseUrl = `https://graph.facebook.com/${apiVersion}`;
@@ -280,7 +430,7 @@ serve(async (req) => {
       campaignParams.append('end_time', campaign.end_time);
     }
 
-    const mg = new MetaGraphClient(accessToken);
+    const mg = new MetaGraphClient(accessToken, appSecret);
     let campaignResponse;
     try {
       campaignResponse = await mg.postForm(`/act_${adAccountId}/campaigns`, campaignParams);
