@@ -43,6 +43,7 @@ interface AuditResult {
   actions: ActionCard[];
   placeholders?: boolean;
   message?: string;
+  reason?: string;
 }
 
 export default function Copilot() {
@@ -62,33 +63,71 @@ export default function Copilot() {
         (selectedAdAccount.id.startsWith('act_') ? selectedAdAccount.id : `act_${selectedAdAccount.id}`) : 
         null;
 
-      // Use Supabase client to properly handle authentication
       // For GET requests, pass parameters in the URL, not the body
       const url = actParam ? `?act=${encodeURIComponent(actParam)}` : '';
-      const { data, error } = await supabase.functions.invoke('dashboard-audit' + url, {
-        method: 'GET',
-      });
+      let lastError: any = null;
 
-      if (error) {
-        // Handle gracefully - don't throw for expected states
-        console.warn('Audit call resulted in error:', error);
-        setAuditResult({
-          health: 'critical',
-          actions: [],
-          placeholders: true,
-          message: error.message || 'Unable to fetch audit data'
-        });
-        return;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const { data, error } = await supabase.functions.invoke('dashboard-audit' + url, {
+            method: 'GET',
+          });
+
+          if (error) {
+            lastError = error;
+            const msg = (error as any)?.message || '';
+            const isNetwork = /Failed to send a request|TypeError|network/i.test(msg);
+            if (isNetwork && attempt < 2) {
+              await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+              continue;
+            }
+
+            console.warn('Audit call error (no retry):', error);
+            setAuditResult({
+              health: 'critical',
+              actions: [],
+              placeholders: true,
+              message: msg || 'Unable to fetch audit data',
+              reason: isNetwork ? 'network_error' : 'service_error',
+            } as any);
+            console.log('copilot_network_error', { reason: isNetwork ? 'network_error' : 'service_error' });
+            return;
+          }
+
+          setAuditResult(data as any);
+          if ((data as any)?.placeholders) {
+            console.log('copilot_placeholder_reason', { reason: (data as any)?.reason || 'unknown' });
+          } else {
+            console.log('copilot_success', { actions: (data as any)?.actions?.length ?? 0 });
+          }
+          return;
+        } catch (e: any) {
+          lastError = e;
+          const isNetwork = /TypeError|NetworkError|Failed to fetch|network/i.test(e?.message || '');
+          if (attempt < 2 && isNetwork) {
+            await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+            continue;
+          }
+          setAuditResult({
+            health: 'watch',
+            actions: [],
+            placeholders: true,
+            reason: 'network_error',
+            message: "We couldn’t reach Copilot. Showing last saved insights.",
+          } as any);
+          console.log('copilot_network_error', { reason: 'network_error' });
+          return;
+        }
       }
 
-      setAuditResult(data);
-    } catch (error) {
-      console.error('Audit error:', error);
-      toast({
-        title: "Audit Failed",
-        description: error.message || "Failed to generate audit recommendations",
-        variant: "destructive",
-      });
+      setAuditResult({
+        health: 'watch',
+        actions: [],
+        placeholders: true,
+        reason: 'network_error',
+        message: (lastError && lastError.message) || "We couldn’t reach Copilot. Showing last saved insights.",
+      } as any);
+      console.log('copilot_network_error', { reason: 'network_error' });
     } finally {
       setIsLoading(false);
     }

@@ -166,10 +166,15 @@ function generateMockMetrics() {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return new Response(null, { status: 200, headers: corsHeaders })
   }
 
   try {
+    const urlObj = new URL(req.url);
+    const actParam = urlObj.searchParams.get('act')?.trim();
+    const authPresent = !!req.headers.get('Authorization');
+    const apikeyPresent = !!req.headers.get('apikey');
+    console.log('audit_req_received', { ts: new Date().toISOString(), act_present: !!actParam, auth_present: authPresent, apikey_present: apikeyPresent });
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -183,12 +188,13 @@ Deno.serve(async (req) => {
     // Get current user (handle unauthenticated gracefully)
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     if (userError || !user) {
-      console.log('User not authenticated, returning placeholder response')
+      console.log('audit_placeholder_returned', { reason: 'unauthenticated' });
       return new Response(
         JSON.stringify({
           health: 'watch',
           actions: [],
           placeholders: true,
+          reason: 'unauthenticated',
           message: 'Sign in to see live insights'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -201,11 +207,13 @@ Deno.serve(async (req) => {
     
     // Handle missing ad account ID with graceful fallback
     if (!adAccountId) {
+      console.log('audit_placeholder_returned', { reason: 'no_account' });
       return new Response(
         JSON.stringify({
           health: 'watch',
           actions: [],
           placeholders: true,
+          reason: 'no_account',
           message: 'No ad account connected. Connect to see live insights.'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -214,6 +222,7 @@ Deno.serve(async (req) => {
 
     // Validate ad account ID format
     if (!/^act_\d+$/.test(adAccountId)) {
+      console.log('invalid_input', { reason: 'invalid_act_format', act: adAccountId });
       return new Response(
         JSON.stringify({
           error: 'Invalid ad account format. Expected act_<number>.',
@@ -288,11 +297,15 @@ Deno.serve(async (req) => {
     // Step C: Call OpenAI with Structured Outputs
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
     if (!openaiApiKey) {
-      console.warn('OpenAI API key not found, returning candidate actions directly')
+      console.warn('OpenAI API key missing; returning placeholder');
+      console.log('audit_placeholder_returned', { reason: 'config_missing' });
       return new Response(
         JSON.stringify({
-          health: candidateActions.length >= 3 ? 'watch' : 'healthy',
-          actions: candidateActions.slice(0, 5)
+          health: 'watch',
+          actions: [],
+          placeholders: true,
+          reason: 'config_missing',
+          message: 'Temporarily unavailable'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -391,8 +404,19 @@ Deno.serve(async (req) => {
     })
 
     if (!openaiResponse.ok) {
-      console.error('OpenAI API error:', openaiResponse.status, await openaiResponse.text())
-      throw new Error('Failed to process actions with AI')
+      const errText = await openaiResponse.text()
+      console.error('OpenAI API error:', openaiResponse.status, errText)
+      console.log('audit_placeholder_returned', { reason: 'ai_unavailable' });
+      return new Response(
+        JSON.stringify({
+          health: 'watch',
+          actions: candidateActions.slice(0, 5),
+          placeholders: true,
+          reason: 'ai_unavailable',
+          message: 'AI refinement unavailable. Showing raw recommendations.'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     const openaiData = await openaiResponse.json()
@@ -401,6 +425,7 @@ Deno.serve(async (req) => {
       { health: 'healthy', actions: candidateActions.slice(0, 5) }
 
     console.log(`Audit completed: ${auditResult.health} status with ${auditResult.actions.length} actions`)
+    console.log('audit_success', { health: auditResult.health, actions: auditResult.actions.length });
 
     return new Response(
       JSON.stringify(auditResult),
@@ -408,10 +433,11 @@ Deno.serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('Error in dashboard-audit function:', error)
+    const err: any = error;
+    console.error('audit_internal_error', { msg: err?.message, name: err?.name, stack: err?.stack?.slice(0,500) });
     return new Response(
       JSON.stringify({ 
-        error: error.message,
+        error: err?.message || 'Internal error',
         health: 'critical',
         actions: []
       }),
