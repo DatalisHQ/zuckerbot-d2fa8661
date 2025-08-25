@@ -24,6 +24,7 @@ import { useCampaignDrafts } from "@/hooks/useCampaignDrafts";
 import { DraftCampaignCard } from "@/components/DraftCampaignCard";
 import { FacebookConnector } from "@/components/FacebookConnector";
 import { DashboardAuditCard } from "@/components/DashboardAuditCard";
+import { CompetitorAnalysisOutcomes } from "@/components/CompetitorAnalysisOutcomes";
 
 interface Campaign {
   id: string;
@@ -317,68 +318,70 @@ useEffect(() => {
             />
           )}
 
-          {/* Quick Actions and Dashboard Copilot Audit */}
+          {/* Quick Actions Row */}
           <section>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Quick Actions & Dashboard Copilot</h3>
-              <Button onClick={() => navigate("/campaign-flow")}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create New Campaign
-              </Button>
+              <h3 className="text-xl font-semibold">Quick Actions</h3>
             </div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {/* Quick Actions */}
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Card 
-                    className="cursor-pointer hover:shadow-md transition-shadow opacity-50" 
-                    title="Coming Soon"
-                  >
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-lg">
-                        <TrendingUp className="h-5 w-5" />
-                        Strategic Insights
-                        <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
-                      </CardTitle>
-                      <CardDescription>
-                        AI-powered market intelligence and recommendations
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Button className="w-full" disabled>Coming Soon</Button>
-                    </CardContent>
-                  </Card>
+            <div className="grid gap-4 md:grid-cols-3">
+              {/* Launch Campaign */}
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/campaign-flow")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <PlayCircle className="h-5 w-5" />
+                    Launch Campaign
+                  </CardTitle>
+                  <CardDescription>
+                    Start a new ZuckerBot campaign flow
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">Get Started</Button>
+                </CardContent>
+              </Card>
 
-                  <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/campaign-flow")}>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-lg">
-                        <PlayCircle className="h-5 w-5" />
-                        Launch Campaign
-                      </CardTitle>
-                      <CardDescription>
-                        Start a new ZuckerBot campaign flow
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Button className="w-full">Get Started</Button>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
+              {/* Copilot */}
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/copilot")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <TrendingUp className="h-5 w-5" />
+                    Copilot
+                  </CardTitle>
+                  <CardDescription>
+                    AI-powered campaign optimization
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">Launch Copilot</Button>
+                </CardContent>
+              </Card>
 
-              {/* Dashboard Copilot Audit */}
-              <div>
-                <DashboardAuditCard 
-                  adAccountId={profile?.facebook_connected && profile?.selected_ad_account_id ? profile.selected_ad_account_id : null} 
-                />
-              </div>
+              {/* Strategic Insights */}
+              <Card 
+                className="cursor-pointer hover:shadow-md transition-shadow opacity-50" 
+                title="Coming Soon"
+              >
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <TrendingUp className="h-5 w-5" />
+                    Strategic Insights
+                    <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    AI-powered market intelligence and recommendations
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full" disabled>Coming Soon</Button>
+                </CardContent>
+              </Card>
             </div>
           </section>
 
-          {/* Performance Overview (moved up) */}
+          {/* Facebook Ads Performance Graph */}
           <section>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Performance Overview</h3>
+              <h3 className="text-xl font-semibold">Facebook Ads Performance</h3>
               {selectedCampaign && (
                 <Badge variant="outline" className="text-sm">
                   Viewing: {selectedCampaign.campaign_name}
@@ -386,6 +389,21 @@ useEffect(() => {
               )}
             </div>
             <FacebookAdsPerformance selectedCampaign={selectedCampaign} />
+          </section>
+
+          {/* Competitor Analysis Outcomes */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold">Competitor Analysis Outcomes</h3>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => navigate("/competitor-flow")}
+              >
+                View All Analysis
+              </Button>
+            </div>
+            <CompetitorAnalysisOutcomes isConnected={profile?.facebook_connected || false} />
           </section>
 
           {/* Campaigns Section */}
