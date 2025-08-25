@@ -180,10 +180,19 @@ Deno.serve(async (req) => {
       }
     )
 
-    // Get current user
+    // Get current user (handle unauthenticated gracefully)
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     if (userError || !user) {
-      throw new Error('User not authenticated')
+      console.log('User not authenticated, returning placeholder response')
+      return new Response(
+        JSON.stringify({
+          health: 'watch',
+          actions: [],
+          placeholders: true,
+          message: 'Sign in to see live insights'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     // Get ad account ID from query params
