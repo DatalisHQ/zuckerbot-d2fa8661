@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { metaTracking } from "@/lib/meta-tracking";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
@@ -38,6 +39,10 @@ function App() {
   useEffect(() => {
     console.log('[App] Initializing auth state');
     
+    // Initialize Meta Pixel tracking (no consent granted initially)
+    metaTracking.init(false);
+    console.log('🎯 Meta tracking initialized');
+    
     // Set up auth state listener with Facebook token handling
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -52,6 +57,14 @@ function App() {
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
+
+        // Track auth events with Meta Pixel
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Grant consent for authenticated users and track registration
+          metaTracking.grantConsent();
+          metaTracking.trackCompleteRegistration(session.user.email);
+          console.log('🎯 Tracked: CompleteRegistration');
+        }
 
         // Handle Facebook OAuth token capture globally
         if (

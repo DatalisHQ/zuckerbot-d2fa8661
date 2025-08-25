@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Loader2, Mail, Lock, User as UserIcon, Facebook, ArrowRight, Shield, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { metaTracking } from "@/lib/meta-tracking";
 import type { User, Session } from '@supabase/supabase-js';
 
 export const AuthPage = () => {
@@ -79,6 +80,10 @@ export const AuthPage = () => {
           throw error;
         }
       } else {
+        // Track lead event for successful sign up
+        metaTracking.trackLead(email);
+        console.log('🎯 Tracked: Lead (signup)');
+        
         toast({
           title: "Account created!",
           description: "Please check your email to verify your account.",
@@ -116,6 +121,10 @@ export const AuthPage = () => {
         } else {
           throw error;
         }
+      } else {
+        // Track lead event for successful sign in (returning user)
+        metaTracking.trackEvent('SignIn', { method: 'email' });
+        console.log('🎯 Tracked: SignIn');
       }
     } catch (error: any) {
       console.error('Sign in error:', error);
@@ -144,6 +153,10 @@ export const AuthPage = () => {
       });
 
       if (error) throw error;
+      
+      // Track Facebook authentication start
+      metaTracking.trackEvent('FacebookAuthStart');
+      console.log('🎯 Tracked: FacebookAuthStart');
     } catch (error: any) {
       console.error('Facebook auth error:', error);
       toast({

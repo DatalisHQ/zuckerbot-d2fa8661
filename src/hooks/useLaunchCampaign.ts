@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { metaTracking } from '@/lib/meta-tracking';
 
 export interface LaunchPayload {
   adAccountId: string;
@@ -72,6 +73,11 @@ export function useLaunchCampaign() {
           const details = data?.details ? ` Details: ${data.details}` : '';
           throw new Error(`${msg}${details}`);
         }
+        
+        // Track successful campaign launch
+        metaTracking.trackCampaignLaunch(payload.campaign.name);
+        console.log('🎯 Tracked: CampaignLaunch -', payload.campaign.name);
+        
         return data as LaunchResult;
       } catch (e: any) {
         // Re-throw with actionable text

@@ -47,3 +47,6 @@ verify_jwt = true
 
 [functions.create-facebook-campaign]
 verify_jwt = true
+
+[functions.track-meta-conversion]
+verify_jwt = true

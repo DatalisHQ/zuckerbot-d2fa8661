@@ -7,6 +7,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { LogOut, User as UserIcon, Bot, MessageCircle, Sparkles, Zap, Target, Code, Facebook, Send } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useEnhancedAuth, validateSession } from "@/utils/auth";
+import { metaTracking } from "@/lib/meta-tracking";
 
 const Index = () => {
   const { toast } = useToast();
@@ -20,6 +21,10 @@ const Index = () => {
 
   useEffect(() => {
     console.log('[Index] Setting up auth state listener');
+    
+    // Track page view when index loads
+    metaTracking.trackPageView();
+    console.log('🎯 Tracked: PageView (Index)');
     
     // Auth state listener - simplified for Index page
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -80,6 +85,9 @@ const Index = () => {
 
   const handleGetStarted = async () => {
     if (!user) {
+      // Track lead for users showing interest
+      metaTracking.trackLead();
+      console.log('🎯 Tracked: Lead (get started)');
       navigate("/auth");
       return;
     }
@@ -100,6 +108,10 @@ const Index = () => {
 
   const handleDemoSubmit = () => {
     if (!demoInput.trim()) return;
+    
+    // Track engagement with demo
+    metaTracking.trackEvent('DemoEngagement', { demo_input: demoInput.substring(0, 50) });
+    console.log('🎯 Tracked: DemoEngagement');
     
     // Show the user's message
     setDemoMessage(demoInput);
