@@ -86,13 +86,42 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch insights/metrics for the last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const dateStart = thirtyDaysAgo.toISOString().split('T')[0];
+    // Function to calculate aggregated metrics for different time windows
+    const calculateAggregates = (metricsArray: any[], windowDays: number) => {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - windowDays);
+      
+      const filtered = metricsArray.filter(m => new Date(m.date_start) >= cutoffDate);
+      if (filtered.length === 0) return null;
+      
+      const totals = filtered.reduce((acc, m) => ({
+        impressions: acc.impressions + (parseInt(m.impressions) || 0),
+        clicks: acc.clicks + (parseInt(m.clicks) || 0),
+        spend: acc.spend + (parseFloat(m.spend) || 0),
+        reach: acc.reach + (parseInt(m.reach) || 0),
+        conversions: acc.conversions + (parseInt(m.conversions) || 0)
+      }), { impressions: 0, clicks: 0, spend: 0, reach: 0, conversions: 0 });
+      
+      return {
+        ...totals,
+        ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0,
+        cpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0,
+        cpc: totals.clicks > 0 ? totals.spend / totals.clicks : 0,
+        roas: totals.spend > 0 ? totals.conversions * 50 / totals.spend : 0, // Assuming $50 avg order value
+        frequency: totals.reach > 0 ? totals.impressions / totals.reach : 0
+      };
+    };
+
+    // Fetch insights/metrics for the last 90 days to support multiple windows
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const dateStart = ninetyDaysAgo.toISOString().split('T')[0];
     const dateEnd = new Date().toISOString().split('T')[0];
 
     const metricsFields = 'impressions,clicks,spend,reach,frequency,ctr,cpc,cpm,cpp,conversions';
+    
+    // Collect all metrics for aggregation
+    const allMetrics = [];
     
     for (const campaign of campaigns) {
       try {
@@ -105,6 +134,8 @@ Deno.serve(async (req) => {
           const insights = insightsData.data || [];
 
           for (const insight of insights) {
+            allMetrics.push({ ...insight, campaign_id: campaign.id });
+            
             const { error: metricsError } = await supabaseClient
               .from('facebook_ad_metrics')
               .upsert({
@@ -134,6 +165,33 @@ Deno.serve(async (req) => {
         }
       } catch (error) {
         console.error(`Error fetching insights for campaign ${campaign.id}:`, error);
+      }
+    }
+
+    // Store aggregated metrics for different time windows
+    const windows = [
+      { days: 7, key: '7d' },
+      { days: 30, key: '30d' },
+      { days: 90, key: '90d' }
+    ];
+
+    for (const window of windows) {
+      const aggregates = calculateAggregates(allMetrics, window.days);
+      
+      if (aggregates) {
+        // Store account-level summary
+        await supabaseClient
+          .from('fb_metrics_cache')
+          .upsert({
+            user_id: user.id,
+            ad_account_id: `act_${businessId}`,
+            cache_key: 'summary',
+            time_window: window.key,
+            metrics_data: aggregates,
+            entity_metrics: { campaigns: campaigns.length, total_spend: aggregates.spend },
+            cached_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
+          });
       }
     }
 

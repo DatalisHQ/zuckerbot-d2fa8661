@@ -21,6 +21,15 @@ interface ActionCard {
     headlines: string[]
     primary_texts: string[]
   }
+  comparison?: {
+    window_primary: string
+    window_baseline: string | null
+    deltas: {
+      roas: number
+      cpa: number
+      ctr: number
+    }
+  }
 }
 
 interface AuditResponse {
@@ -28,88 +37,138 @@ interface AuditResponse {
   actions: ActionCard[]
 }
 
-// Rules Engine - Deterministic logic for generating candidate actions
-function generateCandidateActions(metricsData: any, entityMetrics: any): ActionCard[] {
+type WindowKey = '7d' | '30d' | '90d';
+
+// Helper function to get summary data by window
+async function getSummary(supabaseClient: any, userId: string, adAccountId: string, windows: WindowKey[]) {
+  const summaries: Record<string, any> = {};
+  
+  for (const window of windows) {
+    const { data } = await supabaseClient
+      .from('fb_metrics_cache')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('ad_account_id', adAccountId)
+      .eq('cache_key', 'summary')
+      .eq('time_window', window)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle();
+    
+    if (data) {
+      summaries[window] = data.metrics_data;
+    }
+  }
+  
+  return summaries;
+}
+
+// Rules Engine with multi-window support
+function generateCandidateActions(summaries: Record<string, any>, sevenDayData: any, thirtyDayData: any): ActionCard[] {
   const candidates: ActionCard[] = []
   
   try {
-    // Scale winners: ROAS >= 1.3x median AND CPA < median
-    const campaigns = entityMetrics.campaigns || []
-    const adSets = entityMetrics.adSets || []
+    const seven = sevenDayData || {};
+    const thirty = thirtyDayData || {};
+    const hasComparison = seven && thirty;
     
-    if (campaigns.length > 1) {
-      const roasValues = campaigns.map(c => c.roas || 0).filter(r => r > 0)
-      const cpaValues = campaigns.map(c => c.cpa || 0).filter(c => c > 0)
+    // Calculate deltas if we have both windows
+    const deltas = hasComparison ? {
+      roas: thirty.roas > 0 ? seven.roas / thirty.roas : 1,
+      cpa: thirty.cpa > 0 ? seven.cpa / thirty.cpa : 1,
+      ctr: thirty.ctr > 0 ? seven.ctr / thirty.ctr : 1
+    } : { roas: 1, cpa: 1, ctr: 1 };
+
+    // Scale winners: 7d ROAS ≥ 1.3x 30d ROAS and 7d CPA < 30d CPA
+    if (hasComparison && deltas.roas >= 1.3 && deltas.cpa < 1.0 && thirty.conversions >= 50) {
+      const currentBudget = 100; // Default budget for mock data
+      const maxIncrease = Math.min(currentBudget * 0.3, 50);
       
-      if (roasValues.length > 0 && cpaValues.length > 0) {
-        const medianRoas = roasValues.sort((a, b) => a - b)[Math.floor(roasValues.length / 2)]
-        const medianCpa = cpaValues.sort((a, b) => a - b)[Math.floor(cpaValues.length / 2)]
-        
-        campaigns.forEach((campaign) => {
-          if (!campaign.in_learning && campaign.roas >= medianRoas * 1.3 && campaign.cpa < medianCpa && campaign.conversions >= 50) {
-            // Don't exceed 30% budget increase
-            const maxIncrease = Math.min(campaign.daily_budget * 0.3, 50)
-            candidates.push({
-              id: `inc_budget_${campaign.id}`,
-              type: 'increase_budget',
-              entity: { type: 'campaign', id: campaign.id },
-              title: `Scale ${campaign.name}`,
-              why: `Strong ROAS of ${campaign.roas.toFixed(2)} vs median ${medianRoas.toFixed(2)}`,
-              impact_score: 8.5,
-              payload: {
-                current_budget: campaign.daily_budget,
-                new_budget: campaign.daily_budget + maxIncrease,
-                increase_amount: maxIncrease
-              }
-            })
-          }
-        })
-      }
-    }
-    
-    // Creative fatigue: frequency > 3.0 and CTR down >= 30% WoW
-    adSets.forEach((adSet) => {
-      if (adSet.frequency > 3.0 && adSet.ctr_change_wow <= -0.3) {
-        candidates.push({
-          id: `swap_creative_${adSet.id}`,
-          type: 'swap_creative',
-          entity: { type: 'adset', id: adSet.id },
-          title: `Refresh Creative for ${adSet.name}`,
-          why: `High frequency ${adSet.frequency.toFixed(1)} with CTR drop of ${(adSet.ctr_change_wow * 100).toFixed(0)}%`,
-          impact_score: 7.2,
-          payload: {
-            current_frequency: adSet.frequency,
-            ctr_decline: adSet.ctr_change_wow
-          }
-        })
-      }
-    })
-    
-    // Pause underperformers: bottom quartile ROAS with sufficient data
-    if (campaigns.length >= 4) {
-      const sortedCampaigns = campaigns.filter(c => c.conversions >= 20).sort((a, b) => a.roas - b.roas)
-      const bottomQuartile = sortedCampaigns.slice(0, Math.ceil(sortedCampaigns.length * 0.25))
-      
-      bottomQuartile.forEach((campaign) => {
-        if (!campaign.in_learning && campaign.conversions >= 50) {
-          candidates.push({
-            id: `pause_${campaign.id}`,
-            type: 'pause',
-            entity: { type: 'campaign', id: campaign.id },
-            title: `Pause ${campaign.name}`,
-            why: `Bottom quartile ROAS of ${campaign.roas.toFixed(2)} with ${campaign.conversions} conversions`,
-            impact_score: 6.8,
-            payload: {
-              current_roas: campaign.roas,
-              conversions: campaign.conversions
-            }
-          })
+      candidates.push({
+        id: `scale_winner_account`,
+        type: 'increase_budget',
+        entity: { type: 'campaign', id: 'mock_campaign_1' },
+        title: `Scale High-Performing Campaigns`,
+        why: `7d ROAS of ${seven.roas?.toFixed(2)} is ${((deltas.roas - 1) * 100).toFixed(0)}% higher than 30d baseline`,
+        impact_score: 8.5,
+        payload: {
+          current_budget: currentBudget,
+          new_budget: currentBudget + maxIncrease,
+          increase_amount: maxIncrease
+        },
+        comparison: {
+          window_primary: '7d',
+          window_baseline: '30d',
+          deltas
         }
-      })
+      });
+    }
+
+    // Reduce waste: 7d ROAS < 0.7x 30d ROAS and significant spend
+    if (hasComparison && deltas.roas < 0.7 && seven.spend >= (thirty.spend * 0.2 / 30 * 7)) {
+      candidates.push({
+        id: `reduce_waste_account`,
+        type: 'decrease_budget',
+        entity: { type: 'campaign', id: 'mock_campaign_2' },
+        title: `Reduce Underperforming Budget`,
+        why: `7d ROAS of ${seven.roas?.toFixed(2)} is ${((1 - deltas.roas) * 100).toFixed(0)}% below 30d baseline`,
+        impact_score: 7.0,
+        payload: {
+          current_roas: seven.roas,
+          baseline_roas: thirty.roas,
+          decline_percent: ((1 - deltas.roas) * 100).toFixed(0)
+        },
+        comparison: {
+          window_primary: '7d',
+          window_baseline: '30d',
+          deltas
+        }
+      });
+    }
+
+    // Creative fatigue: 7d CTR ≤ 0.7x 30d CTR and high frequency
+    if (hasComparison && deltas.ctr <= 0.7 && seven.frequency > 3.0) {
+      candidates.push({
+        id: `creative_fatigue_account`,
+        type: 'swap_creative',
+        entity: { type: 'adset', id: 'mock_adset_1' },
+        title: `Refresh Creative Assets`,
+        why: `7d CTR of ${seven.ctr?.toFixed(2)}% is ${((1 - deltas.ctr) * 100).toFixed(0)}% below baseline with frequency ${seven.frequency?.toFixed(1)}`,
+        impact_score: 7.2,
+        payload: {
+          current_frequency: seven.frequency,
+          ctr_decline: ((1 - deltas.ctr) * 100).toFixed(0)
+        },
+        comparison: {
+          window_primary: '7d',
+          window_baseline: '30d',
+          deltas
+        }
+      });
+    }
+
+    // Learning guardrail: if insufficient data, suggest data collection
+    if (thirty.conversions < 50) {
+      candidates.push({
+        id: `learning_phase_account`,
+        type: 'change_placements',
+        entity: { type: 'campaign', id: 'mock_campaign_learning' },
+        title: `Optimize for Learning`,
+        why: `Only ${thirty.conversions || 0} conversions in 30d - need more data before aggressive changes`,
+        impact_score: 5.0,
+        payload: {
+          conversions: thirty.conversions || 0,
+          recommendation: 'Continue data collection with current settings'
+        },
+        comparison: {
+          window_primary: '7d',
+          window_baseline: '30d',
+          deltas
+        }
+      });
     }
     
   } catch (error) {
-    console.error('Error in rules engine:', error)
+    console.error('Error in multi-window rules engine:', error)
   }
   
   return candidates.slice(0, 8) // Limit to 8 candidates for OpenAI processing
@@ -238,50 +297,69 @@ Deno.serve(async (req) => {
 
     console.log(`Dashboard audit requested for user ${user.id}, account ${adAccountId}`)
 
-    // Step A: Pull cached metrics (7d/30d) → if stale, refresh in background
-    let metricsData: any = {}
-    let entityMetrics: any = {}
+    // Step A: Pull cached metrics (7d/30d/90d) → if stale, refresh in background
+    const windows: WindowKey[] = ['7d', '30d', '90d'];
+    const summaries = await getSummary(supabaseClient, user.id, adAccountId, windows);
     
-    // Check cache first
-    const { data: cachedData } = await supabaseClient
-      .from('fb_metrics_cache')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('ad_account_id', adAccountId)
-      .eq('cache_key', '7d_summary')
-      .gt('expires_at', new Date().toISOString())
-      .single()
-
-    if (cachedData) {
-      console.log('Using cached metrics data')
-      metricsData = cachedData.metrics_data
-      entityMetrics = cachedData.entity_metrics
-    } else {
-      console.log('Cache miss or expired, using mock data for development')
-      // For development - use mock data
-      const mockData = generateMockMetrics()
-      metricsData = mockData.summary
-      entityMetrics = { 
-        campaigns: mockData.campaigns, 
-        adSets: mockData.adSets 
-      }
+    console.log('audit_req_received', { windows: Object.keys(summaries) });
+    
+    let sevenDayData = summaries['7d'];
+    let thirtyDayData = summaries['30d'];
+    
+    // Fallback to mock data if no cached data available
+    if (!sevenDayData && !thirtyDayData) {
+      console.log('Cache miss for all windows, using mock data for development');
+      const mockData = generateMockMetrics();
       
-      // Cache the mock data
-      await supabaseClient
-        .from('fb_metrics_cache')
-        .upsert({
+      // Create mock window data with realistic deltas
+      sevenDayData = {
+        ...mockData.summary,
+        roas: mockData.summary.avg_roas * 1.2, // 7d performing 20% better
+        ctr: mockData.summary.avg_ctr * 0.9,   // 7d CTR down 10%
+        frequency: 3.2,
+        conversions: 25
+      };
+      
+      thirtyDayData = {
+        ...mockData.summary,
+        roas: mockData.summary.avg_roas,
+        ctr: mockData.summary.avg_ctr,
+        frequency: 2.8,
+        conversions: 75
+      };
+      
+      // Cache the mock data for both windows
+      await Promise.all([
+        supabaseClient.from('fb_metrics_cache').upsert({
           user_id: user.id,
           ad_account_id: adAccountId,
-          cache_key: '7d_summary',
-          metrics_data: metricsData,
-          entity_metrics: entityMetrics,
+          cache_key: 'summary',
+          time_window: '7d',
+          metrics_data: sevenDayData,
+          entity_metrics: { campaigns: mockData.campaigns, adSets: mockData.adSets },
           cached_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString() // 4 hours
+          expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
+        }),
+        supabaseClient.from('fb_metrics_cache').upsert({
+          user_id: user.id,
+          ad_account_id: adAccountId,
+          cache_key: 'summary',
+          time_window: '30d',
+          metrics_data: thirtyDayData,
+          entity_metrics: { campaigns: mockData.campaigns, adSets: mockData.adSets },
+          cached_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
         })
+      ]);
     }
 
-    // Step B: Rules Engine builds candidate actions
-    const candidateActions = generateCandidateActions(metricsData, entityMetrics)
+    // Step B: Rules Engine builds candidate actions using multi-window analysis
+    const candidateActions = generateCandidateActions(summaries, sevenDayData, thirtyDayData);
+    console.log('rules', { 
+      scale_winner: candidateActions.filter(a => a.id.includes('scale')).length,
+      reduce_waste: candidateActions.filter(a => a.id.includes('waste')).length,
+      creative_fatigue: candidateActions.filter(a => a.id.includes('creative')).length
+    });
     console.log(`Generated ${candidateActions.length} candidate actions`)
 
     if (candidateActions.length === 0) {
@@ -317,7 +395,7 @@ Deno.serve(async (req) => {
       .select('*')
       .eq('user_id', user.id)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
 
     const brandVoice = brandData ? 
       `Brand: ${brandData.brand_name}. Business: ${brandData.business_category}. Value props: ${brandData.value_propositions?.join(', ') || 'N/A'}` :

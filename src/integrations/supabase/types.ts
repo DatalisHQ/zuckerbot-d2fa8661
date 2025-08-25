@@ -912,6 +912,7 @@ export type Database = {
           expires_at: string
           id: string
           metrics_data: Json
+          time_window: string | null
           updated_at: string
           user_id: string
         }
@@ -924,6 +925,7 @@ export type Database = {
           expires_at?: string
           id?: string
           metrics_data?: Json
+          time_window?: string | null
           updated_at?: string
           user_id: string
         }
@@ -936,6 +938,7 @@ export type Database = {
           expires_at?: string
           id?: string
           metrics_data?: Json
+          time_window?: string | null
           updated_at?: string
           user_id?: string
         }
