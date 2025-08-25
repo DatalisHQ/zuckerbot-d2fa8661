@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { TrendingUp, Target, Lightbulb, ExternalLink, AlertCircle, BarChart3 } from "lucide-react";
+import { TrendingUp, Target, ExternalLink, AlertCircle, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AudienceSegments, type AudienceSegment } from './AudienceSegments';
@@ -78,8 +78,6 @@ export const CompetitorInsights = ({
   const [suggestedAngles, setSuggestedAngles] = useState<AngleSuggestion[]>([]);
   const [selectedAngle, setSelectedAngle] = useState<AngleSuggestion | null>(null);
   const [showAudienceSegments, setShowAudienceSegments] = useState(false);
-  const [filters, setFilters] = useState<{ dateFrom?: string; dateTo?: string; creativeType?: string | 'all' }>({ creativeType: 'all' });
-  const [playbook, setPlaybook] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -114,17 +112,8 @@ export const CompetitorInsights = ({
       const insights = data.competitorInsights || [];
       
       setCompetitorInsights(insights);
-      
       setOverallInsights(data.overallInsights);
       setSuggestedAngles(data.suggestedAngles);
-
-      // Fetch playbook summary
-      try {
-        const { data: playbookRes } = await supabase.functions.invoke('competitor-playbook', {
-          body: { competitorListId, userId: user.data.user.id }
-        });
-        setPlaybook(playbookRes?.playbook || null);
-      } catch {}
 
       toast({
         title: "Analysis complete!",
@@ -167,8 +156,7 @@ export const CompetitorInsights = ({
         competitorInsights,
         overallInsights,
         suggestedAngles,
-        competitorProfiles,
-        playbook
+        competitorProfiles
       });
     }
   };
@@ -181,8 +169,7 @@ export const CompetitorInsights = ({
         overallInsights,
         suggestedAngles,
         competitorProfiles,
-        audienceSegments: segments,
-        playbook
+        audienceSegments: segments
       });
     }
   };
@@ -200,25 +187,6 @@ export const CompetitorInsights = ({
     return "bg-orange-500";
   };
 
-  const exportPlaybookToPdf = async (playbookData: any) => {
-    // Simple client-side PDF export via browser print dialog for now
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(`<html><head><title>Competitor Playbook</title></head><body>`);
-    w.document.write(`<h2>Competitor Playbook</h2>`);
-    w.document.write(`<h3>Top Hooks</h3><ul>${(playbookData.top_hooks||[]).map((h: string) => `<li>${h}</li>`).join('')}</ul>`);
-    w.document.write(`<h3>Top CTAs</h3><ul>${(playbookData.top_ctas||[]).map((c: string) => `<li>${c}</li>`).join('')}</ul>`);
-    w.document.write(`<h3>Visual Themes</h3><ul>${(playbookData.visual_themes||[]).map((t: string) => `<li>${t}</li>`).join('')}</ul>`);
-    if (Array.isArray(playbookData.positioning_opportunities)) {
-      w.document.write(`<h3>Positioning Opportunities</h3><ul>${playbookData.positioning_opportunities.map((p: string) => `<li>${p}</li>`).join('')}</ul>`);
-    }
-    w.document.write(`</body></html>`);
-    w.document.close();
-    w.focus();
-    w.print();
-    w.close();
-  };
-
   if (isLoading) {
     return (
       <div className="max-w-4xl mx-auto space-y-6">
@@ -229,7 +197,7 @@ export const CompetitorInsights = ({
               <div className="text-center">
                 <h3 className="text-lg font-semibold">Analyzing Competitor Strategies</h3>
                 <p className="text-sm text-muted-foreground">
-                  Gathering ad data and identifying winning patterns...
+                  Gathering website data and identifying patterns...
                 </p>
               </div>
               <div className="w-full max-w-md">
@@ -247,107 +215,6 @@ export const CompetitorInsights = ({
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Filters */}
-      <Card className="mb-2">
-        <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
-            <label className="text-xs text-muted-foreground">From</label>
-            <input type="date" className="w-full border rounded h-9 px-2"
-              value={filters.dateFrom || ''}
-              onChange={(e) => setFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground">To</label>
-            <input type="date" className="w-full border rounded h-9 px-2"
-              value={filters.dateTo || ''}
-              onChange={(e) => setFilters(prev => ({ ...prev, dateTo: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground">Creative Type</label>
-            <select className="w-full border rounded h-9 px-2"
-              value={filters.creativeType || 'all'}
-              onChange={(e) => setFilters(prev => ({ ...prev, creativeType: e.target.value }))}
-            >
-              <option value="all">All</option>
-              <option value="image">Image</option>
-              <option value="video">Video</option>
-              <option value="carousel">Carousel</option>
-            </select>
-          </div>
-          <div className="flex items-end">
-            <Button variant="outline" className="w-full" onClick={() => fetchCompetitorInsights()}>Refresh</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Competitor Playbook */}
-      {playbook && (
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Lightbulb className="h-5 w-5" />
-              Competitor Playbook
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">Top hooks, CTAs, themes, fatigue flags, and positioning angles</p>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <h4 className="font-medium text-sm mb-2">Top Hooks</h4>
-                <div className="flex flex-wrap gap-1">
-                  {(playbook.top_hooks || []).map((h: string, i: number) => (
-                    <Badge key={i} variant="secondary" className="text-xs">{h}</Badge>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="font-medium text-sm mb-2">Top CTAs</h4>
-                <div className="flex flex-wrap gap-1">
-                  {(playbook.top_ctas || []).map((c: string, i: number) => (
-                    <Badge key={i} className="text-xs bg-primary text-primary-foreground">{c}</Badge>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="font-medium text-sm mb-2">Visual Themes</h4>
-                <div className="flex flex-wrap gap-1">
-                  {(playbook.visual_themes || []).map((t: string, i: number) => (
-                    <Badge key={i} variant="outline" className="text-xs">{t}</Badge>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {Array.isArray(playbook.creative_fatigue_flags) && playbook.creative_fatigue_flags.length > 0 && (
-              <div className="mt-4">
-                <h4 className="font-medium text-sm mb-2 text-red-600">Creative Fatigue Flags</h4>
-                <ul className="text-xs list-disc ml-5">
-                  {playbook.creative_fatigue_flags.slice(0,5).map((f: any, i: number) => (
-                    <li key={i}>{f.ad_id}: {f.reason}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {Array.isArray(playbook.positioning_opportunities) && playbook.positioning_opportunities.length > 0 && (
-              <div className="mt-4">
-                <h4 className="font-medium text-sm mb-2">Positioning Opportunities</h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  {playbook.positioning_opportunities.map((p: string, i: number) => (
-                    <li key={i} className="flex items-start gap-1"><span className="text-primary">•</span>{p}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="mt-4 flex justify-end">
-              <Button variant="outline" onClick={() => exportPlaybookToPdf(playbook)}>Export PDF</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
       {/* Market Intelligence Summary - Only show if we have actionable data */}
       {overallInsights && (overallInsights.trending_hooks?.length > 0 || overallInsights.key_patterns?.some((p: string) => !p.includes("Not enough data"))) && (
         <Card className="mb-6">
@@ -567,8 +434,6 @@ export const CompetitorInsights = ({
                     </CardContent>
                   </Card>
                 )}
-
-                {/* Since we don't have Meta API access, we only show website analysis */}
               </TabsContent>
             ))}
           </Tabs>
