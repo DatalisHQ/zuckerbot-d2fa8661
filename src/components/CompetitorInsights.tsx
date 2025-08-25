@@ -128,7 +128,7 @@ export const CompetitorInsights = ({
 
       toast({
         title: "Analysis complete!",
-        description: `Analyzed ${insights.length} competitors and their ad strategies.`,
+        description: `Analyzed ${insights.length} competitors' websites and strategies.`,
       });
     } catch (error) {
       console.error('Error fetching competitor insights:', error);
@@ -357,10 +357,7 @@ export const CompetitorInsights = ({
               Market Intelligence Summary
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              {overallInsights.data_quality?.competitors_with_ad_data > 0 
-                ? `Based on analysis of ${overallInsights.data_quality?.competitors_with_ad_data} competitor(s) with active advertising data`
-                : `Based on website analysis of ${overallInsights.data_quality?.competitors_with_website_data} competitor(s)`
-              }
+              Based on website analysis of {overallInsights.data_quality?.competitors_with_website_data || competitorInsights.length} competitor(s)
             </p>
           </CardHeader>
           <CardContent>
@@ -368,8 +365,7 @@ export const CompetitorInsights = ({
               {overallInsights.trending_hooks?.length > 0 && (
                 <div>
                   <h4 className="font-medium mb-2">
-                    {overallInsights.data_quality?.competitors_with_ad_data > 0 ? 'Trending Hooks' : 'Common Value Props'} 
-                    ({overallInsights.trending_hooks.length})
+                    Common Value Props ({overallInsights.trending_hooks.length})
                   </h4>
                   <div className="flex flex-wrap gap-1">
                     {overallInsights.trending_hooks.map((hook: string, index: number) => (
@@ -572,119 +568,7 @@ export const CompetitorInsights = ({
                   </Card>
                 )}
 
-                {/* Ad Analysis Section - Only show if ads found */}
-                {competitor.total_ads_found > 0 && (
-                  <div className="space-y-4">
-                    <h4 className="font-semibold">Meta Ads Analysis ({competitor.total_ads_found} ads found)</h4>
-                    
-                    {/* Individual Ad Creatives */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      {competitor.ads?.filter((ad: any) => {
-                        const passType = (filters.creativeType === 'all') || (ad.creative_type === filters.creativeType);
-                        const passFrom = !filters.dateFrom || (new Date(ad.date_created) >= new Date(filters.dateFrom));
-                        const passTo = !filters.dateTo || (new Date(ad.date_created) <= new Date(filters.dateTo));
-                        return passType && passFrom && passTo;
-                      }).slice(0, 4).map((ad: any, adIndex: number) => (
-                        <Card key={adIndex} className="bg-background border">
-                          <CardContent className="p-4">
-                            <div className="flex gap-3">
-                              {ad.image_url && (
-                                <img 
-                                  src={ad.image_url} 
-                                  alt="Ad Creative" 
-                                  className="w-16 h-16 object-cover rounded border flex-shrink-0"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-start justify-between mb-1">
-                                  <h6 className="font-medium text-sm truncate">{ad.headline}</h6>
-                                  <Badge variant="outline" className="text-xs ml-2">{ad.cta}</Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">{ad.primary_text}</p>
-                                <div className="flex gap-2 text-xs text-muted-foreground">
-                                  <span>📊 {ad.impressions}</span>
-                                  <span>💰 {ad.spend_estimate}</span>
-                                  {ad.creative_type && <span>🎨 {ad.creative_type}</span>}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                    
-                    {/* Ad Insights Summary */}
-                    <Card className="bg-primary/5 border-primary/20">
-                      <CardContent className="pt-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                              <h5 className="font-medium text-sm mb-2 text-foreground">Top Hooks</h5>
-                              <div className="space-y-1">
-                                {(competitor.insights?.common_hooks || competitor.insights?.hooks || []).slice(0, 3).map((hook: string, i: number) => (
-                                  <Badge key={i} variant="secondary" className="text-xs block w-fit bg-secondary/80 text-secondary-foreground border border-border">
-                                    {hook}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <h5 className="font-medium text-sm mb-2 text-foreground">Common CTAs</h5>
-                              <div className="space-y-1">
-                                {(competitor.insights?.common_ctas || competitor.insights?.ctas || []).map((cta: string, i: number) => (
-                                  <Badge key={i} className="text-xs block w-fit bg-primary text-primary-foreground">
-                                    {cta}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <h5 className="font-medium text-sm mb-2 text-foreground">Dominant Tones</h5>
-                              <div className="space-y-1">
-                                {(competitor.insights?.dominant_tones || competitor.insights?.creative_trends || []).slice(0, 2).map((tone: string, i: number) => (
-                                  <Badge key={i} variant="outline" className="text-xs block w-fit bg-background border-2 border-primary/30 text-foreground">
-                                    {tone}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Ad Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {competitor.ads.slice(0, 6).map((ad: any) => (
-                        <Card key={ad.id} className="p-4">
-                          <div className="space-y-3">
-                            <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                              <img 
-                                src={ad.image_url} 
-                                alt="Ad creative" 
-                                className="w-full h-full object-cover rounded-lg"
-                                onError={(e) => {
-                                  e.currentTarget.src = 'https://via.placeholder.com/300x200?text=Ad+Creative';
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <h4 className="font-medium text-sm">{ad.headline}</h4>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {ad.primary_text.substring(0, 100)}...
-                              </p>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <Badge variant="default" className="text-xs bg-primary text-primary-foreground">{ad.cta}</Badge>
-                              <span className="text-xs text-muted-foreground">{ad.impressions}</span>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Since we don't have Meta API access, we only show website analysis */}
               </TabsContent>
             ))}
           </Tabs>

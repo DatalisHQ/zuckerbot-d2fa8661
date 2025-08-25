@@ -532,23 +532,23 @@ export const FacebookAdsPerformance = ({ selectedCampaign }: FacebookAdsPerforma
         </CardContent>
       </Card>
 
-      {/* Competitor Ad Intelligence */}
+      {/* Website Analysis Only - Competitor Ad Intelligence Not Available */}
       <Card>
         <CardHeader>
-          <CardTitle>Competitor Ad Intelligence</CardTitle>
+          <CardTitle>Competitor Website Analysis</CardTitle>
           <CardDescription>
-            See what your competitors are doing with their Facebook ads
+            Analyze competitor websites for messaging and positioning insights
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
             <BarChart3 className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
             <p className="text-muted-foreground mb-4">
-              Analyze competitor Facebook ads to discover new opportunities
+              Competitor ad analysis is not available. Use the competitor flow to analyze website content instead.
             </p>
-            <Button variant="outline">
+            <Button variant="outline" onClick={() => window.location.href = '/competitor-flow'}>
               <Eye className="w-4 h-4 mr-2" />
-              View Competitor Ads
+              Analyze Competitor Websites
             </Button>
           </div>
         </CardContent>
