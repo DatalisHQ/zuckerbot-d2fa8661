@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.12 (cd3cf9e)"
@@ -421,11 +421,6 @@ export type Database = {
           competitor_list_id: string
           competitor_name: string
           created_at: string
-          engagement: Json | null
-          creative_breakdown: Json | null
-          spend_tier_range: unknown | null
-          impression_tier_range: unknown | null
-          analysis_window_daterange: unknown | null
           creative_trends: Json | null
           ctas: Json | null
           hooks: Json | null
@@ -439,11 +434,6 @@ export type Database = {
           competitor_list_id: string
           competitor_name: string
           created_at?: string
-          engagement?: Json | null
-          creative_breakdown?: Json | null
-          spend_tier_range?: unknown | null
-          impression_tier_range?: unknown | null
-          analysis_window_daterange?: unknown | null
           creative_trends?: Json | null
           ctas?: Json | null
           hooks?: Json | null
@@ -457,11 +447,6 @@ export type Database = {
           competitor_list_id?: string
           competitor_name?: string
           created_at?: string
-          engagement?: Json | null
-          creative_breakdown?: Json | null
-          spend_tier_range?: unknown | null
-          impression_tier_range?: unknown | null
-          analysis_window_daterange?: unknown | null
           creative_trends?: Json | null
           ctas?: Json | null
           hooks?: Json | null
@@ -469,42 +454,6 @@ export type Database = {
           total_ads_found?: number | null
           updated_at?: string
           user_id?: string
-        }
-        Relationships: []
-      }
-      competitor_analysis_history: {
-        Row: {
-          id: string
-          user_id: string
-          competitor_list_id: string
-          competitor_name: string
-          snapshot_at: string
-          ads_data: Json
-          insights: Json
-          metrics: Json
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          competitor_list_id: string
-          competitor_name: string
-          snapshot_at?: string
-          ads_data?: Json
-          insights?: Json
-          metrics?: Json
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          competitor_list_id?: string
-          competitor_name?: string
-          snapshot_at?: string
-          ads_data?: Json
-          insights?: Json
-          metrics?: Json
-          created_at?: string
         }
         Relationships: []
       }
@@ -953,6 +902,45 @@ export type Database = {
         }
         Relationships: []
       }
+      fb_metrics_cache: {
+        Row: {
+          ad_account_id: string
+          cache_key: string
+          cached_at: string
+          created_at: string
+          entity_metrics: Json
+          expires_at: string
+          id: string
+          metrics_data: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ad_account_id: string
+          cache_key: string
+          cached_at?: string
+          created_at?: string
+          entity_metrics?: Json
+          expires_at?: string
+          id?: string
+          metrics_data?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ad_account_id?: string
+          cache_key?: string
+          cached_at?: string
+          created_at?: string
+          entity_metrics?: Json
+          expires_at?: string
+          id?: string
+          metrics_data?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       monitoring_alerts: {
         Row: {
           alert_type: string
@@ -1140,6 +1128,54 @@ export type Database = {
           subscription_tier?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      queued_actions: {
+        Row: {
+          action_type: string
+          created_at: string
+          creative_suggestions: Json | null
+          entity_id: string
+          entity_type: string
+          id: string
+          impact_score: number
+          payload: Json
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+          why: string
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          creative_suggestions?: Json | null
+          entity_id: string
+          entity_type: string
+          id?: string
+          impact_score: number
+          payload?: Json
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+          why: string
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          creative_suggestions?: Json | null
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          impact_score?: number
+          payload?: Json
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+          why?: string
         }
         Relationships: []
       }

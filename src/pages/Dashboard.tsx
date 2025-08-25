@@ -23,6 +23,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useCampaignDrafts } from "@/hooks/useCampaignDrafts";
 import { DraftCampaignCard } from "@/components/DraftCampaignCard";
 import { FacebookConnector } from "@/components/FacebookConnector";
+import { DashboardAuditCard } from "@/components/DashboardAuditCard";
 
 interface Campaign {
   id: string;
@@ -362,6 +363,13 @@ useEffect(() => {
 
             </div>
           </section>
+
+          {/* Dashboard Copilot Audit */}
+          {profile?.facebook_connected && profile?.selected_ad_account_id && (
+            <section>
+              <DashboardAuditCard adAccountId={profile.selected_ad_account_id} />
+            </section>
+          )}
 
           {/* Performance Overview (moved up) */}
           <section>
