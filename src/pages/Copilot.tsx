@@ -63,9 +63,10 @@ export default function Copilot() {
         null;
 
       // Use Supabase client to properly handle authentication
-      const { data, error } = await supabase.functions.invoke('dashboard-audit', {
+      // For GET requests, pass parameters in the URL, not the body
+      const url = actParam ? `?act=${encodeURIComponent(actParam)}` : '';
+      const { data, error } = await supabase.functions.invoke('dashboard-audit' + url, {
         method: 'GET',
-        body: actParam ? { act: actParam } : undefined,
       });
 
       if (error) {
