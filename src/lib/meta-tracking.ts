@@ -138,22 +138,9 @@ interface CAPIEventData {
 
 class ConversionsAPI {
   private async sendToStape(eventData: CAPIEventData) {
-    try {
-      const { data, error } = await supabase.functions.invoke('track-meta-conversion', {
-        body: eventData
-      });
-
-      if (error) {
-        console.error('❌ CAPI Error:', error);
-        return false;
-      }
-
-      console.log('✅ CAPI Event sent via Stape:', eventData.event_name);
-      return true;
-    } catch (error) {
-      console.error('❌ CAPI Transport Error:', error);
-      return false;
-    }
+    // TODO: Re-implement server-side conversion tracking in v2
+    console.log('⏭️ CAPI tracking disabled (v2 rebuild pending):', eventData.event_name);
+    return false;
   }
 
   async track(eventData: Omit<CAPIEventData, 'source_url'>) {

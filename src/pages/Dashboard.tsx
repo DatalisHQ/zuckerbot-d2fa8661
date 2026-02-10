@@ -18,13 +18,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
-import { FacebookAdsPerformance } from "@/components/FacebookAdsPerformance";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useCampaignDrafts } from "@/hooks/useCampaignDrafts";
-import { DraftCampaignCard } from "@/components/DraftCampaignCard";
 import { FacebookConnector } from "@/components/FacebookConnector";
 import { Link } from "react-router-dom";
-import { CompetitorAnalysisOutcomes } from "@/components/CompetitorAnalysisOutcomes";
 
 interface Campaign {
   id: string;
@@ -70,7 +66,6 @@ useEffect(() => {
   const [selectedCampaign, setSelectedCampaign] = useState<FacebookCampaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
-  const { drafts, isLoading: draftsLoading, deleteDraft, finalizeDraft } = useCampaignDrafts();
 
   useEffect(() => {
     const checkUser = async () => {
@@ -266,25 +261,6 @@ useEffect(() => {
     setSelectedCampaign(campaign);
   };
 
-  const handleContinueDraft = (draft: any) => {
-    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
-  };
-
-  const handleEditDraft = (draft: any) => {
-    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
-  };
-
-  const handleDeleteDraft = async (draftId: string) => {
-    await deleteDraft(draftId);
-  };
-
-  const handleLaunchDraft = async (draft: any) => {
-    await finalizeDraft(draft.id);
-    // Navigate to the launch step
-    navigate(`/campaign-flow?resumeDraft=${draft.id}`);
-  };
-
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -323,89 +299,42 @@ useEffect(() => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-semibold">Quick Actions</h3>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              {/* Launch Campaign */}
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/campaign-flow")}>
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Create Campaign - placeholder for v2 rebuild */}
+              <Card className="cursor-pointer hover:shadow-md transition-shadow opacity-50" title="Coming Soon">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <PlayCircle className="h-5 w-5" />
-                    Launch Campaign
-                  </CardTitle>
-                  <CardDescription>
-                    Start a new ZuckerBot campaign flow
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full">Get Started</Button>
-                </CardContent>
-              </Card>
-
-              {/* Copilot */}
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/copilot")}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <TrendingUp className="h-5 w-5" />
-                    Copilot
-                  </CardTitle>
-                  <CardDescription>
-                    AI-powered campaign optimization
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Link to="/copilot">
-                    <Button className="w-full">Launch Copilot</Button>
-                  </Link>
-                </CardContent>
-              </Card>
-
-              {/* Strategic Insights */}
-              <Card 
-                className="cursor-pointer hover:shadow-md transition-shadow opacity-50" 
-                title="Coming Soon"
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <TrendingUp className="h-5 w-5" />
-                    Strategic Insights
+                    Create Campaign
                     <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
                   </CardTitle>
                   <CardDescription>
-                    AI-powered market intelligence and recommendations
+                    AI-powered Facebook ad campaigns for your trade
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Button className="w-full" disabled>Coming Soon</Button>
                 </CardContent>
               </Card>
-            </div>
-          </section>
 
-          {/* Facebook Ads Performance Graph */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Facebook Ads Performance</h3>
-              {selectedCampaign && (
-                <Badge variant="outline" className="text-sm">
-                  Viewing: {selectedCampaign.campaign_name}
-                </Badge>
-              )}
+              {/* View Profile */}
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/profile")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <TrendingUp className="h-5 w-5" />
+                    Settings & Profile
+                  </CardTitle>
+                  <CardDescription>
+                    Manage your business details and billing
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Link to="/profile">
+                    <Button className="w-full">View Profile</Button>
+                  </Link>
+                </CardContent>
+              </Card>
             </div>
-            <FacebookAdsPerformance selectedCampaign={selectedCampaign} />
-          </section>
-
-          {/* Competitor Analysis Outcomes */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Competitor Analysis Outcomes</h3>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => navigate("/competitor-flow")}
-              >
-                View All Analysis
-              </Button>
-            </div>
-            <CompetitorAnalysisOutcomes isConnected={profile?.facebook_connected || false} />
           </section>
 
           {/* Campaigns Section */}
@@ -413,7 +342,7 @@ useEffect(() => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-semibold">Your Campaigns</h3>
               <Badge variant="outline" className="text-xs">
-                {facebookCampaigns.length + campaigns.length + drafts.length} Total
+                {facebookCampaigns.length + campaigns.length} Total
               </Badge>
             </div>
 
@@ -515,7 +444,7 @@ useEffect(() => {
             )}
 
             {/* Local Pipeline Campaigns */}
-            {campaigns.length === 0 && facebookCampaigns.length === 0 && drafts.length === 0 ? (
+            {campaigns.length === 0 && facebookCampaigns.length === 0 ? (
               <Card className="text-center py-12">
                 <CardContent>
                   <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -523,9 +452,9 @@ useEffect(() => {
                   <p className="text-muted-foreground mb-4">
                     Create your first campaign with ZuckerBot to see it here
                   </p>
-                  <Button onClick={() => navigate("/zuckerbot")}>
+                  <Button onClick={() => navigate("/dashboard")} disabled>
                     <Plus className="w-4 h-4 mr-2" />
-                    Create First Campaign
+                    Create Campaign (Coming Soon)
                   </Button>
                 </CardContent>
               </Card>
@@ -544,7 +473,7 @@ useEffect(() => {
                             <div className="flex items-start justify-between">
                               <div 
                                 className="flex-1 min-w-0 cursor-pointer"
-                                onClick={() => navigate(`/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`)}
+                                onClick={() => navigate('/dashboard')}
                               >
                                 <CardTitle className="text-base truncate group-hover:text-blue-600 transition-colors">
                                   {campaign.campaign_name}
@@ -600,7 +529,7 @@ useEffect(() => {
                             </div>
                             <div 
                               className="text-xs text-blue-600 mt-2 cursor-pointer hover:text-blue-700"
-                              onClick={() => navigate(`/campaign-flow?step=${campaign.current_step}&campaign=${campaign.id}`)}
+                              onClick={() => navigate('/dashboard')}
                             >
                               Click to continue from step {campaign.current_step}
                             </div>
@@ -613,24 +542,6 @@ useEffect(() => {
               </>
             )}
 
-            {/* Draft Campaigns (moved to bottom) */}
-            {drafts.length > 0 && (
-              <div className="mt-8">
-                <h4 className="text-lg font-medium mb-3 text-orange-600">Draft Campaigns</h4>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {drafts.map((draft) => (
-                    <DraftCampaignCard
-                      key={draft.id}
-                      draft={draft}
-                      onContinue={handleContinueDraft}
-                      onEdit={handleEditDraft}
-                      onDelete={handleDeleteDraft}
-                      onLaunch={handleLaunchDraft}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
           </section>
 
           {/* Performance Overview moved above */}

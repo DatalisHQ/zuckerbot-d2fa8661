@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { UpgradeModal } from './UpgradeModal';
+// UpgradeModal removed in v2 strip
 
 interface BusinessProfile {
   id: string;
@@ -325,11 +325,7 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
         onSave={handleSaveEdit}
       />
 
-      <UpgradeModal
-        open={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        reason="You've reached your business profile limit for your current plan. Upgrade to add more."
-      />
+      {/* UpgradeModal removed in v2 strip */}
     </div>
   );
 }

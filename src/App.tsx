@@ -12,22 +12,10 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
-import ZuckerBot from "./pages/ZuckerBot";
-import CampaignFlow from "./pages/CampaignFlow";
-import Conversations from "./pages/Conversations";
-import Files from "./pages/Files";
 import Profile from "./pages/Profile";
-import ConversationLayout from "./pages/ConversationLayout";
-import AdPerformance from "./pages/AdPerformance";
-// import { CompetitorFlow } from "./pages/CompetitorFlow";
-import CompetitorAnalysis from "./pages/CompetitorAnalysis";
-import StrategicInsights from "./pages/StrategicInsights";
 import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
-import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
-import AdminDashboard from "./pages/AdminDashboard";
-import Copilot from "./pages/Copilot";
 
 const queryClient = new QueryClient();
 
@@ -94,20 +82,6 @@ function App() {
 
               console.log('[App] Facebook token stored successfully');
 
-              // Always sync ads data after storing token (unless on onboarding)
-              const currentPath = window.location.pathname;
-              const isOnboarding = currentPath === '/onboarding';
-              
-              if (!isOnboarding) {
-                console.log('[App] Syncing Facebook ads data');
-                try {
-                  await supabase.functions.invoke('sync-facebook-ads');
-                  console.log('[App] Facebook ads data synced successfully');
-                } catch (syncError) {
-                  console.error('[App] Error syncing Facebook ads:', syncError);
-                }
-              }
-
               // Always dispatch success event for any listening components
               window.dispatchEvent(new CustomEvent('facebook-connected', {
                 detail: { success: true }
@@ -155,28 +129,15 @@ function App() {
           <Sonner />
           <BrowserRouter>
             <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/dashboard" />} />
-            <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
+              <Route path="/" element={<Index />} />
+              <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/dashboard" />} />
+              <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
               <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
-              {/* Archive chat: route /zuckerbot to dashboard */}
-              <Route path="/zuckerbot" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/admin" element={user ? <AdminDashboard /> : <Navigate to="/auth" />} />
-              <Route path="/campaign-flow" element={user ? <CampaignFlow /> : <Navigate to="/auth" />} />
-              <Route path="/conversations" element={user ? <ConversationLayout><Conversations /></ConversationLayout> : <Navigate to="/auth" />} />
-              <Route path="/files" element={user ? <ConversationLayout><Files /></ConversationLayout> : <Navigate to="/auth" />} />
-              <Route path="/profile" element={user ? <ConversationLayout><Profile /></ConversationLayout> : <Navigate to="/auth" />} />
-            <Route path="/ad-performance" element={user ? <AdPerformance /> : <Navigate to="/auth" />} />
-            <Route path="/competitor-analysis" element={user ? <CompetitorAnalysis /> : <Navigate to="/auth" />} />
-            {/* Legacy redirect */}
-            <Route path="/competitor-flow" element={<Navigate to="/competitor-analysis" replace />} />
-            <Route path="/pricing" element={<Pricing />} />
-            <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
-            <Route path="/faq" element={<FAQ />} />
-            <Route path="/strategic-insights" element={user ? <StrategicInsights /> : <Navigate to="/auth" />} />
-            <Route path="/copilot" element={user ? <Copilot /> : <Navigate to="/auth" />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
+              <Route path="/profile" element={user ? <Profile /> : <Navigate to="/auth" />} />
+              <Route path="/pricing" element={<Pricing />} />
+              <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
         </TooltipProvider>

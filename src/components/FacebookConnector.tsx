@@ -190,18 +190,6 @@ export const FacebookConnector = ({
         console.log("[FacebookConnector] Profile created successfully:", insertData);
       }
 
-      // Now sync Facebook ads data
-      console.log("[FacebookConnector] Syncing Facebook ads data...");
-      const { data: syncData, error: syncError } = await supabase.functions.invoke('sync-facebook-ads');
-      
-      if (syncError) {
-        console.error("[FacebookConnector] Sync error:", syncError);
-        // Continue even if sync fails - user can still proceed
-        console.log("[FacebookConnector] Continuing despite sync error");
-      } else {
-        console.log("[FacebookConnector] Facebook ads synced successfully:", syncData);
-      }
-      
       toast({
         title: "Facebook Connected Successfully",
         description: "Your Facebook Business account is now connected and data has been synced.",

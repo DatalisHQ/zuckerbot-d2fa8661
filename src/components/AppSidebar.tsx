@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageCircle, History, FileText, User, Plus, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, User, CreditCard, Settings, LogOut } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useEnhancedAuth } from "@/utils/auth";
@@ -18,10 +18,9 @@ import {
 } from "@/components/ui/sidebar";
 
 const navigationItems = [
-  { title: "New Chat", url: "/zuckerbot", icon: Plus },
-  { title: "Chat History", url: "/conversations", icon: History },
-  { title: "File Library", url: "/files", icon: FileText },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Profile", url: "/profile", icon: User },
+  { title: "Billing", url: "/billing", icon: CreditCard },
 ];
 
 export function AppSidebar({ user }: { user: any }) {

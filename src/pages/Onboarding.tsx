@@ -195,25 +195,8 @@ const Onboarding = () => {
         
         console.log("Brand analysis updated successfully");
       } else {
-        // Run mandatory brand analysis for new setups
-        console.log("Starting mandatory brand analysis...");
-        const { data: brandAnalysisData, error: brandError } = await supabase.functions.invoke('analyze-brand', {
-          body: {
-            brandUrl: businessUrl,
-            userId: session.user.id
-          }
-        });
-
-        if (brandError) {
-          console.error("Brand analysis error:", brandError);
-          throw new Error("Failed to analyze your brand. Please try again.");
-        }
-
-        if (!brandAnalysisData.success) {
-          throw new Error(brandAnalysisData.error || "Brand analysis failed");
-        }
-
-        console.log("Brand analysis completed:", brandAnalysisData.analysis);
+        // TODO: v2 will use create-business-profile edge function
+        console.log("Brand analysis skipped - v2 rebuild pending");
       }
 
       // MAJOR CHANGE: Mark onboarding as completed without requiring Facebook connection
