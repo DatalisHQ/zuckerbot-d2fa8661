@@ -1,512 +1,467 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { User, Session } from '@supabase/supabase-js';
-import { LogOut, User as UserIcon, Bot, MessageCircle, Sparkles, Zap, Target, Code, Facebook, Send } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
-import { useEnhancedAuth, validateSession } from "@/utils/auth";
-import { metaTracking } from "@/lib/meta-tracking";
+import { User } from "@supabase/supabase-js";
+import {
+  Zap,
+  Phone,
+  MessageSquare,
+  MapPin,
+  DollarSign,
+  ChevronRight,
+  Star,
+  Clock,
+  TrendingUp,
+  Shield,
+  Check,
+  ArrowRight,
+} from "lucide-react";
+
+// ─── Trades for the rotating hero text ──────────────────────────────────────
+
+const TRADES = [
+  "Plumber",
+  "Sparky",
+  "Landscaper",
+  "Cleaner",
+  "Painter",
+  "Roofer",
+  "Concreter",
+  "Chippy",
+  "Fencer",
+  "Tiler",
+];
+
+// ─── Component ──────────────────────────────────────────────────────────────
 
 const Index = () => {
-  const { toast } = useToast();
   const navigate = useNavigate();
-  const { logout } = useEnhancedAuth();
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [demoInput, setDemoInput] = useState("");
-  const [demoMessage, setDemoMessage] = useState("");
+  const [tradeIndex, setTradeIndex] = useState(0);
 
+  // Auth check
   useEffect(() => {
-    console.log('[Index] Setting up auth state listener');
-    
-    // Track page view when index loads
-    metaTracking.trackPageView();
-    console.log('🎯 Tracked: PageView (Index)');
-    
-    // Auth state listener - simplified for Index page
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        console.log('[Index] Auth state change:', { event, hasSession: !!session, userId: session?.user?.id });
-        setSession(session);
+      (_event, session) => {
         setUser(session?.user ?? null);
         setIsLoading(false);
       }
     );
-
-    // Simple initial session check
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error('[Index] Error getting session:', error);
-      } else {
-        console.log('[Index] Initial session check:', { hasSession: !!session, userId: session?.user?.id });
-      }
-      setSession(session);
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setIsLoading(false);
     });
-
-    // Clean up URL parameters if Facebook OAuth redirect
-    const urlParams = new URLSearchParams(window.location.search);
-    const facebookConnected = urlParams.get('facebook');
-    
-    if (facebookConnected === 'connected') {
-      // Clean up URL parameters
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
-    }
-
     return () => subscription.unsubscribe();
-  }, [toast]);
+  }, []);
 
-  const checkProfile = async () => {
-    if (!user) return null;
-    
-    try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('onboarding_completed, business_name')
-        .eq('user_id', user.id)
-        .single();
+  // Rotating trade text
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTradeIndex((prev) => (prev + 1) % TRADES.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
-      if (error) {
-        console.error("Profile check error:", error);
-        return null;
-      }
-
-      return profile;
-    } catch (error) {
-      console.error("Unexpected profile check error:", error);
-      return null;
-    }
-  };
-
-  const handleGetStarted = async () => {
+  const handleCTA = async () => {
     if (!user) {
-      // Track lead for users showing interest
-      metaTracking.trackLead();
-      console.log('🎯 Tracked: Lead (get started)');
       navigate("/auth");
       return;
     }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_completed")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-    const profile = await checkProfile();
-    
-    if (!profile) {
-      navigate("/auth");
-      return;
-    }
-
-    if (!profile.onboarding_completed) {
+    if (!profile?.onboarding_completed) {
       navigate("/onboarding");
     } else {
       navigate("/dashboard");
     }
   };
 
-  const handleDemoSubmit = () => {
-    if (!demoInput.trim()) return;
-    
-    // Track engagement with demo
-    metaTracking.trackEvent('DemoEngagement', { demo_input: demoInput.substring(0, 50) });
-    console.log('🎯 Tracked: DemoEngagement');
-    
-    // Show the user's message
-    setDemoMessage(demoInput);
-    setDemoInput("");
-    
-    // After a short delay, scroll to sign up button
-    setTimeout(() => {
-      const signUpButton = document.querySelector('[href="/auth"]');
-      if (signUpButton) {
-        signUpButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 1500);
-  };
-
-  const handleSignOut = () => {
-    logout(navigate, true);
-  };
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Subtle background pattern */}
-      <div className="absolute inset-0 bg-grid-pattern opacity-[0.02]" />
-      
-      {/* Gentle floating elements */}
-      <div className="absolute top-32 left-1/4 w-48 h-48 bg-gradient-primary rounded-full opacity-[0.03] blur-3xl animate-float" />
-      <div className="absolute bottom-32 right-1/4 w-64 h-64 bg-gradient-primary rounded-full opacity-[0.02] blur-3xl animate-float" style={{ animationDelay: '4s' }} />
-
-      <div className="relative z-10">
-        {/* Navigation */}
-        <nav className="glass border-b border-border/30 sticky top-0 z-50">
-          <div className="container mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <span className="text-xl font-bold gradient-text zuckerbot-brand">ZuckerBot</span>
-                <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full font-medium">AI</span>
-              </div>
-              
-              <div className="flex items-center space-x-4">
-                {user ? (
-                  <>
-                     <Link to="/dashboard">
-                       <Button variant="ghost" className="text-foreground hover:text-primary hover:bg-muted/50">
-                         <MessageCircle className="w-4 h-4 mr-2" />
-                         Dashboard
-                       </Button>
-                     </Link>
-                     <Link to="/pricing">
-                       <Button variant="ghost" className="text-foreground hover:text-primary hover:bg-muted/50">
-                         <Sparkles className="w-4 h-4 mr-2" />
-                         Upgrade
-                       </Button>
-                     </Link>
-                    <div className="flex items-center space-x-3 px-3 py-2 rounded-lg bg-muted/30 border border-border/50">
-                      <UserIcon className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm text-foreground font-medium">{user.email?.split('@')[0]}</span>
-                    </div>
-                    <Button 
-                      onClick={handleSignOut}
-                      variant="ghost" 
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                    >
-                      <LogOut className="w-4 h-4" />
-                    </Button>
-                  </>
-                ) : (
-                  <div className="flex items-center space-x-3">
-                    <Link to="/auth">
-                      <Button variant="ghost" className="text-foreground hover:text-primary hover:bg-muted/50">
-                        Sign In
-                      </Button>
-                    </Link>
-                    <Link to="/auth">
-                      <Button className="btn-primary">
-                        Get Started Free
-                      </Button>
-                    </Link>
-                  </div>
-                )}
-              </div>
+    <div className="min-h-screen bg-background">
+      {/* ── Nav ─────────────────────────────────────────────────────────── */}
+      <nav className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-lg">
+        <div className="container mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <Zap className="w-5 h-5 text-primary-foreground" />
             </div>
+            <span className="text-xl font-bold">ZuckerBot</span>
           </div>
-        </nav>
+          <div className="flex items-center gap-3">
+            {user ? (
+              <Button onClick={() => navigate("/dashboard")}>
+                Dashboard <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            ) : (
+              <>
+                <Link to="/auth">
+                  <Button variant="ghost">Sign In</Button>
+                </Link>
+                <Link to="/auth">
+                  <Button>Get Started Free</Button>
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      </nav>
 
-        {/* Hero Section */}
-        <div className="container mx-auto px-6 py-24">
-          <div className="text-center space-y-8 mb-20 animate-fade-in-up">
-            <div className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-primary/5 border border-primary/10">
-              <Facebook className="w-4 h-4 text-primary" />
-              <span className="text-sm text-primary font-medium">AI Copilot for Facebook Ads</span>
-            </div>
-            
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight max-w-4xl mx-auto">
-              <span className="gradient-text">Smarter campaigns,</span>
-              <br />
-              <span className="text-foreground">fewer clicks</span>
-            </h1>
-            
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-              Save 15+ hours per week on ad operations. Get AI-powered insights, optimization recommendations, 
-              and one-click campaign execution for your Facebook advertising campaigns.
-            </p>
+      {/* ── Hero ────────────────────────────────────────────────────────── */}
+      <section className="container mx-auto px-4 sm:px-6 pt-16 sm:pt-24 pb-16">
+        <div className="max-w-4xl mx-auto text-center space-y-8">
+          <Badge variant="secondary" className="text-sm px-4 py-1.5">
+            🇦🇺 Built for Aussie tradies
+          </Badge>
+
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight">
+            Facebook ads for your
+            <br />
+            <span className="text-primary inline-block min-w-[200px] transition-all duration-500">
+              {TRADES[tradeIndex]}
+            </span>{" "}
+            business
+          </h1>
+
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            Tell us what you do and where you work. We'll create your Facebook ad,
+            launch it, and send you the leads. Five minutes, no marketing degree required.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+            <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
+              Get customers now
+              <ArrowRight className="w-5 h-5 ml-2" />
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="text-lg px-8 py-6"
+              onClick={() => {
+                document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              See how it works
+            </Button>
           </div>
-            
-          {/* Interactive Demo Section */}
-          <div className="animate-fade-in-up mb-20" style={{ animationDelay: '0.3s' }}>
-            <div className="max-w-4xl mx-auto">
-              <div className="text-center mb-10">
-                <h2 className="text-3xl font-bold mb-4 text-foreground">Try ZuckerBot Now</h2>
-                <p className="text-muted-foreground text-lg">
-                  Ask any Facebook ads question and see how our AI copilot can help
-                </p>
-              </div>
-              
-              <div className="modern-card max-w-2xl mx-auto p-8 bg-card/60 backdrop-blur-sm">
-                <div className="flex items-center space-x-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center">
-                    <span className="text-lg font-bold text-primary-foreground zuckerbot-brand">Z</span>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-foreground">ZuckerBot</div>
-                    <div className="text-sm text-success flex items-center">
-                      <div className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse"></div>
-                      Online
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="space-y-4 mb-6">
-                  <div className="bg-muted/40 rounded-2xl p-4 max-w-sm border border-border/20">
-                    <p className="text-sm text-foreground">Hey! I'm ZuckerBot, your Facebook ads AI copilot. What campaign challenge can I help you solve today?</p>
-                  </div>
-                  {demoMessage && (
-                    <div className="bg-primary/10 rounded-2xl p-4 max-w-sm ml-auto text-right border border-primary/20">
-                      <p className="text-sm text-foreground">{demoMessage}</p>
-                    </div>
-                  )}
-                  {demoMessage && (
-                    <div className="bg-muted/40 rounded-2xl p-4 max-w-md border border-border/20">
-                      <p className="text-sm text-foreground">Great question! I'd love to provide you with personalized recommendations and access to my full campaign optimization capabilities. Please sign up for free to continue.</p>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="flex space-x-3">
-                    <Input
-                      placeholder="Ask about targeting, ad copy, budgets, or optimization..."
-                      value={demoInput}
-                      onChange={(e) => setDemoInput(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          handleDemoSubmit();
-                        }
-                      }}
-                      className="flex-1 border-border/30 bg-background/50"
-                    />
-                    <Button 
-                      onClick={handleDemoSubmit}
-                      disabled={!demoInput.trim()}
-                      size="icon"
-                      className="bg-primary hover:bg-primary/90"
-                    >
-                      <Send className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  
-                  <div className="text-center">
-                    {user ? (
-                      <Link to="/dashboard">
-                        <Button className="btn-primary w-full sm:w-auto">
-                          <MessageCircle className="w-4 h-4 mr-2" />
-                          Open Dashboard
-                        </Button>
-                      </Link>
-                    ) : (
-                      <Link to="/auth">
-                        <Button className="btn-primary w-full sm:w-auto">
-                          <MessageCircle className="w-4 h-4 mr-2" />
-                          Start Free Consultation
-                        </Button>
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              </div>
+
+          <p className="text-sm text-muted-foreground">
+            No lock-in contracts. Cancel anytime. Starts at $49/mo.
+          </p>
+        </div>
+      </section>
+
+      {/* ── Social proof strip ──────────────────────────────────────────── */}
+      <section className="border-y border-border/40 bg-muted/30 py-8">
+        <div className="container mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 text-center">
+            <div>
+              <div className="text-2xl font-bold">5 min</div>
+              <div className="text-sm text-muted-foreground">Setup to live ad</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold">&lt;$15</div>
+              <div className="text-sm text-muted-foreground">Avg cost per lead</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold">25km</div>
+              <div className="text-sm text-muted-foreground">Local targeting radius</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold">Auto</div>
+              <div className="text-sm text-muted-foreground">SMS to every lead</div>
             </div>
           </div>
         </div>
-        
-        {/* Features Section */}
-        <div className="container mx-auto px-6 pb-24">
+      </section>
+
+      {/* ── How It Works ────────────────────────────────────────────────── */}
+      <section id="how-it-works" className="container mx-auto px-4 sm:px-6 py-20">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+            Three steps. Five minutes. Done.
+          </h2>
+          <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+            No agencies, no jargon, no wasted hours learning Facebook Ads Manager.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {/* Step 1 */}
+          <Card className="relative overflow-hidden border-2 hover:border-primary/30 transition-colors">
+            <div className="absolute top-4 right-4 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+              1
+            </div>
+            <CardContent className="pt-8 pb-6 px-6 space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                <MapPin className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold">Tell us your trade</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                Pick your trade, enter your suburb, and upload a photo of your work.
+                That's the hard part done.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Step 2 */}
+          <Card className="relative overflow-hidden border-2 hover:border-primary/30 transition-colors">
+            <div className="absolute top-4 right-4 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+              2
+            </div>
+            <CardContent className="pt-8 pb-6 px-6 space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Zap className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold">AI writes your ad</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                Our AI creates 3 ad options tailored to your trade and area.
+                Pick one, tweak the budget, hit launch.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Step 3 */}
+          <Card className="relative overflow-hidden border-2 hover:border-primary/30 transition-colors">
+            <div className="absolute top-4 right-4 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+              3
+            </div>
+            <CardContent className="pt-8 pb-6 px-6 space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Phone className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold">Leads hit your phone</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                When someone fills in your ad, they get an instant SMS and you get a
+                notification. Just call them back.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* ── Why tradies love it ─────────────────────────────────────────── */}
+      <section className="bg-muted/30 border-y border-border/40 py-20">
+        <div className="container mx-auto px-4 sm:px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4 text-foreground">Everything you need to optimize Facebook ads</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              From strategy to execution, ZuckerBot provides comprehensive Facebook advertising assistance powered by AI
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+              Why tradies switch to ZuckerBot
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              We're not an agency. We're not a course. We're the tool that replaces both.
             </p>
           </div>
-          
-          <div className="grid md:grid-cols-3 gap-8 mb-20 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
-            <div className="modern-card text-center group hover:border-primary/20 transition-all duration-300">
-              <div className="w-14 h-14 bg-gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-105 transition-transform duration-300">
-                <MessageCircle className="w-7 h-7 text-primary-foreground" />
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {[
+              {
+                icon: Clock,
+                title: "5 minutes, not 5 hours",
+                desc: "No learning curve. No Ads Manager. Just answer a few questions and you're live.",
+              },
+              {
+                icon: DollarSign,
+                title: "$49/mo, not $500/mo",
+                desc: "Agencies charge $300–$500/mo for the same thing. Keep the difference.",
+              },
+              {
+                icon: MessageSquare,
+                title: "Auto-SMS to leads",
+                desc: "Every lead gets an instant text: \"Thanks for reaching out, we'll call you within the hour.\"",
+              },
+              {
+                icon: MapPin,
+                title: "Local-only targeting",
+                desc: "Your ad only shows to people in your area. No wasted spend on people 100km away.",
+              },
+              {
+                icon: TrendingUp,
+                title: "AI-written ad copy",
+                desc: "Our AI knows what works for tradies. No more staring at a blank text box.",
+              },
+              {
+                icon: Shield,
+                title: "You stay in control",
+                desc: "Set your own budget, pause anytime, see every lead. No lock-in contracts ever.",
+              },
+            ].map((item, i) => (
+              <div
+                key={i}
+                className="flex gap-4 p-5 rounded-xl bg-background border border-border/50 hover:border-primary/20 transition-colors"
+              >
+                <div className="shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <item.icon className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold mb-1">{item.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                </div>
               </div>
-              <h3 className="text-xl font-semibold mb-3 text-foreground">AI Chat Assistant</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Get instant, expert-level advice on campaign strategy, audience targeting, and performance optimization through natural conversation.
-              </p>
-            </div>
-            
-            <div className="modern-card text-center group hover:border-primary/20 transition-all duration-300">
-              <div className="w-14 h-14 bg-gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-105 transition-transform duration-300">
-                <Code className="w-7 h-7 text-primary-foreground" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3 text-foreground">Campaign Creation</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Generate high-converting ad copy, optimize creative assets, and configure campaign settings with AI-powered recommendations.
-              </p>
-            </div>
-            
-            <div className="modern-card text-center group hover:border-primary/20 transition-all duration-300">
-              <div className="w-14 h-14 bg-gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-105 transition-transform duration-300">
-                <Target className="w-7 h-7 text-primary-foreground" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3 text-foreground">Performance Analysis</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Monitor campaign performance, identify optimization opportunities, and get actionable insights to improve your ROI.
-              </p>
-            </div>
+            ))}
           </div>
-          
-          {/* FAQ Section */}
-          <div className="py-20 border-t border-border/20">
-            <div className="text-center mb-16">
-              <h2 className="text-3xl font-bold mb-4 text-foreground">Frequently Asked Questions</h2>
-              <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-                Get answers to common questions about ZuckerBot
-              </p>
-            </div>
-            
-            <div className="max-w-3xl mx-auto">
-              <div className="space-y-4">
-                <div className="modern-card border border-border/30 hover:border-primary/20 transition-colors">
-                  <details className="group">
-                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg text-foreground hover:text-primary transition-colors">
-                      What is ZuckerBot?
-                      <span className="transform group-open:rotate-180 transition-transform text-muted-foreground">▼</span>
-                    </summary>
-                    <div className="px-6 pb-6 text-muted-foreground leading-relaxed">
-                      ZuckerBot is an AI copilot specifically designed to help you create, optimize, and manage Facebook and Instagram advertising campaigns. Get expert guidance on ad copy, targeting, budget optimization, and campaign strategy through natural conversation.
-                    </div>
-                  </details>
-                </div>
-
-                <div className="modern-card border border-border/30 hover:border-primary/20 transition-colors">
-                  <details className="group">
-                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg text-foreground hover:text-primary transition-colors">
-                      How does the conversation limit work?
-                      <span className="transform group-open:rotate-180 transition-transform text-muted-foreground">▼</span>
-                    </summary>
-                    <div className="px-6 pb-6 text-muted-foreground leading-relaxed">
-                      Each plan includes a monthly conversation allowance. A conversation includes both your message and ZuckerBot's response. Free users get 5 conversations per month, Pro users get 100, and Agency users have unlimited conversations.
-                    </div>
-                  </details>
-                </div>
-
-                <div className="modern-card border border-border/30 hover:border-primary/20 transition-colors">
-                  <details className="group">
-                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg text-foreground hover:text-primary transition-colors">
-                      What types of Facebook ads can ZuckerBot help with?
-                      <span className="transform group-open:rotate-180 transition-transform text-muted-foreground">▼</span>
-                    </summary>
-                    <div className="px-6 pb-6 text-muted-foreground leading-relaxed">
-                      ZuckerBot assists with all types of Meta advertising including Facebook and Instagram ads, Stories, Reels, video campaigns, carousel ads, lead generation, e-commerce campaigns, and more.
-                    </div>
-                  </details>
-                </div>
-
-                <div className="modern-card border border-border/30 hover:border-primary/20 transition-colors">
-                  <details className="group">
-                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg text-foreground hover:text-primary transition-colors">
-                      Is my advertising data secure?
-                      <span className="transform group-open:rotate-180 transition-transform text-muted-foreground">▼</span>
-                    </summary>
-                    <div className="px-6 pb-6 text-muted-foreground leading-relaxed">
-                      Absolutely. We use enterprise-grade security to protect your data. All communications are encrypted, and we never share your advertising data or strategies with third parties.
-                    </div>
-                  </details>
-                </div>
-
-                <div className="modern-card border border-border/30 hover:border-primary/20 transition-colors">
-                  <details className="group">
-                    <summary className="flex justify-between items-center cursor-pointer p-6 font-semibold text-lg text-foreground hover:text-primary transition-colors">
-                      Can I upgrade or cancel my plan anytime?
-                      <span className="transform group-open:rotate-180 transition-transform text-muted-foreground">▼</span>
-                    </summary>
-                    <div className="px-6 pb-6 text-muted-foreground leading-relaxed">
-                      Yes! You can upgrade, downgrade, or cancel your subscription anytime through your account dashboard. Changes are prorated and take effect at your next billing cycle.
-                    </div>
-                  </details>
-                </div>
-
-                <div className="text-center mt-10">
-                  <Link to="/faq" className="text-primary hover:text-primary/80 font-medium transition-colors">
-                    View All FAQs →
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Enhanced CTA Section */}
-          <div className="py-24 bg-gradient-to-br from-primary/3 via-background to-primary/3 border-t border-border/20">
-            <div className="text-center space-y-10">
-              <div className="space-y-4">
-                <h2 className="text-4xl font-bold text-foreground">Ready to optimize your Facebook campaigns?</h2>
-                <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-                  Join thousands of marketers saving 15+ hours per week with AI-powered Facebook advertising optimization.
-                </p>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                {!user ? (
-                  <>
-                    <Link to="/auth">
-                      <Button size="xl" className="btn-primary shadow-lg hover:shadow-xl hover:shadow-primary/25 transition-all duration-300">
-                        <MessageCircle className="w-6 h-6 mr-3" />
-                        Start Free Consultation
-                      </Button>
-                    </Link>
-                    <Link to="/pricing">
-                      <Button variant="outline" size="xl" className="border-2 border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all duration-300">
-                        <Sparkles className="w-6 h-6 mr-3" />
-                        View Pricing
-                      </Button>
-                    </Link>
-                  </>
-                ) : (
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <Link to="/dashboard">
-                      <Button size="xl" className="btn-primary shadow-lg hover:shadow-xl">
-                        <MessageCircle className="w-6 h-6 mr-3" />
-                        Go to Dashboard
-                      </Button>
-                    </Link>
-                    <Link to="/pricing">
-                      <Button size="xl" variant="outline" className="border-2 border-primary/20 hover:border-primary/40">
-                        <Sparkles className="w-6 h-6 mr-3" />
-                        Upgrade Plan
-                      </Button>
-                    </Link>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-center items-center space-x-8 text-sm text-muted-foreground pt-8">
-                <div className="flex items-center">
-                  <span className="w-2 h-2 bg-success rounded-full mr-2"></span>
-                  150+ Active Users
-                </div>
-                <div className="flex items-center">
-                  <span className="w-2 h-2 bg-success rounded-full mr-2"></span>
-                  0% Churn Rate
-                </div>
-                <div className="flex items-center">
-                  <span className="w-2 h-2 bg-success rounded-full mr-2"></span>
-                  Backed by Antler VC
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <footer className="py-12 border-t border-border/20">
-            <div className="text-center space-y-4">
-              <div className="flex justify-center space-x-8 text-sm text-muted-foreground">
-                <Link to="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
-                <Link to="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
-                <Link to="/faq" className="hover:text-primary transition-colors">FAQ</Link>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                © 2024 ZuckerBot. All rights reserved.
-              </p>
-            </div>
-          </footer>
         </div>
-      </div>
+      </section>
+
+      {/* ── Testimonial / quote ─────────────────────────────────────────── */}
+      <section className="container mx-auto px-4 sm:px-6 py-20">
+        <div className="max-w-3xl mx-auto text-center space-y-6">
+          <div className="flex justify-center gap-1">
+            {[...Array(5)].map((_, i) => (
+              <Star key={i} className="w-6 h-6 fill-yellow-400 text-yellow-400" />
+            ))}
+          </div>
+          <blockquote className="text-2xl sm:text-3xl font-medium leading-relaxed text-foreground">
+            "I was paying a bloke $400 a month to run my Facebook ads. Set this up
+            in my smoko break and got 3 leads the first day."
+          </blockquote>
+          <div className="text-muted-foreground">
+            <span className="font-semibold text-foreground">Mick T.</span> · Plumber · Brisbane
+          </div>
+        </div>
+      </section>
+
+      {/* ── Pricing ─────────────────────────────────────────────────────── */}
+      <section className="border-y border-border/40 bg-muted/30 py-20">
+        <div className="container mx-auto px-4 sm:px-6">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Simple pricing</h2>
+            <p className="text-lg text-muted-foreground">
+              No setup fees. No hidden costs. Just pick a plan.
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
+            {/* Starter */}
+            <Card className="border-2 relative">
+              <CardContent className="pt-8 pb-6 px-6 space-y-6">
+                <div>
+                  <h3 className="text-xl font-semibold">Starter</h3>
+                  <div className="mt-2">
+                    <span className="text-4xl font-bold">$49</span>
+                    <span className="text-muted-foreground">/mo</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">+ your Facebook ad spend</p>
+                </div>
+                <ul className="space-y-3">
+                  {[
+                    "1 active campaign",
+                    "AI-generated ad copy",
+                    "Lead inbox",
+                    "Email notifications",
+                    "25km targeting radius",
+                  ].map((f, i) => (
+                    <li key={i} className="flex items-center gap-2 text-sm">
+                      <Check className="w-4 h-4 text-primary shrink-0" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Button className="w-full" variant="outline" onClick={handleCTA}>
+                  Start free trial
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Pro */}
+            <Card className="border-2 border-primary relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <Badge className="bg-primary text-primary-foreground px-3">Most Popular</Badge>
+              </div>
+              <CardContent className="pt-8 pb-6 px-6 space-y-6">
+                <div>
+                  <h3 className="text-xl font-semibold">Pro</h3>
+                  <div className="mt-2">
+                    <span className="text-4xl font-bold">$99</span>
+                    <span className="text-muted-foreground">/mo</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">+ your Facebook ad spend</p>
+                </div>
+                <ul className="space-y-3">
+                  {[
+                    "3 active campaigns",
+                    "AI-generated ad copy",
+                    "Lead inbox + analytics",
+                    "Auto-SMS to leads",
+                    "50km targeting radius",
+                    "Priority support",
+                  ].map((f, i) => (
+                    <li key={i} className="flex items-center gap-2 text-sm">
+                      <Check className="w-4 h-4 text-primary shrink-0" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Button className="w-full" onClick={handleCTA}>
+                  Start free trial
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          <p className="text-center text-sm text-muted-foreground mt-8">
+            Both plans include a 7-day free trial. No credit card required to start.
+          </p>
+        </div>
+      </section>
+
+      {/* ── Final CTA ───────────────────────────────────────────────────── */}
+      <section className="container mx-auto px-4 sm:px-6 py-24">
+        <div className="max-w-3xl mx-auto text-center space-y-8">
+          <h2 className="text-3xl sm:text-4xl font-bold">
+            Stop paying agencies. Start getting leads.
+          </h2>
+          <p className="text-xl text-muted-foreground">
+            Set up your first ad in the time it takes to have a coffee.
+          </p>
+          <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
+            Get started — it's free
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+        </div>
+      </section>
+
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
+      <footer className="border-t border-border/40 py-10">
+        <div className="container mx-auto px-4 sm:px-6">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
+                <Zap className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <span className="font-semibold">ZuckerBot</span>
+            </div>
+            <div className="flex gap-6 text-sm text-muted-foreground">
+              <Link to="/pricing" className="hover:text-foreground transition-colors">
+                Pricing
+              </Link>
+              <Link to="/auth" className="hover:text-foreground transition-colors">
+                Sign In
+              </Link>
+              <a href="mailto:support@zuckerbot.ai" className="hover:text-foreground transition-colors">
+                Support
+              </a>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              © {new Date().getFullYear()} ZuckerBot. Made in Australia.
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };
