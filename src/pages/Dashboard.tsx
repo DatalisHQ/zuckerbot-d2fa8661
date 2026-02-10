@@ -1,554 +1,427 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Calendar, TrendingUp, AlertCircle, PlayCircle, PauseCircle, MoreVertical, Play, Pause, Edit, Trash2 } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FacebookConnector } from "@/components/FacebookConnector";
-import { Link } from "react-router-dom";
+import {
+  Loader2,
+  Plus,
+  Megaphone,
+  Users,
+  TrendingUp,
+  DollarSign,
+  ArrowRight,
+  Phone,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Inbox,
+} from "lucide-react";
+
+// ─── Local Interfaces ──────────────────────────────────────────────────────
+
+interface Business {
+  id: string;
+  user_id: string;
+  name: string;
+  trade: string;
+  suburb: string;
+}
 
 interface Campaign {
   id: string;
-  campaign_name: string;
-  pipeline_status: string;
+  business_id: string;
+  name: string;
+  status: string;
+  daily_budget_cents: number;
+  leads_count: number;
+  spend_cents: number;
   created_at: string;
-  updated_at: string;
-  current_step: number;
+  launched_at: string | null;
 }
 
-interface FacebookCampaign {
+interface Lead {
   id: string;
-  campaign_id: string;
-  campaign_name: string;
-  objective: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  suburb: string | null;
   status: string;
-  daily_budget: number;
-  lifetime_budget: number;
-  start_time: string;
-  end_time: string;
-  created_time: string;
-  updated_time: string;
+  sms_sent: boolean;
+  created_at: string;
 }
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function relativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  draft: { label: "Draft", variant: "secondary" },
+  active: { label: "Active", variant: "default" },
+  paused: { label: "Paused", variant: "outline" },
+  ended: { label: "Ended", variant: "destructive" },
+};
+
+const LEAD_STATUS_COLORS: Record<string, string> = {
+  new: "bg-blue-500/10 text-blue-700 border-blue-200 dark:text-blue-400 dark:border-blue-800",
+  contacted: "bg-yellow-500/10 text-yellow-700 border-yellow-200 dark:text-yellow-400 dark:border-yellow-800",
+  won: "bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800",
+  lost: "bg-red-500/10 text-red-700 border-red-200 dark:text-red-400 dark:border-red-800",
+};
+
+// ─── Component ──────────────────────────────────────────────────────────────
 
 const Dashboard = () => {
-  // --- SUPABASE DEBUG: Auth state and session logging ---
-useEffect(() => {
-  async function fetchDebug() {
-    const user = await supabase.auth.getUser();
-    const session = await supabase.auth.getSession();
-    console.log("SUPABASE DEBUG - user:", user);
-    console.log("SUPABASE DEBUG - session:", session);
-  }
-  fetchDebug();
-}, []);
-// --- END SUPABASE DEBUG ---
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [facebookCampaigns, setFacebookCampaigns] = useState<FacebookCampaign[]>([]);
-  const [selectedCampaign, setSelectedCampaign] = useState<FacebookCampaign | null>(null);
+
   const [isLoading, setIsLoading] = useState(true);
-  const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
+  const [business, setBusiness] = useState<Business | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
 
   useEffect(() => {
-    const checkUser = async () => {
+    const loadDashboard = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
         navigate("/auth");
         return;
       }
 
-    setUser(session.user);
+      // Check onboarding status
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
 
-    // Get user profile
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .maybeSingle();
+      if (!profileData?.onboarding_completed) {
+        navigate("/onboarding");
+        return;
+      }
 
-    setProfile(profileData);
+      // Get business
+      const { data: bizData } = await supabase
+        .from("businesses" as any)
+        .select("*")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
 
-    // MAJOR CHANGE: Only check if onboarding is completed, not Facebook connection
-    const hasCompletedOnboarding = profileData?.onboarding_completed;
+      const biz = bizData as unknown as Business | null;
+      setBusiness(biz);
 
-    if (!hasCompletedOnboarding) {
-      console.log("Dashboard: Onboarding not completed, redirecting to onboarding");
-      navigate(`/onboarding`);
-      return;
-    }
+      if (biz) {
+        // Get campaigns
+        const { data: campData } = await supabase
+          .from("campaigns" as any)
+          .select("*")
+          .eq("business_id", biz.id)
+          .order("created_at", { ascending: false });
 
-      // Get user campaigns
-      const { data: campaignData } = await supabase
-        .from('ad_campaigns')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('updated_at', { ascending: false });
+        setCampaigns((campData as unknown as Campaign[]) || []);
 
-      setCampaigns(campaignData || []);
+        // Get recent leads
+        const { data: leadData } = await supabase
+          .from("leads" as any)
+          .select("*")
+          .eq("business_id", biz.id)
+          .order("created_at", { ascending: false })
+          .limit(5);
 
-      // Get Facebook campaigns
-      const { data: facebookCampaignData } = await supabase
-        .from('facebook_campaigns')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('updated_time', { ascending: false });
+        setLeads((leadData as unknown as Lead[]) || []);
+      }
 
-      setFacebookCampaigns(facebookCampaignData || []);
       setIsLoading(false);
     };
 
-    const checkFacebookRecovery = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('facebook_recovery') === 'true') {
-        // This should not happen - Facebook recovery should redirect to onboarding
-        console.log("Dashboard: Facebook recovery detected, redirecting to onboarding");
-        navigate("/onboarding?step=2&facebook=connected");
-        return;
-      }
-    };
+    loadDashboard();
+  }, [navigate]);
 
-    checkUser();
-    checkFacebookRecovery();
-  }, [navigate, toast]);
+  // ─── Computed Stats ─────────────────────────────────────────────────────
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'default';
-      case 'running': return 'default';
-      case 'pending': return 'secondary';
-      case 'failed': return 'destructive';
-      default: return 'secondary';
-    }
-  };
+  const activeCampaigns = campaigns.filter((c) => c.status === "active").length;
+  const totalLeads = campaigns.reduce((sum, c) => sum + (c.leads_count || 0), 0);
+  
+  // Leads this week
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  const leadsThisWeek = leads.filter(
+    (l) => new Date(l.created_at) >= oneWeekAgo
+  ).length;
 
-  const getActualStatus = (currentStep: number, pipelineStatus: string) => {
-    if (currentStep >= 5 && pipelineStatus === 'completed') {
-      return 'completed';
-    }
-    if (currentStep < 5) {
-      return `in progress: Step ${currentStep}/5`;
-    }
-    return pipelineStatus;
-  };
+  // Cost per lead
+  const totalSpend = campaigns.reduce((sum, c) => sum + (c.spend_cents || 0), 0);
+  const avgCostPerLead =
+    totalLeads > 0 ? (totalSpend / 100 / totalLeads).toFixed(2) : null;
 
-  const deleteCampaign = async (campaignId: string) => {
-    if (!user) return;
-    
-    setDeletingCampaignId(campaignId);
-    
-    try {
-      const { error } = await supabase
-        .from('ad_campaigns')
-        .delete()
-        .eq('id', campaignId)
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Error deleting campaign:', error);
-        toast({
-          title: "Failed to Delete",
-          description: "Could not delete the campaign. Please try again.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Remove the campaign from local state
-      setCampaigns(prev => prev.filter(campaign => campaign.id !== campaignId));
-      
-      toast({
-        title: "Campaign Deleted",
-        description: "The campaign has been successfully removed from your pipeline.",
-      });
-      
-    } catch (error) {
-      console.error('Error deleting campaign:', error);
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred while deleting the campaign.",
-        variant: "destructive",
-      });
-    } finally {
-      setDeletingCampaignId(null);
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const handleCampaignAction = async (campaignId: string, action: 'pause' | 'play' | 'delete') => {
-    try {
-      if (action === 'delete') {
-        // Delete from local campaigns first
-        const { error } = await supabase
-          .from('facebook_campaigns')
-          .delete()
-          .eq('campaign_id', campaignId)
-          .eq('user_id', user?.id);
-
-        if (error) throw error;
-
-        setFacebookCampaigns(prev => prev.filter(c => c.campaign_id !== campaignId));
-        if (selectedCampaign?.campaign_id === campaignId) {
-          setSelectedCampaign(null);
-        }
-
-        toast({
-          title: "Campaign Deleted",
-          description: "Campaign has been removed successfully.",
-        });
-      } else {
-        // For pause/play, we would call Facebook API to update status
-        const newStatus = action === 'pause' ? 'PAUSED' : 'ACTIVE';
-        
-        const { error } = await supabase
-          .from('facebook_campaigns')
-          .update({ status: newStatus })
-          .eq('campaign_id', campaignId)
-          .eq('user_id', user?.id);
-
-        if (error) throw error;
-
-        setFacebookCampaigns(prev => 
-          prev.map(c => c.campaign_id === campaignId ? { ...c, status: newStatus } : c)
-        );
-
-        if (selectedCampaign?.campaign_id === campaignId) {
-          setSelectedCampaign(prev => prev ? { ...prev, status: newStatus } : null);
-        }
-
-        toast({
-          title: `Campaign ${action === 'pause' ? 'Paused' : 'Resumed'}`,
-          description: `Campaign status updated to ${newStatus}.`,
-        });
-      }
-    } catch (error) {
-      console.error('Error updating campaign:', error);
-      toast({
-        title: "Action Failed",
-        description: "Failed to update campaign. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleCampaignClick = (campaign: FacebookCampaign) => {
-    setSelectedCampaign(campaign);
-  };
+  // ─── Loading ────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
       </div>
     );
   }
 
+  // ─── Render ─────────────────────────────────────────────────────────────
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8 max-w-5xl">
         <div className="space-y-8">
-          {/* Welcome Section */}
-          <section>
-            <h2 className="text-3xl font-bold mb-2">
-              Welcome back, {profile?.full_name || user?.email || "User"}!
-            </h2>
-            <p className="text-muted-foreground text-lg">
-              Your campaign management dashboard
-            </p>
-          </section>
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold">Dashboard</h1>
+              <p className="text-muted-foreground mt-1">
+                {business
+                  ? `${business.name} — ${business.trade}, ${business.suburb}`
+                  : "Welcome back!"}
+              </p>
+            </div>
+            <Button onClick={() => navigate("/campaign/new")}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Campaign
+            </Button>
+          </div>
 
-          {/* MAJOR CHANGE: Facebook Connection Card - Show if not connected */}
-          {profile && !profile.facebook_connected && (
-            <FacebookConnector 
-              onConnectionComplete={() => window.location.reload()} 
-              title="Connect Facebook for Ad Management"
-              description="Connect your Facebook Business account to access ad performance data and create campaigns."
-              buttonText="Connect Facebook Business"
+          {/* Stats Row */}
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              icon={Megaphone}
+              label="Active Campaigns"
+              value={String(activeCampaigns)}
             />
-          )}
+            <StatCard
+              icon={Users}
+              label="Total Leads"
+              value={String(totalLeads)}
+            />
+            <StatCard
+              icon={TrendingUp}
+              label="Leads This Week"
+              value={String(leadsThisWeek)}
+            />
+            <StatCard
+              icon={DollarSign}
+              label="Avg Cost / Lead"
+              value={avgCostPerLead ? `$${avgCostPerLead}` : "—"}
+            />
+          </div>
 
-          {/* Quick Actions Row */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Quick Actions</h3>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Create Campaign - placeholder for v2 rebuild */}
-              <Card className="cursor-pointer hover:shadow-md transition-shadow opacity-50" title="Coming Soon">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <PlayCircle className="h-5 w-5" />
-                    Create Campaign
-                    <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    AI-powered Facebook ad campaigns for your trade
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full" disabled>Coming Soon</Button>
-                </CardContent>
-              </Card>
-
-              {/* View Profile */}
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate("/profile")}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <TrendingUp className="h-5 w-5" />
-                    Settings & Profile
-                  </CardTitle>
-                  <CardDescription>
-                    Manage your business details and billing
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Link to="/profile">
-                    <Button className="w-full">View Profile</Button>
-                  </Link>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-
-          {/* Campaigns Section */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Your Campaigns</h3>
-              <Badge variant="outline" className="text-xs">
-                {facebookCampaigns.length + campaigns.length} Total
-              </Badge>
+          {/* Active Campaigns */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Campaigns</h2>
+              <Badge variant="outline">{campaigns.length} total</Badge>
             </div>
 
-            {/* Facebook Campaigns */}
-            {facebookCampaigns.length > 0 && (
-              <div className="mb-6">
-                <h4 className="text-lg font-medium mb-3 text-blue-600">Facebook Campaigns</h4>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {facebookCampaigns.map((campaign) => (
-                    <Card 
-                      key={campaign.campaign_id} 
-                      className={`cursor-pointer hover:shadow-lg transition-all duration-200 ${
-                        selectedCampaign?.campaign_id === campaign.campaign_id ? 'ring-2 ring-blue-500 bg-blue-50/50' : ''
-                      }`}
-                      onClick={() => handleCampaignClick(campaign)}
-                    >
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <CardTitle className="text-base truncate">
-                              {campaign.campaign_name}
-                            </CardTitle>
-                            <CardDescription className="flex items-center gap-2 mt-1">
-                              <Calendar className="w-3 h-3" />
-                              {formatDate(campaign.created_time)}
-                            </CardDescription>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={campaign.status === 'ACTIVE' ? 'default' : campaign.status === 'PAUSED' ? 'secondary' : 'destructive'}>
-                              {campaign.status}
-                            </Badge>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCampaignAction(campaign.campaign_id, campaign.status === 'ACTIVE' ? 'pause' : 'play');
-                                }}>
-                                  {campaign.status === 'ACTIVE' ? (
-                                    <>
-                                      <Pause className="h-4 w-4 mr-2" />
-                                      Pause Campaign
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Play className="h-4 w-4 mr-2" />
-                                      Resume Campaign
-                                    </>
-                                  )}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={(e) => {
-                                  e.stopPropagation();
-                                  // Navigate to edit - placeholder for now
-                                  toast({ title: "Edit feature coming soon" });
-                                }}>
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit Campaign
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCampaignAction(campaign.campaign_id, 'delete');
-                                  }}
-                                  className="text-red-600"
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Delete Campaign
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Objective:</span>
-                            <span className="font-medium">{campaign.objective}</span>
-                          </div>
-                          {campaign.daily_budget && (
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Daily Budget:</span>
-                              <span className="font-medium">${campaign.daily_budget}</span>
-                            </div>
-                          )}
-                          <div className="text-xs text-muted-foreground">
-                            Click to view detailed metrics
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Local Pipeline Campaigns */}
-            {campaigns.length === 0 && facebookCampaigns.length === 0 ? (
+            {campaigns.length === 0 ? (
               <Card className="text-center py-12">
-                <CardContent>
-                  <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <h4 className="text-lg font-semibold mb-2">No campaigns yet</h4>
-                  <p className="text-muted-foreground mb-4">
-                    Create your first campaign with ZuckerBot to see it here
-                  </p>
-                  <Button onClick={() => navigate("/dashboard")} disabled>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Campaign (Coming Soon)
+                <CardContent className="space-y-4">
+                  <Megaphone className="h-10 w-10 text-muted-foreground mx-auto" />
+                  <div>
+                    <h3 className="font-semibold">No campaigns yet</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Create your first campaign to start getting leads.
+                    </p>
+                  </div>
+                  <Button onClick={() => navigate("/campaign/new")}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Campaign
                   </Button>
                 </CardContent>
               </Card>
             ) : (
-              <>
-                {campaigns.length > 0 && (
-                  <div>
-                    <h4 className="text-lg font-medium mb-3 text-purple-600">Pipeline Campaigns</h4>
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                       {campaigns.map((campaign) => (
-                        <Card 
-                          key={campaign.id} 
-                          className="cursor-pointer hover:shadow-lg transition-all duration-200 group"
-                        >
-                          <CardHeader className="pb-3">
-                            <div className="flex items-start justify-between">
-                              <div 
-                                className="flex-1 min-w-0 cursor-pointer"
-                                onClick={() => navigate('/dashboard')}
-                              >
-                                <CardTitle className="text-base truncate group-hover:text-blue-600 transition-colors">
-                                  {campaign.campaign_name}
-                                </CardTitle>
-                                <CardDescription className="flex items-center gap-2 mt-1">
-                                  <Calendar className="w-3 h-3" />
-                                  {formatDate(campaign.updated_at)}
-                                </CardDescription>
-                              </div>
-                              <div className="flex items-center gap-2 ml-2">
-                                <Badge variant={getStatusColor(getActualStatus(campaign.current_step, campaign.pipeline_status))}>
-                                  {getActualStatus(campaign.current_step, campaign.pipeline_status)}
-                                </Badge>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-600"
-                                      disabled={deletingCampaignId === campaign.id}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Are you sure you want to delete "{campaign.campaign_name}"? This action cannot be undone and will permanently remove the campaign from your pipeline.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                      <AlertDialogAction
-                                        onClick={() => deleteCampaign(campaign.id)}
-                                        className="bg-red-600 hover:bg-red-700"
-                                        disabled={deletingCampaignId === campaign.id}
-                                      >
-                                        {deletingCampaignId === campaign.id ? "Deleting..." : "Delete Campaign"}
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </div>
-                            </div>
-                          </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm text-muted-foreground">Step {campaign.current_step}/5</span>
-                              <div className="text-xs text-muted-foreground">
-                                Updated {formatDate(campaign.updated_at)}
-                              </div>
-                            </div>
-                            <div 
-                              className="text-xs text-blue-600 mt-2 cursor-pointer hover:text-blue-700"
-                              onClick={() => navigate('/dashboard')}
-                            >
-                              Click to continue from step {campaign.current_step}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
+              <div className="grid gap-4 md:grid-cols-2">
+                {campaigns.map((campaign) => {
+                  const badge = STATUS_BADGE[campaign.status] || STATUS_BADGE.draft;
+                  return (
+                    <Card
+                      key={campaign.id}
+                      className="cursor-pointer hover:shadow-md transition-shadow"
+                      onClick={() =>
+                        toast({
+                          title: "Campaign detail coming soon",
+                          description: "We're building this page next!",
+                        })
+                      }
+                    >
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <CardTitle className="text-base">
+                            {campaign.name}
+                          </CardTitle>
+                          <Badge variant={badge.variant}>{badge.label}</Badge>
+                        </div>
+                        <CardDescription>
+                          {campaign.launched_at
+                            ? `Launched ${relativeTime(campaign.launched_at)}`
+                            : `Created ${relativeTime(campaign.created_at)}`}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-muted-foreground">
+                            <strong className="text-foreground">
+                              ${(campaign.daily_budget_cents / 100).toFixed(0)}
+                            </strong>
+                            /day
+                          </span>
+                          <span className="text-muted-foreground">
+                            <strong className="text-foreground">
+                              {campaign.leads_count}
+                            </strong>{" "}
+                            leads
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             )}
-
           </section>
 
-          {/* Performance Overview moved above */}
+          {/* Recent Leads */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Recent Leads</h2>
+              <Link
+                to="/leads"
+                className="text-sm text-primary hover:underline flex items-center gap-1"
+              >
+                View all leads
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            {leads.length === 0 ? (
+              <Card className="text-center py-12">
+                <CardContent className="space-y-4">
+                  <Inbox className="h-10 w-10 text-muted-foreground mx-auto" />
+                  <div>
+                    <h3 className="font-semibold">No leads yet</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Launch a campaign to start getting customers!
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {leads.map((lead) => (
+                  <Card key={lead.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">
+                              {lead.name || "Unknown"}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${LEAD_STATUS_COLORS[lead.status] || ""}`}
+                            >
+                              {lead.status}
+                            </Badge>
+                            {lead.sms_sent && (
+                              <Badge variant="outline" className="text-xs gap-1">
+                                <MessageSquare className="h-3 w-3" />
+                                SMS
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                            {lead.phone && (
+                              <a
+                                href={`tel:${lead.phone}`}
+                                className="flex items-center gap-1 hover:text-primary"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Phone className="h-3 w-3" />
+                                {lead.phone}
+                              </a>
+                            )}
+                            {lead.email && (
+                              <span className="flex items-center gap-1">
+                                <Mail className="h-3 w-3" />
+                                {lead.email}
+                              </span>
+                            )}
+                            {lead.suburb && (
+                              <span className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {lead.suburb}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {relativeTime(lead.created_at)}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       </main>
     </div>
   );
 };
+
+// ─── Stat Card Sub-Component ────────────────────────────────────────────────
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <Icon className="h-5 w-5 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-2xl font-bold leading-none">{value}</p>
+          <p className="text-xs text-muted-foreground mt-1 truncate">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default Dashboard;

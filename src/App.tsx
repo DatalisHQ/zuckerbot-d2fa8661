@@ -12,6 +12,8 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
+import CampaignCreator from "./pages/CampaignCreator";
+import LeadInbox from "./pages/LeadInbox";
 import Profile from "./pages/Profile";
 import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
@@ -133,6 +135,8 @@ function App() {
               <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/dashboard" />} />
               <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
               <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
+              <Route path="/campaign/new" element={user ? <CampaignCreator /> : <Navigate to="/auth" />} />
+              <Route path="/leads" element={user ? <LeadInbox /> : <Navigate to="/auth" />} />
               <Route path="/profile" element={user ? <Profile /> : <Navigate to="/auth" />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />

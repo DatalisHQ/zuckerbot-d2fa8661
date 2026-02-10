@@ -1,25 +1,22 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetDescription, 
-  SheetHeader, 
-  SheetTitle, 
-  SheetTrigger 
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
 } from "@/components/ui/sheet";
-import { 
-  Menu, 
-  LayoutDashboard, 
-  Zap, 
-  Building2, 
-  Users, 
-  CreditCard, 
-  User,
+import {
+  Menu,
+  LayoutDashboard,
+  Megaphone,
+  Users,
+  Settings,
   LogOut,
-  FileText,
-  BarChart3
+  CreditCard,
 } from "lucide-react";
 import { useEnhancedAuth } from "@/utils/auth";
 
@@ -39,54 +36,35 @@ export const SlidingMenu = () => {
       title: "Dashboard",
       href: "/dashboard",
       icon: LayoutDashboard,
-      description: "Campaign overview and performance"
+      description: "Overview and stats",
     },
     {
-      title: "Start Campaign",
-      href: "/campaign-flow",
-      icon: Zap,
-      description: "Create and manage ad campaigns"
+      title: "New Campaign",
+      href: "/campaign/new",
+      icon: Megaphone,
+      description: "Create an AI-powered ad campaign",
     },
     {
-      title: "Files",
-      href: "/files",
-      icon: FileText,
-      description: "Manage your files and assets"
+      title: "Leads",
+      href: "/leads",
+      icon: Users,
+      description: "Manage your incoming leads",
     },
     {
-      title: "Ad Performance",
-      href: "/ad-performance",
-      icon: BarChart3,
-      description: "View campaign performance metrics"
-    },
-    {
-      title: "Brand Analysis",
-      href: "/dashboard?section=brand-analysis",
-      icon: Building2,
-      description: "Analyze your brand positioning"
-    },
-    // Competitor Analysis removed for MVP
-    {
-      title: "Billing & Pricing",
+      title: "Billing",
       href: "/billing",
       icon: CreditCard,
-      description: "Manage subscription and billing"
+      description: "Manage subscription and billing",
     },
     {
-      title: "Account & Profile",
+      title: "Settings",
       href: "/profile",
-      icon: User,
-      description: "Update account settings and profile"
-    }
+      icon: Settings,
+      description: "Account and business settings",
+    },
   ];
 
-  const isActive = (href: string) => {
-    if (href.includes('?')) {
-      const [path] = href.split('?');
-      return location.pathname === path;
-    }
-    return location.pathname === href;
-  };
+  const isActive = (href: string) => location.pathname === href;
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -99,19 +77,19 @@ export const SlidingMenu = () => {
       <SheetContent side="left" className="w-80">
         <SheetHeader>
           <SheetTitle className="text-left">
-            <Link 
-              to="/dashboard" 
+            <Link
+              to="/dashboard"
               className="flex items-center gap-2 font-bold text-xl"
               onClick={() => setOpen(false)}
             >
-              <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                 <span className="text-sm font-bold text-primary-foreground">Z</span>
               </div>
-              ZuckerBot.ai
+              ZuckerBot
             </Link>
           </SheetTitle>
           <SheetDescription className="text-left">
-            AI-powered Facebook Ads Assistant
+            AI-powered Facebook Ads for Tradies
           </SheetDescription>
         </SheetHeader>
 
@@ -131,16 +109,18 @@ export const SlidingMenu = () => {
                 <item.icon className="h-4 w-4" />
                 <div className="flex flex-col gap-1">
                   <span className="font-medium">{item.title}</span>
-                  <span className="text-xs text-muted-foreground">{item.description}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {item.description}
+                  </span>
                 </div>
               </Link>
             ))}
           </nav>
 
           <div className="border-t pt-4 mt-4">
-            <Button 
-              variant="outline" 
-              className="w-full justify-start gap-2" 
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
               onClick={handleSignOut}
             >
               <LogOut className="h-4 w-4" />

@@ -1,402 +1,714 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Bot, Sparkles, Globe, Building, Target, LogOut } from "lucide-react";
+import {
+  Loader2,
+  Wrench,
+  MapPin,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  ChevronsUpDown,
+  Upload,
+  X,
+  ImagePlus,
+  LogOut,
+} from "lucide-react";
 import { useEnhancedAuth, validateSession } from "@/utils/auth";
+import { cn } from "@/lib/utils";
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const TRADES = [
+  "Plumber",
+  "Electrician",
+  "Carpenter",
+  "Landscaper",
+  "Cleaner",
+  "Painter",
+  "Roofer",
+  "Fencer",
+  "Concreter",
+  "Tiler",
+  "Bricklayer",
+  "HVAC/Air Con",
+  "Pest Control",
+  "Pool Maintenance",
+  "Handyman",
+] as const;
+
+const STATES = ["QLD", "NSW", "VIC", "SA", "WA", "TAS", "NT", "ACT"] as const;
+
+const STEPS = [
+  { label: "Your Trade", icon: Wrench },
+  { label: "Location", icon: MapPin },
+  { label: "Photos", icon: Camera },
+] as const;
+
+const MAX_PHOTOS = 3;
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface PhotoFile {
+  file: File;
+  preview: string;
+  id: string;
+}
+
+interface BusinessForm {
+  trade: string;
+  customTrade: string;
+  businessName: string;
+  suburb: string;
+  postcode: string;
+  state: string;
+  phone: string;
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 const Onboarding = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [businessName, setBusinessName] = useState("");
-  const [businessUrl, setBusinessUrl] = useState("");
-  const [businessDescription, setBusinessDescription] = useState("");
-  const [targetAudience, setTargetAudience] = useState("");
-  const [products, setProducts] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isUpdateMode, setIsUpdateMode] = useState(false);
-  const [existingAnalysisId, setExistingAnalysisId] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [tradeOpen, setTradeOpen] = useState(false);
+  const [photos, setPhotos] = useState<PhotoFile[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [form, setForm] = useState<BusinessForm>({
+    trade: "",
+    customTrade: "",
+    businessName: "",
+    suburb: "",
+    postcode: "",
+    state: "",
+    phone: "",
+  });
+
   const navigate = useNavigate();
   const { toast } = useToast();
   const { logout } = useEnhancedAuth();
 
-  // MAJOR CHANGE: Remove Facebook-related state and logic from onboarding
-  
-  // Helper function to create missing user profiles
-  const createUserProfile = async (user: any) => {
-    try {
-      console.log(`[Onboarding] Creating profile for user: ${user.id}`);
-      const { data: newProfile, error: createError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: user.id,
-          email: user.email,
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || null,
-          onboarding_completed: false,
-          facebook_connected: false // Default to false, can be connected later
-        })
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('[Onboarding] Error creating profile:', createError);
-        throw new Error(`Failed to create user profile: ${createError.message}`);
-      }
-
-      console.log('[Onboarding] Profile created successfully:', newProfile);
-      return newProfile;
-    } catch (error) {
-      console.error('[Onboarding] Profile creation failed:', error);
-      throw error;
-    }
-  };
+  // ── Auth check ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     const checkUser = async () => {
-      // Use enhanced session validation
-      const { session, user, isValid } = await validateSession();
-      
+      const { user, isValid } = await validateSession();
       if (!isValid || !user) {
         navigate("/auth");
         return;
       }
+      setUserId(user.id);
 
-      // Check URL parameters for update mode only
-      const urlParams = new URLSearchParams(window.location.search);
-      const mode = urlParams.get('mode');
-      const isUpdate = mode === 'update';
-      setIsUpdateMode(isUpdate);
+      // Check if user already has a business profile → skip to dashboard
+      const { data: business } = await (supabase as any)
+        .from("businesses")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-      // MAJOR CHANGE: Removed Facebook OAuth callback handling from onboarding
-
-      // Check profile and prerequisites
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('onboarding_completed, business_name')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        // If no profile exists, create one automatically
-        if (!profile) {
-          console.log('[Onboarding] No profile found, creating one...');
-          await createUserProfile(user);
-        } else {
-          // MAJOR CHANGE: Only check onboarding completion, not Facebook connection
-          const hasCompletedOnboarding = profile?.onboarding_completed;
-
-          if (hasCompletedOnboarding && !isUpdate) {
-            console.log('[Onboarding] User has completed onboarding, redirecting to dashboard');
-            navigate("/dashboard");
-            return;
-          }
-        }
-
-        // If in update mode, load existing brand analysis data
-        if (isUpdate) {
-          const { data: brandAnalysis } = await supabase
-            .from('brand_analysis')
-            .select('*')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (brandAnalysis) {
-            setExistingAnalysisId(brandAnalysis.id);
-            setBusinessName(brandAnalysis.brand_name || profile?.business_name || '');
-            setBusinessUrl(brandAnalysis.brand_url || '');
-            // Note: Other fields aren't stored in brand_analysis currently
-          } else if (profile?.business_name) {
-            setBusinessName(profile.business_name);
-          }
-        }
-      } catch (error) {
-        console.error("Error checking onboarding status:", error);
-        // If profile check fails, user might need to re-authenticate
-        navigate("/auth");
+      if (business) {
+        navigate("/campaign/new");
+        return;
       }
     };
     checkUser();
   }, [navigate]);
 
-  const handleBusinessSetup = async () => {
-    if (!businessName || !businessUrl) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in your business name and website URL.",
-        variant: "destructive",
-      });
-      return;
-    }
+  // ── Cleanup photo previews on unmount ──────────────────────────────────
 
-    setIsLoading(true);
-    setIsAnalyzing(true);
+  useEffect(() => {
+    return () => {
+      photos.forEach((p) => URL.revokeObjectURL(p.preview));
+    };
+  }, [photos]);
+
+  // ── Form helpers ───────────────────────────────────────────────────────
+
+  const updateForm = useCallback(
+    (field: keyof BusinessForm, value: string) => {
+      setForm((prev) => ({ ...prev, [field]: value }));
+    },
+    []
+  );
+
+  const effectiveTrade =
+    form.trade === "Other" ? form.customTrade.trim() : form.trade;
+
+  const isStep1Valid = effectiveTrade.length > 0 && form.businessName.trim().length > 0;
+  const isStep2Valid =
+    form.suburb.trim().length > 0 &&
+    form.postcode.trim().length >= 4 &&
+    form.state.length > 0 &&
+    form.phone.trim().length >= 8;
+
+  // ── Photo handling ─────────────────────────────────────────────────────
+
+  const handlePhotoSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+
+      const remaining = MAX_PHOTOS - photos.length;
+      const selected = Array.from(files).slice(0, remaining);
+
+      const invalid = selected.filter((f) => f.size > MAX_FILE_SIZE);
+      if (invalid.length > 0) {
+        toast({
+          title: "File too large",
+          description: "Each photo must be under 5MB.",
+          variant: "destructive",
+        });
+      }
+
+      const valid = selected.filter((f) => f.size <= MAX_FILE_SIZE);
+      const newPhotos: PhotoFile[] = valid.map((file) => ({
+        file,
+        preview: URL.createObjectURL(file),
+        id: crypto.randomUUID(),
+      }));
+
+      setPhotos((prev) => [...prev, ...newPhotos].slice(0, MAX_PHOTOS));
+
+      // Reset input so re-selecting the same file works
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+    [photos.length, toast]
+  );
+
+  const removePhoto = useCallback((id: string) => {
+    setPhotos((prev) => {
+      const removed = prev.find((p) => p.id === id);
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return prev.filter((p) => p.id !== id);
+    });
+  }, []);
+
+  // ── Drag & Drop ────────────────────────────────────────────────────────
+
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+
+      const files = e.dataTransfer.files;
+      if (!files) return;
+
+      const remaining = MAX_PHOTOS - photos.length;
+      const selected = Array.from(files)
+        .filter((f) => f.type.startsWith("image/"))
+        .slice(0, remaining);
+
+      const invalid = selected.filter((f) => f.size > MAX_FILE_SIZE);
+      if (invalid.length > 0) {
+        toast({
+          title: "File too large",
+          description: "Each photo must be under 5MB.",
+          variant: "destructive",
+        });
+      }
+
+      const valid = selected.filter((f) => f.size <= MAX_FILE_SIZE);
+      const newPhotos: PhotoFile[] = valid.map((file) => ({
+        file,
+        preview: URL.createObjectURL(file),
+        id: crypto.randomUUID(),
+      }));
+
+      setPhotos((prev) => [...prev, ...newPhotos].slice(0, MAX_PHOTOS));
+    },
+    [photos.length, toast]
+  );
+
+  // ── Save & Submit ──────────────────────────────────────────────────────
+
+  const handleSave = async () => {
+    if (!userId) return;
+    setIsSaving(true);
 
     try {
-      // Use enhanced session validation
-      const { session, user, isValid } = await validateSession();
-      if (!isValid || !user) throw new Error("No valid user session");
+      // 1. Upload photos to Supabase Storage
+      const photoUrls: string[] = [];
 
-      console.log("Starting business setup for user:", user.id);
+      for (const photo of photos) {
+        const ext = photo.file.name.split(".").pop() || "jpg";
+        const path = `${userId}/${crypto.randomUUID()}.${ext}`;
 
-      // First, verify the user exists in profiles table
-      const { data: existingProfile, error: checkError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .maybeSingle();
+        const { error: uploadError } = await supabase.storage
+          .from("business-photos")
+          .upload(path, photo.file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
 
-      console.log("Existing profile before update:", existingProfile);
-
-      // If no profile exists, create one automatically
-      let profileToUse = existingProfile;
-      if (!existingProfile) {
-        console.log("No profile found during business setup, creating one...");
-        profileToUse = await createUserProfile(session.user);
-      }
-
-      // Update profile with business info
-      const { data: updatedProfile, error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          business_name: businessName,
-        })
-        .eq('user_id', session.user.id)
-        .select()
-        .single();
-
-      if (profileError) {
-        console.error("Profile update error:", profileError);
-        throw new Error(`Failed to update profile: ${profileError.message}`);
-      }
-
-      console.log("Profile updated successfully:", updatedProfile);
-
-      // Handle brand analysis - update existing or create new
-      if (isUpdateMode && existingAnalysisId) {
-        console.log("Updating existing brand analysis...");
-        const { error: updateError } = await supabase
-          .from('brand_analysis')
-          .update({
-            brand_url: businessUrl,
-            brand_name: businessName,
-            analysis_status: 'completed'
-          })
-          .eq('id', existingAnalysisId)
-          .eq('user_id', session.user.id);
-
-        if (updateError) {
-          console.error("Brand analysis update error:", updateError);
-          throw new Error("Failed to update your brand information. Please try again.");
-        }
-        
-        console.log("Brand analysis updated successfully");
-      } else {
-        // TODO: v2 will use create-business-profile edge function
-        console.log("Brand analysis skipped - v2 rebuild pending");
-      }
-
-      // MAJOR CHANGE: Mark onboarding as completed without requiring Facebook connection
-      if (!isUpdateMode) {
-        const { error: completionError } = await supabase
-          .from('profiles')
-          .update({ 
-            onboarding_completed: true
-          })
-          .eq('user_id', session.user.id);
-
-        if (completionError) {
-          throw new Error("Failed to complete onboarding");
+        if (uploadError) {
+          console.error("Photo upload failed:", uploadError);
+          continue; // Don't block onboarding for a failed photo upload
         }
 
-        toast({
-          title: "Setup Complete!",
-          description: `Your ZuckerBot assistant has analyzed ${businessName} and is ready to help. You can connect Facebook later for ad management.`,
-        });
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("business-photos").getPublicUrl(path);
 
-        console.log("Onboarding completed successfully - navigating to Dashboard");
-        navigate("/dashboard");
-      } else {
-        toast({
-          title: "Brand Info Updated!",
-          description: `Your brand information for ${businessName} has been updated successfully.`,
-        });
-
-        console.log("Brand info updated successfully - navigating to Dashboard");
-        navigate("/dashboard");
+        photoUrls.push(publicUrl);
       }
-      
-    } catch (error: any) {
-      console.error("Onboarding error:", error);
+
+      // 2. Insert business profile
+      const { error: insertError } = await (supabase as any)
+        .from("businesses")
+        .insert({
+          user_id: userId,
+          name: form.businessName.trim(),
+          trade: effectiveTrade.toLowerCase(),
+          suburb: form.suburb.trim(),
+          postcode: form.postcode.trim(),
+          state: form.state,
+          phone: form.phone.trim(),
+        });
+
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
+      // 3. Mark onboarding completed on the profiles table (if it exists)
+      try {
+        await supabase
+          .from("profiles")
+          .update({ onboarding_completed: true })
+          .eq("user_id", userId);
+      } catch {
+        // profiles table may not exist in v2 — that's fine
+      }
+
       toast({
-        title: "Setup Error",
-        description: error.message || "There was an error setting up your business profile. Please try again.",
+        title: "You're all set! 🎉",
+        description: "Let's create your first ad campaign.",
+      });
+
+      navigate("/campaign/new");
+    } catch (error: any) {
+      console.error("Onboarding save error:", error);
+      toast({
+        title: "Something went wrong",
+        description:
+          error.message ||
+          "Couldn't save your business profile. Give it another crack.",
         variant: "destructive",
       });
-      setIsAnalyzing(false);
-      setIsLoading(false);
+    } finally {
+      setIsSaving(false);
     }
+  };
+
+  // ── Navigation ─────────────────────────────────────────────────────────
+
+  const canGoNext =
+    (step === 0 && isStep1Valid) ||
+    (step === 1 && isStep2Valid) ||
+    step === 2;
+
+  const goNext = () => {
+    if (step < STEPS.length - 1) setStep((s) => s + 1);
+  };
+
+  const goBack = () => {
+    if (step > 0) setStep((s) => s - 1);
   };
 
   const handleSignOut = () => {
-    logout(navigate, false); // Don't show toast on onboarding page
+    logout(navigate, false);
   };
 
-  // MAJOR CHANGE: Removed all Facebook-related useEffect and event listeners
+  // ── Render ─────────────────────────────────────────────────────────────
 
-  if (isAnalyzing) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-6">
-          <div className="relative">
-            <div className="w-24 h-24 border-4 border-primary/20 rounded-full mx-auto"></div>
-            <div className="w-24 h-24 border-4 border-primary border-t-transparent rounded-full mx-auto absolute top-0 animate-spin"></div>
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-xl font-semibold">Analyzing Your Brand</h3>
-            <p className="text-muted-foreground">
-              ZuckerBot is learning about your business...
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const progressValue = ((step + 1) / STEPS.length) * 100;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <div className="border-b border-border/50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <Bot className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <h1 className="text-xl font-semibold">
-                {isUpdateMode ? "Update Brand Information" : "Welcome to ZuckerBot"}
-              </h1>
+      <header className="border-b border-border/50">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <Wrench className="h-4 w-4 text-primary-foreground" />
             </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Sign Out
-            </Button>
+            <span className="text-lg font-semibold">Zuckerbot</span>
           </div>
+          <Button variant="ghost" size="sm" onClick={handleSignOut}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </Button>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto space-y-8">
-          {/* Welcome Section */}
-          <div className="text-center space-y-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-primary to-primary/80 rounded-2xl mx-auto flex items-center justify-center">
-              <Sparkles className="h-8 w-8 text-primary-foreground" />
-            </div>
-            <h2 className="text-3xl font-bold">
-              {isUpdateMode ? "Update Your Brand" : "Let's Set Up Your Business"}
-            </h2>
-            <p className="text-muted-foreground text-lg">
-              {isUpdateMode 
-                ? "Update your brand information to improve ZuckerBot's recommendations."
-                : "Tell ZuckerBot about your business so it can create amazing ad campaigns for you."
-              }
-            </p>
+      {/* Main content */}
+      <main className="flex-1 container mx-auto px-4 py-8 max-w-lg">
+        {/* Progress */}
+        <div className="mb-8 space-y-3">
+          <div className="flex justify-between text-sm text-muted-foreground">
+            {STEPS.map((s, i) => {
+              const Icon = s.icon;
+              const isActive = i === step;
+              const isDone = i < step;
+              return (
+                <div
+                  key={s.label}
+                  className={cn(
+                    "flex items-center gap-1.5 transition-colors",
+                    isActive && "text-primary font-medium",
+                    isDone && "text-primary"
+                  )}
+                >
+                  {isDone ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    <Icon className="h-4 w-4" />
+                  )}
+                  <span className="hidden sm:inline">{s.label}</span>
+                </div>
+              );
+            })}
           </div>
+          <Progress value={progressValue} className="h-2" />
+        </div>
 
-          {/* Business Setup Form */}
+        {/* ── Step 1: Trade ─────────────────────────────────────────────── */}
+        {step === 0 && (
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building className="h-5 w-5" />
-                Business Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
+            <CardContent className="pt-6 space-y-6">
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-bold">What's your trade?</h2>
+                <p className="text-muted-foreground">
+                  Tell us what you do — we'll tailor your ads to suit.
+                </p>
+              </div>
+
+              {/* Trade selector (searchable combobox) */}
+              <div className="space-y-2">
+                <Label>Trade</Label>
+                <Popover open={tradeOpen} onOpenChange={setTradeOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={tradeOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      {form.trade || "Select your trade…"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                    <Command>
+                      <CommandInput placeholder="Search trades…" />
+                      <CommandList>
+                        <CommandEmpty>No trade found.</CommandEmpty>
+                        <CommandGroup>
+                          {TRADES.map((t) => (
+                            <CommandItem
+                              key={t}
+                              value={t}
+                              onSelect={() => {
+                                updateForm("trade", t);
+                                setTradeOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  form.trade === t
+                                    ? "opacity-100"
+                                    : "opacity-0"
+                                )}
+                              />
+                              {t}
+                            </CommandItem>
+                          ))}
+                          <CommandItem
+                            value="Other"
+                            onSelect={() => {
+                              updateForm("trade", "Other");
+                              setTradeOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                form.trade === "Other"
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                            />
+                            Other
+                          </CommandItem>
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Custom trade input (only if "Other") */}
+              {form.trade === "Other" && (
                 <div className="space-y-2">
-                  <Label htmlFor="businessName">Business Name *</Label>
+                  <Label htmlFor="customTrade">What do you do?</Label>
                   <Input
-                    id="businessName"
-                    placeholder="e.g., Acme Corp"
-                    value={businessName}
-                    onChange={(e) => setBusinessName(e.target.value)}
-                    disabled={isLoading}
+                    id="customTrade"
+                    placeholder="e.g. Solar installer"
+                    value={form.customTrade}
+                    onChange={(e) => updateForm("customTrade", e.target.value)}
+                    autoFocus
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="businessUrl">Website URL *</Label>
-                  <Input
-                    id="businessUrl"
-                    placeholder="https://your-website.com"
-                    value={businessUrl}
-                    onChange={(e) => setBusinessUrl(e.target.value)}
-                    disabled={isLoading}
-                  />
-                </div>
-              </div>
+              )}
 
+              {/* Business name */}
               <div className="space-y-2">
-                <Label htmlFor="businessDescription">Business Description (Optional)</Label>
-                <Textarea
-                  id="businessDescription"
-                  placeholder="Briefly describe what your business does..."
-                  value={businessDescription}
-                  onChange={(e) => setBusinessDescription(e.target.value)}
-                  disabled={isLoading}
-                  rows={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="targetAudience">Target Audience (Optional)</Label>
+                <Label htmlFor="businessName">Business Name</Label>
                 <Input
-                  id="targetAudience"
-                  placeholder="e.g., Young professionals, Parents, Small business owners"
-                  value={targetAudience}
-                  onChange={(e) => setTargetAudience(e.target.value)}
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="products">Main Products/Services (Optional)</Label>
-                <Input
-                  id="products"
-                  placeholder="e.g., Software, Consulting, E-commerce"
-                  value={products}
-                  onChange={(e) => setProducts(e.target.value)}
-                  disabled={isLoading}
+                  id="businessName"
+                  placeholder="e.g. Dave's Plumbing"
+                  value={form.businessName}
+                  onChange={(e) => updateForm("businessName", e.target.value)}
                 />
               </div>
             </CardContent>
           </Card>
+        )}
 
-          {/* MAJOR CHANGE: Remove Facebook connection requirement from onboarding */}
-          
-          {/* Action Buttons */}
-          <div className="flex flex-col gap-4">
-            <Button
-              size="lg"
-              onClick={handleBusinessSetup}
-              disabled={isLoading || !businessName || !businessUrl}
-              className="w-full"
-            >
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isUpdateMode ? "Update Brand Information" : "Complete Setup"}
+        {/* ── Step 2: Location ──────────────────────────────────────────── */}
+        {step === 1 && (
+          <Card>
+            <CardContent className="pt-6 space-y-6">
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-bold">Where do you work?</h2>
+                <p className="text-muted-foreground">
+                  We'll target your ads to people nearby.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="suburb">Suburb</Label>
+                <Input
+                  id="suburb"
+                  placeholder="e.g. Paddington"
+                  value={form.suburb}
+                  onChange={(e) => updateForm("suburb", e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>State</Label>
+                  <Select
+                    value={form.state}
+                    onValueChange={(v) => updateForm("state", v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="State" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="postcode">Postcode</Label>
+                  <Input
+                    id="postcode"
+                    placeholder="4000"
+                    value={form.postcode}
+                    onChange={(e) =>
+                      updateForm(
+                        "postcode",
+                        e.target.value.replace(/\D/g, "").slice(0, 4)
+                      )
+                    }
+                    inputMode="numeric"
+                    maxLength={4}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number</Label>
+                <Input
+                  id="phone"
+                  placeholder="04XX XXX XXX"
+                  value={form.phone}
+                  onChange={(e) => updateForm("phone", e.target.value)}
+                  type="tel"
+                  inputMode="tel"
+                />
+                <p className="text-xs text-muted-foreground">
+                  We'll use this for lead notifications.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Step 3: Photos ────────────────────────────────────────────── */}
+        {step === 2 && (
+          <Card>
+            <CardContent className="pt-6 space-y-6">
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-bold">Show off your work</h2>
+                <p className="text-muted-foreground">
+                  Upload 1–3 photos of your best jobs. These will be used in
+                  your Facebook ads.
+                </p>
+              </div>
+
+              {/* Drop zone */}
+              {photos.length < MAX_PHOTOS && (
+                <div
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
+                    isDragging
+                      ? "border-primary bg-primary/5"
+                      : "border-muted-foreground/25 hover:border-primary/50"
+                  )}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                      <ImagePlus className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">
+                        Drag photos here or click to browse
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        JPG, PNG, or WebP — max 5MB each
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Photo previews */}
+              {photos.length > 0 && (
+                <div className="grid grid-cols-3 gap-3">
+                  {photos.map((photo) => (
+                    <div key={photo.id} className="relative group aspect-square">
+                      <img
+                        src={photo.preview}
+                        alt="Upload preview"
+                        className="w-full h-full object-cover rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(photo.id)}
+                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Remove photo"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground text-center">
+                {photos.length}/{MAX_PHOTOS} photos added
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Navigation buttons ────────────────────────────────────────── */}
+        <div className="flex items-center justify-between mt-6 gap-4">
+          {step > 0 ? (
+            <Button variant="outline" onClick={goBack} disabled={isSaving}>
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Back
             </Button>
-            
-            <p className="text-sm text-muted-foreground text-center">
-              {isUpdateMode 
-                ? "Your brand information will be updated and ZuckerBot will use this for better recommendations."
-                : "After setup, you can connect Facebook to manage ad campaigns and view performance data."
-              }
-            </p>
-          </div>
+          ) : (
+            <div /> /* spacer */
+          )}
+
+          {step < STEPS.length - 1 ? (
+            <Button onClick={goNext} disabled={!canGoNext}>
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          ) : (
+            <div className="flex gap-3">
+              {photos.length === 0 && (
+                <Button
+                  variant="ghost"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                >
+                  Skip photos
+                </Button>
+              )}
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save & Continue
+              </Button>
+            </div>
+          )}
         </div>
-      </div>
+      </main>
     </div>
   );
 };
