@@ -31,7 +31,7 @@ interface AdVariant {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function generateAdVariants(business: Business): AdVariant[] {
+function fallbackAdVariants(business: Business): AdVariant[] {
   const { name, trade, suburb } = business;
   const tradeLower = trade.toLowerCase();
 
@@ -55,6 +55,34 @@ function generateAdVariants(business: Business): AdVariant[] {
       cta: "Learn More",
     },
   ];
+}
+
+async function fetchAIVariants(
+  businessId: string
+): Promise<{ variants: AdVariant[]; targeting: { daily_budget_cents: number; radius_km: number } } | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+
+    const response = await supabase.functions.invoke("generate-campaign", {
+      body: { business_id: businessId },
+    });
+
+    if (response.error || !response.data?.variants) return null;
+
+    const variants: AdVariant[] = response.data.variants.map(
+      (v: { headline: string; body: string; cta: string }, i: number) => ({
+        id: i + 1,
+        headline: v.headline,
+        body: v.body,
+        cta: v.cta,
+      })
+    );
+
+    return { variants, targeting: response.data.targeting };
+  } catch {
+    return null;
+  }
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -103,13 +131,18 @@ const CampaignCreator = () => {
       setBusiness(biz);
       setIsLoading(false);
 
-      // Fake AI generation delay
+      // Call AI edge function, fall back to local generation
       setIsGenerating(true);
-      setTimeout(() => {
-        setVariants(generateAdVariants(biz));
-        setIsGenerating(false);
-        setShowPreview(true);
-      }, 2500);
+      const aiResult = await fetchAIVariants(biz.id);
+      if (aiResult) {
+        setVariants(aiResult.variants);
+        setDailyBudget(Math.round(aiResult.targeting.daily_budget_cents / 100));
+        setRadiusKm(aiResult.targeting.radius_km);
+      } else {
+        setVariants(fallbackAdVariants(biz));
+      }
+      setIsGenerating(false);
+      setShowPreview(true);
     };
 
     fetchBusiness();
