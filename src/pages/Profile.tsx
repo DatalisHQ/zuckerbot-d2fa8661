@@ -1,101 +1,111 @@
 import { useState, useEffect } from "react";
-import { User, Mail, Building, Calendar, Edit, Save, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import {
+  User,
+  Mail,
+  Building,
+  MapPin,
+  Phone,
+  Calendar,
+  Edit,
+  Save,
+  X,
+  Facebook,
+  ExternalLink,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { useOnboardingGuard } from "@/hooks/useOnboardingGuard";
-import { BusinessProfileManager } from "@/components/BusinessProfileManager";
+import { Navbar } from "@/components/Navbar";
 
-interface Profile {
-  id: string;
-  email: string;
-  full_name: string;
-  business_name: string;
+// ─── Interfaces ─────────────────────────────────────────────────────────────
+
+interface ProfileData {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  business_name: string | null;
+  onboarding_completed: boolean;
   facebook_connected: boolean;
-  subscription_tier: string;
-  conversation_limit: number;
-  conversations_used: number;
   created_at: string;
 }
 
-interface BrandAnalysis {
+interface Business {
   id: string;
-  brand_name: string;
-  brand_url: string;
-  business_category: string;
-  niche: string;
-  value_propositions: string[];
-  main_products: any;
+  name: string;
+  trade: string;
+  suburb: string;
+  postcode: string;
+  state: string;
+  phone: string;
+  facebook_page_id: string | null;
+  facebook_ad_account_id: string | null;
 }
 
+// ─── Component ──────────────────────────────────────────────────────────────
+
 export default function Profile() {
-  useOnboardingGuard();
-  
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [brandAnalysis, setBrandAnalysis] = useState<BrandAnalysis | null>(null);
-  const [competitors, setCompetitors] = useState<string[]>([]);
-  const [editMode, setEditMode] = useState(false);
-  const [formData, setFormData] = useState({
-    full_name: "",
-    business_name: "",
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const navigate = useNavigate();
   const { toast } = useToast();
 
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [business, setBusiness] = useState<Business | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [formData, setFormData] = useState({ full_name: "", phone: "" });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
   useEffect(() => {
-    fetchProfile();
+    fetchData();
   }, []);
 
-  const fetchProfile = async () => {
+  const fetchData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      if (error) throw error;
-
-      setProfile(data);
-      setFormData({
-        full_name: data.full_name || "",
-        business_name: data.business_name || "",
-      });
-
-      // Get brand analysis and business info from onboarding
-      const { data: brandData } = await supabase
-        .from('brand_analysis')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (brandData) {
-        setBrandAnalysis(brandData);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        navigate("/auth");
+        return;
       }
 
-      // Get competitors from competitor lists
-      const { data: competitorLists } = await supabase
-        .from('competitor_lists')
-        .select('competitors')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      // Fetch profile
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-      if (competitorLists?.competitors && Array.isArray(competitorLists.competitors)) {
-        const competitorNames = competitorLists.competitors.map((comp: any) => comp.name || comp.url);
-        setCompetitors(competitorNames);
+      if (profileData) {
+        setProfile(profileData as unknown as ProfileData);
+        setFormData({
+          full_name: profileData.full_name || "",
+          phone: "",
+        });
+      }
+
+      // Fetch business
+      const { data: bizData } = await supabase
+        .from("businesses" as any)
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (bizData) {
+        const biz = bizData as unknown as Business;
+        setBusiness(biz);
+        setFormData((prev) => ({ ...prev, phone: biz.phone || "" }));
       }
     } catch (error: any) {
       toast({
@@ -110,29 +120,42 @@ export default function Profile() {
 
   const handleSave = async () => {
     if (!profile) return;
-
     setIsSaving(true);
+
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: formData.full_name,
-          business_name: formData.business_name,
-        })
-        .eq('id', profile.id);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
 
-      if (error) throw error;
+      // Update profile name
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ full_name: formData.full_name })
+        .eq("user_id", user.id);
 
-      setProfile(prev => prev ? { ...prev, ...formData } : null);
+      if (profileError) throw profileError;
+
+      // Update business phone if business exists
+      if (business) {
+        const { error: bizError } = await supabase
+          .from("businesses" as any)
+          .update({ phone: formData.phone } as any)
+          .eq("user_id", user.id);
+
+        if (bizError) throw bizError;
+        setBusiness((prev) => (prev ? { ...prev, phone: formData.phone } : null));
+      }
+
+      setProfile((prev) =>
+        prev ? { ...prev, full_name: formData.full_name } : null
+      );
       setEditMode(false);
-      
-      toast({
-        title: "Profile updated",
-        description: "Your profile has been successfully updated.",
-      });
+
+      toast({ title: "Profile updated" });
     } catch (error: any) {
       toast({
-        title: "Error updating profile",
+        title: "Error saving",
         description: error.message,
         variant: "destructive",
       });
@@ -141,195 +164,283 @@ export default function Profile() {
     }
   };
 
-  const handleCancel = () => {
-    setFormData({
-      full_name: profile?.full_name || "",
-      business_name: profile?.business_name || "",
-    });
-    setEditMode(false);
+  const handleConnectFacebook = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "facebook",
+        options: {
+          redirectTo: `${window.location.origin}/profile`,
+          scopes: "pages_manage_ads,ads_management,leads_retrieval,pages_read_engagement",
+        },
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "Error connecting Facebook",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
-  };
+
+  // ── Loading / empty states ────────────────────────────────────────────
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
       </div>
     );
   }
 
-  if (!profile) {
-    return (
-      <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">Profile not found</h2>
-        <p className="text-muted-foreground">Unable to load your profile information.</p>
-      </div>
-    );
-  }
+  // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-4xl space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Profile</h1>
-          <p className="text-muted-foreground">
-            Manage your account information and preferences
-          </p>
-        </div>
-        {!editMode && (
-          <Button onClick={() => setEditMode(true)}>
-            <Edit className="w-4 h-4 mr-2" />
-            Edit Profile
-          </Button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Profile Card */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="w-5 h-5" />
-                Profile Information
-              </CardTitle>
-              <CardDescription>
-                Your personal and business details
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="full_name">Full Name</Label>
-                  {editMode ? (
-                    <Input
-                      id="full_name"
-                      value={formData.full_name}
-                      onChange={(e) => setFormData(prev => ({ ...prev, full_name: e.target.value }))}
-                      placeholder="Enter your full name"
-                    />
-                  ) : (
-                    <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center">
-                      {profile.full_name || "Not provided"}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <div className="h-10 px-3 py-2 border rounded-md bg-muted/20 flex items-center text-muted-foreground">
-                    <Mail className="w-4 h-4 mr-2" />
-                    {profile.email}
-                  </div>
-                </div>
-
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="business_name">Business Name</Label>
-                  {editMode ? (
-                    <Input
-                      id="business_name"
-                      value={formData.business_name}
-                      onChange={(e) => setFormData(prev => ({ ...prev, business_name: e.target.value }))}
-                      placeholder="Enter your business name"
-                    />
-                  ) : (
-                    <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center">
-                      <Building className="w-4 h-4 mr-2" />
-                      {profile.business_name || "Not provided"}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {editMode && (
-                <div className="flex gap-2 pt-4">
-                  <Button onClick={handleSave} disabled={isSaving}>
-                    <Save className="w-4 h-4 mr-2" />
-                    {isSaving ? "Saving..." : "Save Changes"}
-                  </Button>
-                  <Button variant="outline" onClick={handleCancel}>
-                    <X className="w-4 h-4 mr-2" />
-                    Cancel
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Business Profile Manager */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building className="w-5 h-5" />
-                Business Profiles
-              </CardTitle>
-              <CardDescription>
-                Manage your business profiles and switch between them
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <BusinessProfileManager subscriptionTier={profile.subscription_tier} />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar with Stats */}
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <main className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="space-y-6">
-          {/* Subscription Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Subscription</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Plan</span>
-                <Badge variant={profile.subscription_tier === 'free' ? 'secondary' : 'default'}>
-                  {profile.subscription_tier.charAt(0).toUpperCase() + profile.subscription_tier.slice(1)}
-                </Badge>
-              </div>
-              
-              <Separator />
-              
-              {/* Chat usage removed */}
-
-              <Button className="w-full" variant="outline" asChild>
-                <a href="/pricing">Upgrade Plan</a>
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">Settings</h1>
+              <p className="text-muted-foreground">
+                Manage your account and business details
+              </p>
+            </div>
+            {!editMode && (
+              <Button variant="outline" onClick={() => setEditMode(true)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Edit
               </Button>
-            </CardContent>
-          </Card>
+            )}
+          </div>
 
-          {/* Account Info Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Account Info</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Facebook Connected</span>
-                <Badge variant={profile.facebook_connected ? 'default' : 'secondary'}>
-                  {profile.facebook_connected ? 'Connected' : 'Not Connected'}
-                </Badge>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Member Since</span>
-                <div className="flex items-center text-sm">
-                  <Calendar className="w-3 h-3 mr-1" />
-                  {formatDate(profile.created_at)}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Main column */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Account info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <User className="w-5 h-5" />
+                    Account
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Full Name</Label>
+                      {editMode ? (
+                        <Input
+                          value={formData.full_name}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              full_name: e.target.value,
+                            }))
+                          }
+                          placeholder="Your name"
+                        />
+                      ) : (
+                        <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                          {profile?.full_name || "Not set"}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <div className="h-10 px-3 py-2 border rounded-md bg-muted/30 flex items-center text-sm text-muted-foreground">
+                        <Mail className="w-4 h-4 mr-2 shrink-0" />
+                        {profile?.email || "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {editMode && (
+                    <div className="flex gap-2 pt-2">
+                      <Button onClick={handleSave} disabled={isSaving} size="sm">
+                        <Save className="w-4 h-4 mr-2" />
+                        {isSaving ? "Saving…" : "Save"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setEditMode(false);
+                          setFormData({
+                            full_name: profile?.full_name || "",
+                            phone: business?.phone || "",
+                          });
+                        }}
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Business details */}
+              {business && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Building className="w-5 h-5" />
+                      Business
+                    </CardTitle>
+                    <CardDescription>
+                      Details from your onboarding setup
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Business Name
+                        </p>
+                        <p className="text-sm font-medium">{business.name}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Trade
+                        </p>
+                        <p className="text-sm font-medium capitalize">
+                          {business.trade}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Location
+                        </p>
+                        <p className="text-sm font-medium flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {business.suburb}, {business.state} {business.postcode}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Phone
+                        </p>
+                        {editMode ? (
+                          <Input
+                            value={formData.phone}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                phone: e.target.value,
+                              }))
+                            }
+                            placeholder="04xx xxx xxx"
+                          />
+                        ) : (
+                          <p className="text-sm font-medium flex items-center gap-1">
+                            <Phone className="w-3 h-3" />
+                            {business.phone}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {/* Sidebar */}
+            <div className="space-y-6">
+              {/* Facebook connection */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Facebook className="w-5 h-5" />
+                    Facebook
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Status</span>
+                    <Badge
+                      variant={
+                        profile?.facebook_connected ? "default" : "secondary"
+                      }
+                    >
+                      {profile?.facebook_connected
+                        ? "Connected"
+                        : "Not Connected"}
+                    </Badge>
+                  </div>
+
+                  {!profile?.facebook_connected && (
+                    <>
+                      <Separator />
+                      <p className="text-xs text-muted-foreground">
+                        Connect your Facebook Business account to launch ad
+                        campaigns and receive leads.
+                      </p>
+                      <Button
+                        className="w-full"
+                        onClick={handleConnectFacebook}
+                      >
+                        <Facebook className="w-4 h-4 mr-2" />
+                        Connect Facebook
+                      </Button>
+                    </>
+                  )}
+
+                  {profile?.facebook_connected && business?.facebook_ad_account_id && (
+                    <div className="text-xs text-muted-foreground">
+                      Ad Account: {business.facebook_ad_account_id}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Subscription */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Subscription</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Plan</span>
+                    <Badge variant="secondary">Free Trial</Badge>
+                  </div>
+                  <Separator />
+                  <Button className="w-full" variant="outline" asChild>
+                    <a href="/billing">Manage Billing</a>
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Account meta */}
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Member since</span>
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {profile?.created_at
+                        ? formatDate(profile.created_at)
+                        : "—"}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
