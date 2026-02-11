@@ -131,30 +131,37 @@ serve(async (req: Request) => {
     const locationLabel = [business.suburb, business.state].filter(Boolean).join(", ");
 
     const systemPrompt =
-      "You are an expert Facebook ads copywriter for Australian trade businesses. " +
-      "Generate compelling, concise ad copy that drives leads. " +
-      "Respond ONLY with valid JSON — no markdown fences, no explanation.";
+      `You are Australia's best Facebook ad copywriter, specialising in local trades and service businesses. ` +
+      `You write ads that feel human, specific, and local — never generic or corporate. ` +
+      `You understand that Meta's Andromeda algorithm rewards creative diversity, so each variant must use a genuinely different angle and tone. ` +
+      `You write in natural Australian English. Respond ONLY with valid JSON — no markdown fences, no explanation.`;
 
     const userPrompt =
-      `Generate 3 Facebook ad variants for an Australian ${tradeLabel} business.\n\n` +
-      `Business name: ${business.name}\n` +
-      `Location: ${locationLabel} ${business.postcode || ""}\n` +
-      `Trade: ${tradeLabel}\n\n` +
-      `Return a JSON object with this exact structure:\n` +
+      `Write 3 high-converting Facebook ad variants for this business:\n\n` +
+      `Business: ${business.name}\n` +
+      `Trade/Service: ${tradeLabel}\n` +
+      `Location: ${locationLabel} ${business.postcode || ""}\n\n` +
+      `Return JSON with this exact structure:\n` +
       `{\n` +
       `  "variants": [\n` +
-      `    { "headline": "string (max 40 chars)", "body": "string (max 125 chars)", "cta": "Get Quote" },\n` +
-      `    { "headline": "string (max 40 chars)", "body": "string (max 125 chars)", "cta": "Call Now" },\n` +
-      `    { "headline": "string (max 40 chars)", "body": "string (max 125 chars)", "cta": "Learn More" }\n` +
+      `    { "headline": "string (max 40 chars)", "body": "string (max 125 chars)", "cta": "Get Quote" | "Call Now" | "Learn More" | "Book Now" | "Sign Up" | "Contact Us" },\n` +
+      `    { ... },\n` +
+      `    { ... }\n` +
       `  ]\n` +
       `}\n\n` +
-      `Guidelines:\n` +
-      `- Headlines must be ≤40 characters\n` +
-      `- Body text must be ≤125 characters\n` +
-      `- Use Australian English (e.g., "metre" not "meter")\n` +
-      `- Include the suburb/area name where relevant\n` +
-      `- Focus on urgency, social proof, or value propositions\n` +
-      `- Each variant should use a different angle (e.g., urgency, trust, value)`;
+      `RULES — follow these exactly:\n` +
+      `- Headlines ≤40 chars. Body ≤125 chars. Hard limits.\n` +
+      `- Australian English ("metre", "colour", "organise").\n` +
+      `- Reference the SPECIFIC trade — e.g. "plumber", "sparkie", "landscaper". Never say "tradesperson" or repeat the trade name generically.\n` +
+      `- Use the suburb name naturally — locals should feel like this ad is for THEIR area.\n` +
+      `- Each variant must use a DIFFERENT psychological angle:\n` +
+      `  1. Social proof / trust (reviews, years in business, "locals trust us")\n` +
+      `  2. Urgency / availability ("same-day", "booking up fast", "this week only")\n` +
+      `  3. Value / outcome ("free quote", "fixed price", "no call-out fee", the end result they get)\n` +
+      `- Write like a local tradie would talk, not a marketing agency. Keep it punchy.\n` +
+      `- NO clichés like "your one-stop shop" or "we've got you covered".\n` +
+      `- The CTA should match the angle — e.g. urgency → "Call Now", trust → "Learn More", value → "Get Quote".\n` +
+      `- Make ${business.name} sound like a real local business people would actually call.`;
 
     console.log("[generate-campaign] Calling Claude API for business:", business.name);
 

@@ -38,20 +38,20 @@ function fallbackAdVariants(business: Business): AdVariant[] {
   return [
     {
       id: 1,
-      headline: `Your Local ${trade} in ${suburb}`,
-      body: `Need a reliable ${tradeLower} in ${suburb}? ${name} is here to help. Fast, affordable, and 100% local. Get a free quote today — no call-out fees!`,
-      cta: "Get Free Quote",
+      headline: `${suburb} Locals Love ${name}`,
+      body: `5-star ${tradeLower} right here in ${suburb}. Licensed, insured, and actually on time. Free quotes — no call-out fee.`,
+      cta: "Get Quote",
     },
     {
       id: 2,
-      headline: `${suburb}'s Trusted ${trade}`,
-      body: `Looking for a ${tradeLower} you can actually trust? ${name} has been keeping ${suburb} sorted for years. Licensed, insured, and always on time. Book now!`,
-      cta: "Book Now",
+      headline: `Need a ${trade} Today?`,
+      body: `${name} has same-day availability in ${suburb} & surrounds. Don't wait — spots fill up fast. Call now for a fixed-price quote.`,
+      cta: "Call Now",
     },
     {
       id: 3,
-      headline: `Fast ${trade} — ${suburb} & Surrounds`,
-      body: `Same-day service from a local ${tradeLower} who gets it done right the first time. ${name} — quality work, honest prices, real reviews. Call us today!`,
+      headline: `${name} — ${suburb} ${trade}`,
+      body: `Local ${tradeLower} doing quality work at honest prices. See why ${suburb} locals keep coming back. No surprises, just results.`,
       cta: "Learn More",
     },
   ];
