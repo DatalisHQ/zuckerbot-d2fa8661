@@ -4,12 +4,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
-function getTierFromAmount(amount: number) {
-  if (amount >= 8900) return "agency";
-  if (amount >= 2000) return "pro";
+function getTierFromAmount(amount: number): string {
+  if (amount >= 9900) return "pro";
+  if (amount >= 4900) return "starter";
   return "free";
 }
 
@@ -29,93 +30,113 @@ serve(async (req) => {
 
   const sig = req.headers.get("stripe-signature");
   const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-  let event;
+
+  let event: Stripe.Event;
   try {
     const body = await req.text();
     event = stripe.webhooks.constructEvent(body, sig!, webhookSecret!);
   } catch (err) {
+    console.error("[WEBHOOK] Signature verification failed:", err.message);
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
-  // Handle event types
-  if (
-    event.type === "checkout.session.completed" ||
-    event.type === "customer.subscription.updated" ||
-    event.type === "customer.subscription.deleted"
-  ) {
-    let customerId = null;
-    let userEmail = null;
-    let subscriptionTier = "free";
-    let subscriptionEnd = null;
-    let hasActiveSub = false;
-    let amount = 0;
+  console.log("[WEBHOOK] Event:", event.type);
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      customerId = session.customer;
-      userEmail = session.customer_email;
-      // Get subscription
-      if (session.subscription) {
-        const sub = await stripe.subscriptions.retrieve(session.subscription);
-        hasActiveSub = sub.status === "active" || sub.status === "trialing";
-        subscriptionEnd = new Date(sub.current_period_end * 1000).toISOString();
-        amount = sub.items.data[0].price.unit_amount || 0;
-        subscriptionTier = getTierFromAmount(amount);
+  try {
+    if (
+      event.type === "checkout.session.completed" ||
+      event.type === "customer.subscription.updated"
+    ) {
+      let userEmail: string | null = null;
+      let subscriptionTier = "free";
+      let subscriptionEnd: string | null = null;
+
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object as Stripe.Checkout.Session;
+        userEmail = session.customer_email || null;
+
+        // If customer_email is null, fetch from Stripe customer
+        if (!userEmail && session.customer) {
+          const customer = await stripe.customers.retrieve(
+            session.customer as string
+          );
+          if ("email" in customer) userEmail = customer.email;
+        }
+
+        if (session.subscription) {
+          const sub = await stripe.subscriptions.retrieve(
+            session.subscription as string
+          );
+          const amount = sub.items.data[0]?.price?.unit_amount || 0;
+          subscriptionTier = getTierFromAmount(amount);
+          subscriptionEnd = new Date(
+            sub.current_period_end * 1000
+          ).toISOString();
+        }
+      } else {
+        // customer.subscription.updated
+        const sub = event.data.object as Stripe.Subscription;
+        const isActive =
+          sub.status === "active" || sub.status === "trialing";
+        const amount = sub.items.data[0]?.price?.unit_amount || 0;
+        subscriptionTier = isActive ? getTierFromAmount(amount) : "free";
+        subscriptionEnd = isActive
+          ? new Date(sub.current_period_end * 1000).toISOString()
+          : null;
+
+        // Get email from customer
+        const customer = await stripe.customers.retrieve(
+          sub.customer as string
+        );
+        if ("email" in customer) userEmail = customer.email;
       }
-    } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
-      const sub = event.data.object;
-      customerId = sub.customer;
-      hasActiveSub = sub.status === "active" || sub.status === "trialing";
-      subscriptionEnd = new Date(sub.current_period_end * 1000).toISOString();
-      amount = sub.items.data[0].price.unit_amount || 0;
-      subscriptionTier = hasActiveSub ? getTierFromAmount(amount) : "free";
-      // Get user email from customer
-      const customer = await stripe.customers.retrieve(customerId);
-      userEmail = customer.email;
-    }
 
-    // Update Supabase
-    if (userEmail) {
-      // Update subscribers table
-      await supabase.from("subscribers").upsert({
-        email: userEmail,
-        stripe_customer_id: customerId,
-        subscribed: hasActiveSub,
-        subscription_tier: subscriptionTier,
-        subscription_end: subscriptionEnd,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'email' });
-      // Update profiles table
-      await supabase.from("profiles").update({
-        subscription_tier: subscriptionTier,
-        updated_at: new Date().toISOString(),
-      }).eq('email', userEmail);
+      if (userEmail) {
+        console.log(
+          "[WEBHOOK] Updating profile:",
+          userEmail,
+          "→",
+          subscriptionTier
+        );
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            subscription_tier: subscriptionTier,
+            subscription_end: subscriptionEnd,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("email", userEmail);
 
-      // ENFORCE BUSINESS PROFILE LIMITS
-      // 1. Get user_id from profiles
-      const { data: profileRows } = await supabase.from("profiles").select("user_id").eq("email", userEmail).limit(1);
-      const userId = profileRows && profileRows.length > 0 ? profileRows[0].user_id : null;
-      if (userId) {
-        // 2. Count active business profiles
-        const { data: activeProfiles } = await supabase
-          .from("brand_analysis")
-          .select("id, created_at")
-          .eq("user_id", userId)
-          .eq("is_active", true)
-          .order("created_at", { ascending: true });
-        let allowed = 1;
-        if (subscriptionTier === "pro") allowed = 3;
-        if (subscriptionTier === "agency") allowed = 999999; // effectively unlimited
-        if (activeProfiles && activeProfiles.length > allowed) {
-          // 3. Deactivate oldest extra profiles
-          const toDeactivate = activeProfiles.slice(0, activeProfiles.length - allowed);
-          const ids = toDeactivate.map((p: any) => p.id);
-          if (ids.length > 0) {
-            await supabase.from("brand_analysis").update({ is_active: false }).in("id", ids);
-          }
+        if (error) {
+          console.error("[WEBHOOK] Profile update error:", error);
+        }
+      }
+    } else if (event.type === "customer.subscription.deleted") {
+      const sub = event.data.object as Stripe.Subscription;
+      const customer = await stripe.customers.retrieve(
+        sub.customer as string
+      );
+      const userEmail = "email" in customer ? customer.email : null;
+
+      if (userEmail) {
+        console.log("[WEBHOOK] Subscription deleted for:", userEmail);
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            subscription_tier: "free",
+            subscription_end: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("email", userEmail);
+
+        if (error) {
+          console.error("[WEBHOOK] Profile update error:", error);
         }
       }
     }
+  } catch (err) {
+    console.error("[WEBHOOK] Processing error:", err);
+    // Still return 200 to avoid Stripe retries for processing errors
   }
 
   return new Response(JSON.stringify({ received: true }), {
