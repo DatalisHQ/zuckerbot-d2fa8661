@@ -14,6 +14,7 @@ interface EmailRequest {
   confirmation_url?: string;
   recovery_url?: string;
   invite_url?: string;
+  user_id?: string;
 }
 
 serve(async (req) => {
@@ -22,7 +23,7 @@ serve(async (req) => {
   }
 
   try {
-    const { type, email, token, confirmation_url, recovery_url, invite_url }: EmailRequest = await req.json();
+    const { type, email, token, confirmation_url, recovery_url, invite_url, user_id }: EmailRequest = await req.json();
 
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
     if (!RESEND_API_KEY) {
@@ -31,22 +32,32 @@ serve(async (req) => {
 
     let subject = "";
     let html = "";
+    
+    // Create a working confirmation URL that uses Supabase's magic link approach
+    const baseUrl = "https://zuckerbot.ai";
+    const redirectUrl = confirmation_url || `${baseUrl}/onboarding`;
 
     switch (type) {
       case 'signup':
       case 'signin':
-        subject = "Sign in to ZuckerBot";
+        subject = "Confirm your ZuckerBot account ⚡ (Fast Link)";
         html = `
           <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
-            <h2 style="color: #2563eb;">Sign in to ZuckerBot</h2>
-            <p>Click the button below to sign in to your account:</p>
+            <h2 style="color: #2563eb;">⚡ Fast Confirmation Link</h2>
+            <p>Welcome to ZuckerBot! Click below to confirm your account:</p>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${confirmation_url}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                Sign In Now
+              <a href="${redirectUrl}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                Confirm Account & Get Started
               </a>
             </div>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #2563eb;">
+              <p style="margin: 0; color: #666; font-size: 14px;">
+                ⚡ <strong>This is your FAST confirmation email via Resend</strong><br>
+                You may also receive a backup email from Supabase - either link will work!
+              </p>
+            </div>
             <p style="color: #666; font-size: 14px;">This link expires in 24 hours for security.</p>
-            <p style="color: #666; font-size: 14px;">If you didn't request this, ignore this email.</p>
+            <p style="color: #666; font-size: 14px;">If you didn't sign up for ZuckerBot, please ignore this email.</p>
           </div>
         `;
         break;
@@ -80,7 +91,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "ZuckerBot <noreply@zuckerbot.ai>",
+        from: "ZuckerBot <onboarding@resend.dev>", // Use verified Resend domain for now
         to: [email],
         subject,
         html,

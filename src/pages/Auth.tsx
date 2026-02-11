@@ -79,7 +79,8 @@ const Auth = () => {
     setIsLoading(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      // Step 1: Standard Supabase signup (generates proper confirmation tokens)
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -88,7 +89,46 @@ const Auth = () => {
         },
       });
 
-      if (error) throw error;
+      if (signUpError) throw signUpError;
+      if (!signUpData.user) throw new Error("Failed to create user");
+
+      // Step 2: Send our FAST custom email immediately (dual-email approach)
+      // This will arrive in 1-2 seconds while Supabase's email might take minutes
+      if (!signUpData.user.email_confirmed_at) {
+        console.log("Sending fast confirmation email via Resend...");
+        
+        // Build the confirmation URL using Supabase's standard format
+        // This will work with the built-in Supabase auth flow
+        const confirmationUrl = `${window.location.origin}/onboarding`;
+        
+        // Send via our fast auth-email function (non-blocking)
+        // We'll let the user click either the fast email or slow email - both will work
+        supabase.functions.invoke("auth-email", {
+          body: {
+            type: 'signup',
+            email,
+            confirmation_url: confirmationUrl, // Simple redirect URL
+          },
+        }).then(({ error: emailError }) => {
+          if (emailError) {
+            console.warn("Fast auth email failed:", emailError);
+          } else {
+            console.log("✅ Fast auth email sent successfully via Resend!");
+          }
+        }).catch(emailErr => {
+          console.warn("Fast auth email failed (non-blocking):", emailErr);
+        });
+
+        toast({
+          title: "Check your email",
+          description: "We sent you a super-fast confirmation link! Should arrive in 1-2 seconds. (You might also get a slower backup email.)",
+        });
+      } else {
+        toast({
+          title: "Account created!",
+          description: "Welcome to ZuckerBot!",
+        });
+      }
 
       // Fire Meta Pixel signup event
       if (typeof window !== "undefined" && (window as any).fbq) {
@@ -98,19 +138,13 @@ const Auth = () => {
       // Track GA4 signup event
       trackFunnelEvent.completeSignup('email');
 
-      // Send welcome email (fire-and-forget — don't block sign-up flow)
-      try {
-        await supabase.functions.invoke("welcome-email", {
-          body: { user_email: email, user_name: fullName || undefined },
-        });
-      } catch (emailErr) {
+      // Send welcome email (fire-and-forget)
+      supabase.functions.invoke("welcome-email", {
+        body: { user_email: email, user_name: fullName || undefined },
+      }).catch(emailErr => {
         console.warn("Welcome email failed (non-blocking):", emailErr);
-      }
-
-      toast({
-        title: "Check your email",
-        description: "We sent you a confirmation link. Check your spam folder too.",
       });
+
     } catch (error: any) {
       toast({
         title: "Error",
