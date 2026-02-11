@@ -214,7 +214,8 @@ export default function Profile() {
         `&redirect_uri=${REDIRECT_URI}` +
         `&scope=${SCOPES}` +
         `&state=${STATE}` +
-        `&response_type=code`;
+        `&response_type=code` +
+        `&auth_type=rerequest`;
 
       window.location.href = oauthUrl;
     } catch (error: any) {
