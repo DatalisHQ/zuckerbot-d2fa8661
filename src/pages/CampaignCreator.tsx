@@ -197,36 +197,26 @@ const CampaignCreator = () => {
     setIsSaving(true);
 
     try {
-      const { data: campaign, error } = await supabase.from("campaigns" as any).insert({
-        business_id: business.id,
-        name: `${business.trade} Campaign — ${business.suburb}`,
-        status: launch ? "launching" : "draft",
-        daily_budget_cents: dailyBudget * 100,
-        radius_km: radiusKm,
-        ad_copy: selectedAd.body,
-        ad_headline: selectedAd.headline,
-      } as any).select().single();
-
-      if (error) throw error;
-
-      if (launch && campaign) {
-        // Call launch-campaign edge function
-        const { error: launchError } = await supabase.functions.invoke("launch-campaign", {
-          body: { campaign_id: (campaign as any).id },
+      if (launch) {
+        // Launch flow — edge function creates the campaign on Meta AND in the DB
+        const { data: launchData, error: launchError } = await supabase.functions.invoke("launch-campaign", {
+          body: {
+            business_id: business.id,
+            headline: selectedAd.headline,
+            body: selectedAd.body,
+            cta: selectedAd.cta,
+            daily_budget_cents: dailyBudget * 100,
+            radius_km: radiusKm,
+          },
         });
 
         if (launchError) {
-          // Save succeeded but launch failed — update status back to draft
-          await supabase.from("campaigns" as any)
-            .update({ status: "draft" } as any)
-            .eq("id", (campaign as any).id);
-
           toast({
-            title: "Campaign saved, but launch failed",
-            description: launchError.message || "We saved your campaign as a draft. Try launching again later.",
+            title: "Launch failed",
+            description: launchError.message || "Something went wrong. Your campaign was not created.",
             variant: "destructive",
           });
-          navigate("/dashboard");
+          setIsSaving(false);
           return;
         }
 
@@ -235,6 +225,19 @@ const CampaignCreator = () => {
           description: "Your ad is now live on Facebook. Check the dashboard for performance.",
         });
       } else {
+        // Draft flow — just save locally
+        const { error } = await supabase.from("campaigns" as any).insert({
+          business_id: business.id,
+          name: `${business.trade} Campaign — ${business.suburb}`,
+          status: "draft",
+          daily_budget_cents: dailyBudget * 100,
+          radius_km: radiusKm,
+          ad_copy: selectedAd.body,
+          ad_headline: selectedAd.headline,
+        } as any);
+
+        if (error) throw error;
+
         toast({
           title: "Draft saved!",
           description: "You can finish setting up and launch later.",

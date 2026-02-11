@@ -255,10 +255,10 @@ serve(async (req: Request) => {
             },
           ]),
           privacy_policy: JSON.stringify({
-            url: "https://zuckerbot.com.au/privacy", // placeholder
+            url: "https://zuckerbot.ai/privacy", // placeholder
           }),
           // Thank you screen
-          follow_up_action_url: "https://zuckerbot.com.au/thanks",
+          follow_up_action_url: "https://zuckerbot.ai/",
         },
         fbToken
       );
