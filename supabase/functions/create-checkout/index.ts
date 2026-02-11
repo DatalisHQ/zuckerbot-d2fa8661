@@ -74,6 +74,7 @@ serve(async (req) => {
         },
       ],
       mode: "subscription",
+      payment_method_collection: "always", // Require card even during free trial
       subscription_data: {
         trial_period_days: 7,
       },
