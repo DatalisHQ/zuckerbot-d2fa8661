@@ -19,6 +19,9 @@ import {
   MapPin,
   MessageSquare,
   Inbox,
+  Eye,
+  MousePointerClick,
+  RefreshCw,
 } from "lucide-react";
 
 // ─── Local Interfaces ──────────────────────────────────────────────────────
@@ -39,6 +42,11 @@ interface Campaign {
   daily_budget_cents: number;
   leads_count: number;
   spend_cents: number;
+  impressions: number;
+  clicks: number;
+  cpl_cents: number | null;
+  performance_status: string;
+  last_synced_at: string | null;
   created_at: string;
   launched_at: string | null;
 }
@@ -75,11 +83,34 @@ function relativeTime(dateStr: string): string {
   });
 }
 
+function formatCurrency(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
 const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   draft: { label: "Draft", variant: "secondary" },
   active: { label: "Active", variant: "default" },
   paused: { label: "Paused", variant: "outline" },
   ended: { label: "Ended", variant: "destructive" },
+};
+
+const PERFORMANCE_BADGE: Record<string, { label: string; className: string }> = {
+  learning: {
+    label: "Learning",
+    className: "bg-blue-500/10 text-blue-700 border-blue-200 dark:text-blue-400 dark:border-blue-800",
+  },
+  healthy: {
+    label: "Healthy",
+    className: "bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800",
+  },
+  underperforming: {
+    label: "Underperforming",
+    className: "bg-red-500/10 text-red-700 border-red-200 dark:text-red-400 dark:border-red-800",
+  },
+  paused: {
+    label: "Paused",
+    className: "bg-gray-500/10 text-gray-700 border-gray-200 dark:text-gray-400 dark:border-gray-800",
+  },
 };
 
 const LEAD_STATUS_COLORS: Record<string, string> = {
@@ -96,83 +127,127 @@ const Dashboard = () => {
   const { toast } = useToast();
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [business, setBusiness] = useState<Business | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
 
-  useEffect(() => {
-    const loadDashboard = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        navigate("/auth");
-        return;
-      }
+  const loadDashboard = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      navigate("/auth");
+      return;
+    }
 
-      // Check onboarding status
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("onboarding_completed")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
+    // Check onboarding status
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("onboarding_completed")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
 
-      if (!profileData?.onboarding_completed) {
-        navigate("/onboarding");
-        return;
-      }
+    if (!profileData?.onboarding_completed) {
+      navigate("/onboarding");
+      return;
+    }
 
-      // Get business
-      const { data: bizData } = await supabase
-        .from("businesses" as any)
+    // Get business
+    const { data: bizData } = await supabase
+      .from("businesses" as any)
+      .select("*")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+
+    const biz = bizData as unknown as Business | null;
+    setBusiness(biz);
+
+    if (biz) {
+      // Get campaigns
+      const { data: campData } = await supabase
+        .from("campaigns" as any)
         .select("*")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
+        .eq("business_id", biz.id)
+        .order("created_at", { ascending: false });
 
-      const biz = bizData as unknown as Business | null;
-      setBusiness(biz);
+      setCampaigns((campData as unknown as Campaign[]) || []);
 
-      if (biz) {
-        // Get campaigns
-        const { data: campData } = await supabase
-          .from("campaigns" as any)
-          .select("*")
-          .eq("business_id", biz.id)
-          .order("created_at", { ascending: false });
+      // Get recent leads
+      const { data: leadData } = await supabase
+        .from("leads" as any)
+        .select("*")
+        .eq("business_id", biz.id)
+        .order("created_at", { ascending: false })
+        .limit(5);
 
-        setCampaigns((campData as unknown as Campaign[]) || []);
+      setLeads((leadData as unknown as Lead[]) || []);
+    }
 
-        // Get recent leads
-        const { data: leadData } = await supabase
-          .from("leads" as any)
-          .select("*")
-          .eq("business_id", biz.id)
-          .order("created_at", { ascending: false })
-          .limit(5);
+    setIsLoading(false);
+  };
 
-        setLeads((leadData as unknown as Lead[]) || []);
-      }
-
-      setIsLoading(false);
-    };
-
+  useEffect(() => {
     loadDashboard();
   }, [navigate]);
+
+  // ─── Refresh Stats Handler ────────────────────────────────────────────────
+
+  const handleRefreshStats = async () => {
+    setIsSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast({
+          title: "Not authenticated",
+          description: "Please sign in again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const res = await fetch(
+        `https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/sync-performance`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ sync_all: true }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to sync");
+      }
+
+      toast({
+        title: "Stats refreshed",
+        description: data.message || "Campaign data synced from Meta.",
+      });
+
+      // Reload dashboard data
+      await loadDashboard();
+    } catch (err: any) {
+      console.error("[Dashboard] Refresh stats error:", err);
+      toast({
+        title: "Sync failed",
+        description: err.message || "Could not refresh stats. Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // ─── Computed Stats ─────────────────────────────────────────────────────
 
   const activeCampaigns = campaigns.filter((c) => c.status === "active").length;
   const totalLeads = campaigns.reduce((sum, c) => sum + (c.leads_count || 0), 0);
-  
-  // Leads this week
-  const oneWeekAgo = new Date();
-  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-  const leadsThisWeek = leads.filter(
-    (l) => new Date(l.created_at) >= oneWeekAgo
-  ).length;
-
-  // Cost per lead
   const totalSpend = campaigns.reduce((sum, c) => sum + (c.spend_cents || 0), 0);
   const avgCostPerLead =
-    totalLeads > 0 ? (totalSpend / 100 / totalLeads).toFixed(2) : null;
+    totalLeads > 0 ? Math.round(totalSpend / totalLeads) : null;
 
   // ─── Loading ────────────────────────────────────────────────────────────
 
@@ -204,10 +279,24 @@ const Dashboard = () => {
                   : "Welcome back!"}
               </p>
             </div>
-            <Button onClick={() => navigate("/campaign/new")}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Campaign
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleRefreshStats}
+                disabled={isSyncing}
+              >
+                {isSyncing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Refresh Stats
+              </Button>
+              <Button onClick={() => navigate("/campaign/new")}>
+                <Plus className="h-4 w-4 mr-2" />
+                New Campaign
+              </Button>
+            </div>
           </div>
 
           {/* Stats Row */}
@@ -223,14 +312,14 @@ const Dashboard = () => {
               value={String(totalLeads)}
             />
             <StatCard
-              icon={TrendingUp}
-              label="Leads This Week"
-              value={String(leadsThisWeek)}
+              icon={DollarSign}
+              label="Total Spend"
+              value={totalSpend > 0 ? formatCurrency(totalSpend) : "$0.00"}
             />
             <StatCard
-              icon={DollarSign}
+              icon={TrendingUp}
               label="Avg Cost / Lead"
-              value={avgCostPerLead ? `$${avgCostPerLead}` : "—"}
+              value={avgCostPerLead !== null ? formatCurrency(avgCostPerLead) : "—"}
             />
           </div>
 
@@ -261,6 +350,9 @@ const Dashboard = () => {
               <div className="grid gap-4 md:grid-cols-2">
                 {campaigns.map((campaign) => {
                   const badge = STATUS_BADGE[campaign.status] || STATUS_BADGE.draft;
+                  const perfBadge =
+                    PERFORMANCE_BADGE[campaign.performance_status] ||
+                    PERFORMANCE_BADGE.learning;
                   return (
                     <Card
                       key={campaign.id}
@@ -277,7 +369,15 @@ const Dashboard = () => {
                           <CardTitle className="text-base">
                             {campaign.name}
                           </CardTitle>
-                          <Badge variant={badge.variant}>{badge.label}</Badge>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${perfBadge.className}`}
+                            >
+                              {perfBadge.label}
+                            </Badge>
+                            <Badge variant={badge.variant}>{badge.label}</Badge>
+                          </div>
                         </div>
                         <CardDescription>
                           {campaign.launched_at
@@ -286,7 +386,7 @@ const Dashboard = () => {
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="flex items-center gap-4 text-sm">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                           <span className="text-muted-foreground">
                             <strong className="text-foreground">
                               ${(campaign.daily_budget_cents / 100).toFixed(0)}
@@ -299,7 +399,32 @@ const Dashboard = () => {
                             </strong>{" "}
                             leads
                           </span>
+                          <span className="text-muted-foreground flex items-center gap-1">
+                            <Eye className="h-3.5 w-3.5" />
+                            <strong className="text-foreground">
+                              {campaign.impressions?.toLocaleString() || 0}
+                            </strong>
+                          </span>
+                          <span className="text-muted-foreground flex items-center gap-1">
+                            <MousePointerClick className="h-3.5 w-3.5" />
+                            <strong className="text-foreground">
+                              {campaign.clicks || 0}
+                            </strong>
+                          </span>
+                          {campaign.cpl_cents != null && (
+                            <span className="text-muted-foreground">
+                              <strong className="text-foreground">
+                                {formatCurrency(campaign.cpl_cents)}
+                              </strong>
+                              /lead
+                            </span>
+                          )}
                         </div>
+                        {campaign.last_synced_at && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Last synced {relativeTime(campaign.last_synced_at)}
+                          </p>
+                        )}
                       </CardContent>
                     </Card>
                   );
