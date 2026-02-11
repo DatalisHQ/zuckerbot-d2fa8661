@@ -89,6 +89,15 @@ const Auth = () => {
         (window as any).fbq("track", "CompleteRegistration");
       }
 
+      // Send welcome email (fire-and-forget — don't block sign-up flow)
+      try {
+        await supabase.functions.invoke("welcome-email", {
+          body: { user_email: email, user_name: fullName || undefined },
+        });
+      } catch (emailErr) {
+        console.warn("Welcome email failed (non-blocking):", emailErr);
+      }
+
       toast({
         title: "Check your email",
         description: "We sent you a confirmation link. Check your spam folder too.",

@@ -453,6 +453,42 @@ serve(async (req: Request) => {
 
     console.log("[launch-campaign] Campaign saved to DB:", campaign.id);
 
+    // ── Step 8: Send campaign launched email (fire-and-forget) ───────────────
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+      // Look up the user's profile for their name
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const userEmail = profile?.email || user.email;
+      const userName = profile?.full_name || user.user_metadata?.full_name;
+
+      if (userEmail) {
+        await fetch(`${supabaseUrl}/functions/v1/campaign-launched-email`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify({
+            user_email: userEmail,
+            user_name: userName || undefined,
+            campaign_name: campaignName,
+            daily_budget_cents: daily_budget_cents || 1500,
+          }),
+        });
+        console.log("[launch-campaign] Campaign launched email sent to:", userEmail);
+      }
+    } catch (emailErr) {
+      // Non-blocking — don't fail the campaign launch if email fails
+      console.warn("[launch-campaign] Campaign launched email failed (non-blocking):", emailErr);
+    }
+
     // ── Return success ──────────────────────────────────────────────────────
     return new Response(JSON.stringify(campaign), {
       status: 200,
