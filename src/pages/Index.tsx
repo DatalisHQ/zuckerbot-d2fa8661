@@ -445,7 +445,7 @@ const Index = () => {
               </div>
               <span className="font-semibold">ZuckerBot</span>
             </div>
-            <div className="flex gap-6 text-sm text-muted-foreground">
+            <div className="flex flex-wrap justify-center gap-6 text-sm text-muted-foreground">
               <Link to="/pricing" className="hover:text-foreground transition-colors">
                 Pricing
               </Link>
@@ -455,6 +455,12 @@ const Index = () => {
               <a href="mailto:support@zuckerbot.ai" className="hover:text-foreground transition-colors">
                 Support
               </a>
+              <Link to="/privacy" className="hover:text-foreground transition-colors">
+                Privacy Policy
+              </Link>
+              <Link to="/terms" className="hover:text-foreground transition-colors">
+                Terms of Service
+              </Link>
             </div>
             <p className="text-sm text-muted-foreground">
               © {new Date().getFullYear()} ZuckerBot. Made in Australia.

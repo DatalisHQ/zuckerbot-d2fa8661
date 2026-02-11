@@ -3,37 +3,52 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, Zap, Building2, MessageCircle } from "lucide-react";
+import { Check, Zap, Wrench } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+const starterFeatures = [
+  "1 active campaign",
+  "AI-generated ad copy",
+  "Lead inbox",
+  "Facebook ad management",
+  "Email support",
+];
+
+const proFeatures = [
+  "Everything in Starter",
+  "3 active campaigns",
+  "Auto-SMS to leads",
+  "CAPI feedback loop",
+  "Creative refresh reminders",
+  "Priority support",
+];
+
 export default function Pricing() {
   const [loading, setLoading] = useState<string | null>(null);
-  const [isAnnual, setIsAnnual] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleSubscribe = async (priceId: string, planType: string) => {
+  const handleSubscribe = async (priceId: string) => {
     try {
       setLoading(priceId);
-      
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         navigate("/auth");
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { priceId, planType }
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: { priceId },
       });
 
       if (error) throw error;
-      
-      // Open in new tab
-      window.open(data.url, '_blank');
+
+      window.location.href = data.url;
     } catch (error) {
-      console.error('Error:', error);
+      console.error("Error:", error);
       toast({
         title: "Error",
         description: "Failed to create checkout session. Please try again.",
@@ -47,77 +62,54 @@ export default function Pricing() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <div className="container mx-auto px-4 py-12">
+      <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">Choose Your Plan</h1>
-          <p className="text-xl text-muted-foreground mb-8">
-            Scale your Meta advertising with AI-powered insights
+          <h1 className="text-4xl font-bold mb-4">
+            Simple pricing for busy tradies
+          </h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            Stop wasting time on ads. Let ZuckerBot fill your pipeline with quality leads — so you can get back on the tools.
           </p>
-          
-          <div className="flex items-center justify-center gap-4 mb-8">
-            <span className={!isAnnual ? "font-semibold" : ""}>Monthly</span>
-            <button
-              onClick={() => setIsAnnual(!isAnnual)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                isAnnual ? 'bg-primary' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  isAnnual ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-            <span className={isAnnual ? "font-semibold" : ""}>
-              Annual <Badge variant="secondary" className="ml-2">Save 20%</Badge>
-            </span>
-          </div>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {/* Free Tier */}
-          <Card className="relative">
+        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          {/* Starter */}
+          <Card className="relative flex flex-col">
             <CardHeader>
               <div className="flex items-center gap-2">
-                <MessageCircle className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>Free</CardTitle>
+                <Wrench className="h-5 w-5 text-muted-foreground" />
+                <CardTitle>Starter</CardTitle>
               </div>
-              <CardDescription>Perfect for trying out ZuckerBot</CardDescription>
-              <div className="text-3xl font-bold">$0</div>
+              <CardDescription>Perfect for solo tradies getting started with Facebook ads</CardDescription>
+              <div className="pt-2">
+                <span className="text-4xl font-bold">$49</span>
+                <span className="text-muted-foreground">/mo AUD</span>
+              </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1">
               <ul className="space-y-3">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>1 business</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Up to 3 ad campaigns</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Access to beta tools</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Ad Creative Generation</span>
-                </li>
+                {starterFeatures.map((feature) => (
+                  <li key={feature} className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-500 shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
               </ul>
             </CardContent>
             <CardFooter>
-              <Button 
-                className="w-full" 
+              <Button
+                className="w-full"
                 variant="outline"
-                onClick={() => navigate("/auth")}
+                onClick={() => handleSubscribe("starter_monthly")}
+                disabled={loading === "starter_monthly"}
               >
-                Get Started Free
+                {loading === "starter_monthly" ? "Loading..." : "Start 7-day free trial"}
               </Button>
             </CardFooter>
           </Card>
 
-          {/* Pro Tier */}
-          <Card className="relative border-primary">
+          {/* Pro */}
+          <Card className="relative flex flex-col border-primary">
             <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2">
               Most Popular
             </Badge>
@@ -126,113 +118,40 @@ export default function Pricing() {
                 <Zap className="h-5 w-5 text-primary" />
                 <CardTitle>Pro</CardTitle>
               </div>
-              <CardDescription>For serious advertisers and agencies</CardDescription>
-              <div className="text-3xl font-bold">
-                ${isAnnual ? '20' : '25'}
-                <span className="text-sm text-muted-foreground font-normal">
-                  /month {isAnnual && '(billed annually)'}
-                </span>
+              <CardDescription>For tradies ready to scale — more campaigns, more leads, more jobs</CardDescription>
+              <div className="pt-2">
+                <span className="text-4xl font-bold">$99</span>
+                <span className="text-muted-foreground">/mo AUD</span>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1">
               <ul className="space-y-3">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>3 businesses</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Up to 100 ad campaigns</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Advanced AI insights</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Campaign strategy guidance</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Priority support</span>
-                </li>
+                {proFeatures.map((feature) => (
+                  <li key={feature} className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-500 shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
               </ul>
             </CardContent>
             <CardFooter>
-              <Button 
-                className="w-full" 
-                onClick={() => handleSubscribe(
-                  isAnnual ? 'pro_yearly' : 'pro_monthly',
-                  'pro'
-                )}
-                disabled={loading === (isAnnual ? 'pro_yearly' : 'pro_monthly')}
+              <Button
+                className="w-full"
+                onClick={() => handleSubscribe("pro_monthly")}
+                disabled={loading === "pro_monthly"}
               >
-                {loading === (isAnnual ? 'pro_yearly' : 'pro_monthly') ? 'Loading...' : 'Subscribe to Pro'}
-              </Button>
-            </CardFooter>
-          </Card>
-
-          {/* Agency Tier */}
-          <Card className="relative">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-primary" />
-                <CardTitle>Agency</CardTitle>
-              </div>
-              <CardDescription>For agencies and enterprise users</CardDescription>
-              <div className="text-3xl font-bold">
-                Starting at ${isAnnual ? '71' : '89'}
-                <span className="text-sm text-muted-foreground font-normal">
-                  /month {isAnnual && '(billed annually)'}
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Multiple business accounts</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Unlimited ad campaigns</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Access to beta tools</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Agency reporting dashboard</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>White-label options</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" />
-                  <span>Dedicated account manager</span>
-                </li>
-              </ul>
-            </CardContent>
-            <CardFooter>
-              <Button 
-                className="w-full" 
-                onClick={() => handleSubscribe(
-                  isAnnual ? 'agency_yearly' : 'agency_monthly',
-                  'agency'
-                )}
-                disabled={loading === (isAnnual ? 'agency_yearly' : 'agency_monthly')}
-              >
-                {loading === (isAnnual ? 'agency_yearly' : 'agency_monthly') ? 'Loading...' : 'Subscribe to Agency'}
+                {loading === "pro_monthly" ? "Loading..." : "Start 7-day free trial"}
               </Button>
             </CardFooter>
           </Card>
         </div>
 
-        <div className="text-center mt-12">
+        <div className="text-center mt-10 space-y-2">
           <p className="text-muted-foreground">
-            All plans include a 14-day free trial. Cancel anytime.
+            All plans include a <strong>7-day free trial</strong>. Cancel anytime — no lock-in contracts.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Prices in Australian dollars. GST included.
           </p>
         </div>
       </div>

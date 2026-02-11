@@ -17,6 +17,8 @@ import LeadInbox from "./pages/LeadInbox";
 import Profile from "./pages/Profile";
 import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -140,6 +142,8 @@ function App() {
               <Route path="/profile" element={user ? <Profile /> : <Navigate to="/auth" />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/terms" element={<Terms />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
