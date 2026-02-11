@@ -92,6 +92,7 @@ const CampaignCreator = () => {
   const { toast } = useToast();
 
   const [business, setBusiness] = useState<Business | null>(null);
+  const [businessPhoto, setBusinessPhoto] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -129,6 +130,21 @@ const CampaignCreator = () => {
 
       const biz = data as unknown as Business;
       setBusiness(biz);
+
+      // Fetch first business photo from storage
+      const { data: photos } = await supabase.storage
+        .from("business-photos")
+        .list(session.user.id, { limit: 1, sortBy: { column: "created_at", order: "asc" } });
+
+      if (photos && photos.length > 0) {
+        const { data: urlData } = supabase.storage
+          .from("business-photos")
+          .getPublicUrl(`${session.user.id}/${photos[0].name}`);
+        if (urlData?.publicUrl) {
+          setBusinessPhoto(urlData.publicUrl);
+        }
+      }
+
       setIsLoading(false);
 
       // Call AI edge function, fall back to local generation
@@ -368,12 +384,20 @@ const CampaignCreator = () => {
                     <div className="px-4 py-3">
                       <p className="text-sm leading-relaxed">{selectedAd.body}</p>
                     </div>
-                    {/* Image placeholder */}
-                    <div className="bg-muted aspect-video flex items-center justify-center border-y">
-                      <div className="text-center space-y-2 text-muted-foreground">
-                        <ImageIcon className="h-10 w-10 mx-auto" />
-                        <p className="text-xs">Your business photo will go here</p>
-                      </div>
+                    {/* Ad image */}
+                    <div className="bg-muted aspect-video flex items-center justify-center border-y overflow-hidden">
+                      {businessPhoto ? (
+                        <img
+                          src={businessPhoto}
+                          alt={`${business?.name} — ${business?.trade}`}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-center space-y-2 text-muted-foreground">
+                          <ImageIcon className="h-10 w-10 mx-auto" />
+                          <p className="text-xs">Upload photos in Settings to preview your ad</p>
+                        </div>
+                      )}
                     </div>
                     {/* CTA section */}
                     <div className="px-4 py-3 border-t flex items-center justify-between">
