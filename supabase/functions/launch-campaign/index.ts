@@ -24,14 +24,19 @@ interface LaunchCampaignRequest {
   image_url?: string;
 }
 
+interface MetaApiError {
+  message: string;
+  type: string;
+  code: number;
+  error_subcode?: number;
+  error_user_title?: string;
+  error_user_msg?: string;
+  fbtrace_id?: string;
+}
+
 interface MetaApiResponse {
   id?: string;
-  error?: {
-    message: string;
-    type: string;
-    code: number;
-    error_subcode?: number;
-  };
+  error?: MetaApiError;
 }
 
 // ─── Helper: POST to Meta Graph API ─────────────────────────────────────────
@@ -40,7 +45,7 @@ async function metaPost(
   path: string,
   params: Record<string, string>,
   accessToken: string
-): Promise<{ ok: boolean; data: MetaApiResponse }> {
+): Promise<{ ok: boolean; data: MetaApiResponse; rawBody: string }> {
   const form = new URLSearchParams(params);
   form.set("access_token", accessToken);
 
@@ -50,8 +55,27 @@ async function metaPost(
     body: form.toString(),
   });
 
-  const data = (await res.json()) as MetaApiResponse;
-  return { ok: res.ok, data };
+  const rawBody = await res.text();
+  let data: MetaApiResponse;
+  try {
+    data = JSON.parse(rawBody) as MetaApiResponse;
+  } catch {
+    data = { error: { message: `Non-JSON response: ${rawBody.slice(0, 500)}`, type: "ParseError", code: -1 } };
+  }
+  return { ok: res.ok, data, rawBody };
+}
+
+// ─── Helper: Build clear error response ─────────────────────────────────────
+
+function errorResponse(
+  status: number,
+  error: string,
+  extra?: Record<string, unknown>
+): Response {
+  return new Response(
+    JSON.stringify({ error, ...extra }),
+    { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
@@ -66,10 +90,7 @@ serve(async (req: Request) => {
     // ── Auth check ──────────────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ error: "Missing or invalid authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(401, "Missing or invalid authorization header");
     }
 
     const supabase = createClient(
@@ -82,10 +103,7 @@ serve(async (req: Request) => {
 
     if (authError || !user) {
       console.error("[launch-campaign] Auth failed:", authError?.message);
-      return new Response(
-        JSON.stringify({ error: "Unauthorized", detail: authError?.message }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(401, "Unauthorized", { detail: authError?.message });
     }
 
     console.log("[launch-campaign] User authenticated:", user.id, user.email);
@@ -103,12 +121,7 @@ serve(async (req: Request) => {
     } = body;
 
     if (!business_id || !headline || !adBody || !cta) {
-      return new Response(
-        JSON.stringify({
-          error: "Missing required fields: business_id, headline, body, cta",
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(400, "Missing required fields: business_id, headline, body, cta");
     }
 
     // ── Fetch business & verify ownership ───────────────────────────────────
@@ -122,10 +135,7 @@ serve(async (req: Request) => {
       .single();
 
     if (bizError || !business) {
-      return new Response(
-        JSON.stringify({ error: "Business not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(404, "Business not found");
     }
 
     if (business.user_id !== user.id) {
@@ -134,49 +144,43 @@ serve(async (req: Request) => {
         auth_user_id: user.id,
         business_id: business_id,
       });
-      return new Response(
-        JSON.stringify({ 
-          error: "You do not own this business",
-          debug: { business_user_id: business.user_id, auth_user_id: user.id }
-        }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(403, "You do not own this business", {
+        debug: { business_user_id: business.user_id, auth_user_id: user.id },
+      });
     }
 
     // ── Validate Facebook connection ────────────────────────────────────────
     if (!business.facebook_access_token) {
-      return new Response(
-        JSON.stringify({
-          error: "Please connect your Facebook account first",
-          reconnectRequired: true,
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(400, "Please connect your Facebook account first", {
+        reconnectRequired: true,
+      });
     }
 
     if (!business.facebook_ad_account_id) {
-      return new Response(
-        JSON.stringify({
-          error: "No Facebook ad account linked. Please select an ad account in settings.",
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(400, "No Facebook ad account linked. Please select an ad account in settings.");
+    }
+
+    if (!business.facebook_page_id) {
+      return errorResponse(400, "No Facebook Page linked. Lead ads require a Facebook Page. Please connect a Page in settings.");
     }
 
     const fbToken = business.facebook_access_token;
     const adAccountId = business.facebook_ad_account_id.replace(/^act_/, "");
+    const pageId = business.facebook_page_id;
     const campaignName = `${business.name} – ${business.trade} – ${new Date().toISOString().slice(0, 10)}`;
 
-    console.log("[launch-campaign] Creating Meta campaign for:", business.name);
+    console.log("[launch-campaign] Creating Meta campaign for:", business.name, "| Page:", pageId, "| Ad Account:", adAccountId);
 
     // ── Step 1: Create Campaign ─────────────────────────────────────────────
+    // Meta API: special_ad_categories must be a JSON array (empty [] if none apply)
+    // Objective: OUTCOME_LEADS (ODAX objective for lead generation)
     const campaignResult = await metaPost(
       `/act_${adAccountId}/campaigns`,
       {
         name: campaignName,
         objective: "OUTCOME_LEADS",
         status: "ACTIVE",
-        special_ad_categories: "[]",
+        special_ad_categories: JSON.stringify([]), // Must be a JSON array, not "[]" string
       },
       fbToken
     );
@@ -184,133 +188,170 @@ serve(async (req: Request) => {
     if (!campaignResult.ok || !campaignResult.data.id) {
       const errMsg =
         campaignResult.data.error?.message || "Failed to create campaign on Meta";
-      console.error("[launch-campaign] Campaign creation failed:", campaignResult.data);
-      return new Response(
-        JSON.stringify({ error: errMsg, meta_error: campaignResult.data.error }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.error("[launch-campaign] Campaign creation failed:", campaignResult.rawBody);
+      return errorResponse(502, errMsg, { meta_error: campaignResult.data.error, step: "campaign" });
     }
 
     const metaCampaignId = campaignResult.data.id;
     console.log("[launch-campaign] Campaign created:", metaCampaignId);
 
     // ── Step 2: Create Ad Set ───────────────────────────────────────────────
-    // Build geo-targeting: radius around business lat/lng
+    // Key requirements for OUTCOME_LEADS / LEAD_GENERATION:
+    // - promoted_object with page_id is REQUIRED
+    // - destination_type: "ON_AD" is REQUIRED for lead form ads
+    // - billing_event: "IMPRESSIONS"
+    // - optimization_goal: "LEAD_GENERATION"
+    // - daily_budget in CENTS (smallest currency unit; e.g. 1500 = $15.00 AUD)
+
+    // Build geo-targeting
+    const geoLocations: Record<string, unknown> = {};
+    if (business.lat && business.lng) {
+      geoLocations.custom_locations = [
+        {
+          latitude: business.lat,
+          longitude: business.lng,
+          radius: radius_km || 25,
+          distance_unit: "kilometer",
+        },
+      ];
+    } else {
+      // Fallback: target Australia-wide if no lat/lng
+      geoLocations.countries = ["AU"];
+      console.warn("[launch-campaign] No lat/lng for business, falling back to AU country targeting");
+    }
+
     const targeting: Record<string, unknown> = {
       age_min: 25,
       age_max: 65,
-      geo_locations: {
-        custom_locations: [
-          {
-            latitude: business.lat || -33.8688, // fallback: Sydney
-            longitude: business.lng || 151.2093,
-            radius: radius_km || 25,
-            distance_unit: "kilometer",
-          },
-        ],
-      },
-      // Publisher platforms: Facebook & Instagram
+      geo_locations: geoLocations,
       publisher_platforms: ["facebook", "instagram"],
       facebook_positions: ["feed"],
       instagram_positions: ["stream"],
     };
 
+    const adSetParams: Record<string, string> = {
+      name: `${campaignName} – Ad Set`,
+      campaign_id: metaCampaignId,
+      daily_budget: String(daily_budget_cents || 1500), // Meta expects cents (smallest unit)
+      billing_event: "IMPRESSIONS",
+      optimization_goal: "LEAD_GENERATION",
+      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+      targeting: JSON.stringify(targeting),
+      promoted_object: JSON.stringify({ page_id: pageId }), // REQUIRED for lead gen
+      destination_type: "ON_AD", // REQUIRED for lead form ads
+      status: "ACTIVE",
+      start_time: new Date().toISOString(),
+    };
+
     const adSetResult = await metaPost(
       `/act_${adAccountId}/adsets`,
-      {
-        name: `${campaignName} – Ad Set`,
-        campaign_id: metaCampaignId,
-        daily_budget: String(daily_budget_cents || 1500), // Meta expects cents
-        billing_event: "IMPRESSIONS",
-        optimization_goal: "LEAD_GENERATION",
-        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-        targeting: JSON.stringify(targeting),
-        status: "ACTIVE",
-        // Start immediately
-        start_time: new Date().toISOString(),
-      },
+      adSetParams,
       fbToken
     );
 
     if (!adSetResult.ok || !adSetResult.data.id) {
       const errMsg =
         adSetResult.data.error?.message || "Failed to create ad set on Meta";
-      console.error("[launch-campaign] Ad set creation failed:", adSetResult.data);
-      return new Response(
-        JSON.stringify({ error: errMsg, meta_error: adSetResult.data.error }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.error("[launch-campaign] Ad set creation failed:", adSetResult.rawBody);
+      return errorResponse(502, errMsg, { meta_error: adSetResult.data.error, step: "adset" });
     }
 
     const metaAdSetId = adSetResult.data.id;
     console.log("[launch-campaign] Ad set created:", metaAdSetId);
 
     // ── Step 3: Create Lead Form ────────────────────────────────────────────
-    // NOTE: Lead forms require a Facebook Page ID. If we have one, create it;
-    // otherwise the ad will need to reference an existing lead form.
+    // Lead forms are created on the PAGE, not the ad account.
+    // Required fields: name, questions, privacy_policy (as legal_content or privacy_policy object)
+    // The privacy_policy field needs: { url: "...", link_text: "..." }
+
     let metaLeadFormId: string | null = null;
 
-    if (business.facebook_page_id) {
-      const leadFormResult = await metaPost(
-        `/${business.facebook_page_id}/leadgen_forms`,
-        {
-          name: `${business.name} Lead Form`,
-          // Questions: name, phone number, email
-          questions: JSON.stringify([
-            { type: "FULL_NAME" },
-            { type: "PHONE" },
-            { type: "EMAIL" },
-            {
-              type: "CUSTOM",
-              key: "suburb",
-              label: "What suburb are you in?",
-            },
-          ]),
-          privacy_policy: JSON.stringify({
-            url: "https://zuckerbot.ai/privacy", // placeholder
-          }),
-          // Thank you screen
-          follow_up_action_url: "https://zuckerbot.ai/",
-        },
-        fbToken
-      );
+    const leadFormResult = await metaPost(
+      `/${pageId}/leadgen_forms`,
+      {
+        name: `${business.name} Lead Form`,
+        questions: JSON.stringify([
+          { type: "FULL_NAME" },
+          { type: "PHONE" },
+          { type: "EMAIL" },
+          {
+            type: "CUSTOM",
+            key: "suburb",
+            label: "What suburb are you in?",
+          },
+        ]),
+        // privacy_policy is passed as a JSON object with url + link_text
+        privacy_policy: JSON.stringify({
+          url: "https://zuckerbot.ai/privacy",
+          link_text: "Privacy Policy",
+        }),
+        follow_up_action_url: "https://zuckerbot.ai/thank-you",
+        // Thank you page configuration
+        thank_you_page: JSON.stringify({
+          title: "Thanks for your enquiry!",
+          body: `${business.name} will be in touch shortly.`,
+        }),
+      },
+      fbToken
+    );
 
-      if (leadFormResult.ok && leadFormResult.data.id) {
-        metaLeadFormId = leadFormResult.data.id;
-        console.log("[launch-campaign] Lead form created:", metaLeadFormId);
-      } else {
-        console.warn(
-          "[launch-campaign] Lead form creation failed, continuing without:",
-          leadFormResult.data
-        );
-      }
+    if (leadFormResult.ok && leadFormResult.data.id) {
+      metaLeadFormId = leadFormResult.data.id;
+      console.log("[launch-campaign] Lead form created:", metaLeadFormId);
+    } else {
+      console.error(
+        "[launch-campaign] Lead form creation failed:",
+        leadFormResult.rawBody
+      );
+      // Lead form is critical for lead gen ads — fail if we can't create it
+      const errMsg = leadFormResult.data.error?.message || "Failed to create lead form";
+      return errorResponse(502, errMsg, { meta_error: leadFormResult.data.error, step: "leadform" });
     }
 
-    // ── Step 4: Create Ad Creative + Ad ─────────────────────────────────────
-    // Build the creative object_story_spec
+    // ── Step 4: Create Ad Creative ──────────────────────────────────────────
+    // For lead gen ads, object_story_spec.link_data MUST include:
+    // - link: URL (required, can be the Facebook page URL)
+    // - message: The ad body text
+    // - name: The headline
+    // - call_to_action.type: CTA type (e.g., "SIGN_UP", "GET_QUOTE", "LEARN_MORE")
+    // - call_to_action.value.lead_gen_form_id: The lead form ID
+    // - picture/image_hash: Image (optional but recommended)
+
+    // Build CTA type mapping
+    let ctaType = "LEARN_MORE";
+    if (cta === "Get Quote" || cta === "GET_QUOTE") {
+      ctaType = "GET_QUOTE";
+    } else if (cta === "Call Now" || cta === "CALL_NOW") {
+      ctaType = "CALL_NOW";
+    } else if (cta === "Sign Up" || cta === "SIGN_UP") {
+      ctaType = "SIGN_UP";
+    } else if (cta === "Subscribe" || cta === "SUBSCRIBE") {
+      ctaType = "SUBSCRIBE";
+    } else if (cta === "Contact Us" || cta === "CONTACT_US") {
+      ctaType = "CONTACT_US";
+    }
+
+    // The link field is REQUIRED even for lead gen ads.
+    // Use the Facebook page URL as the link destination.
+    const pageLink = `https://www.facebook.com/${pageId}`;
+
     const objectStorySpec: Record<string, unknown> = {
-      page_id: business.facebook_page_id || adAccountId,
+      page_id: pageId,
       link_data: {
         message: adBody,
         name: headline,
-        // CTA mapping
+        link: pageLink, // REQUIRED — this was the missing field causing the error
         call_to_action: {
-          type:
-            cta === "Get Quote"
-              ? "GET_QUOTE"
-              : cta === "Call Now"
-                ? "CALL_NOW"
-                : "LEARN_MORE",
-          value: metaLeadFormId
-            ? { lead_gen_form_id: metaLeadFormId }
-            : undefined,
+          type: ctaType,
+          value: {
+            lead_gen_form_id: metaLeadFormId,
+          },
         },
         // Attach image if provided
         ...(image_url ? { picture: image_url } : {}),
       },
     };
 
-    // Create AdCreative
     const creativeResult = await metaPost(
       `/act_${adAccountId}/adcreatives`,
       {
@@ -323,17 +364,14 @@ serve(async (req: Request) => {
     if (!creativeResult.ok || !creativeResult.data.id) {
       const errMsg =
         creativeResult.data.error?.message || "Failed to create ad creative on Meta";
-      console.error("[launch-campaign] Creative creation failed:", creativeResult.data);
-      return new Response(
-        JSON.stringify({ error: errMsg, meta_error: creativeResult.data.error }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.error("[launch-campaign] Creative creation failed:", creativeResult.rawBody);
+      return errorResponse(502, errMsg, { meta_error: creativeResult.data.error, step: "creative" });
     }
 
     const metaCreativeId = creativeResult.data.id;
     console.log("[launch-campaign] Creative created:", metaCreativeId);
 
-    // Create Ad
+    // ── Step 5: Create Ad ───────────────────────────────────────────────────
     const adResult = await metaPost(
       `/act_${adAccountId}/ads`,
       {
@@ -348,17 +386,14 @@ serve(async (req: Request) => {
     if (!adResult.ok || !adResult.data.id) {
       const errMsg =
         adResult.data.error?.message || "Failed to create ad on Meta";
-      console.error("[launch-campaign] Ad creation failed:", adResult.data);
-      return new Response(
-        JSON.stringify({ error: errMsg, meta_error: adResult.data.error }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.error("[launch-campaign] Ad creation failed:", adResult.rawBody);
+      return errorResponse(502, errMsg, { meta_error: adResult.data.error, step: "ad" });
     }
 
     const metaAdId = adResult.data.id;
     console.log("[launch-campaign] Ad created:", metaAdId);
 
-    // ── Step 5: Insert campaign into database ───────────────────────────────
+    // ── Step 6: Insert campaign into database ───────────────────────────────
     const { data: campaign, error: insertError } = await supabase
       .from("campaigns")
       .insert({
@@ -383,14 +418,10 @@ serve(async (req: Request) => {
 
     if (insertError) {
       console.error("[launch-campaign] DB insert failed:", insertError);
-      return new Response(
-        JSON.stringify({
-          error: "Campaign created on Meta but failed to save to database",
-          meta_campaign_id: metaCampaignId,
-          details: insertError.message,
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(500, "Campaign created on Meta but failed to save to database", {
+        meta_campaign_id: metaCampaignId,
+        details: insertError.message,
+      });
     }
 
     console.log("[launch-campaign] Campaign saved to DB:", campaign.id);
