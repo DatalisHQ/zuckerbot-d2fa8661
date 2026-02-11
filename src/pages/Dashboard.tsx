@@ -139,14 +139,14 @@ const Dashboard = () => {
       return;
     }
 
-    // Check onboarding status
-    const { data: profileData } = await supabase
-      .from("profiles")
-      .select("onboarding_completed")
+    // Check if user has completed onboarding by checking for a business record
+    const { data: bizCheck } = await supabase
+      .from("businesses" as any)
+      .select("id")
       .eq("user_id", session.user.id)
       .maybeSingle();
 
-    if (!profileData?.onboarding_completed) {
+    if (!bizCheck) {
       navigate("/onboarding");
       return;
     }

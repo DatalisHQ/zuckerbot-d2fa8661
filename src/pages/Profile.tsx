@@ -166,18 +166,39 @@ export default function Profile() {
 
   const handleConnectFacebook = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "facebook",
-        options: {
-          redirectTo: `${window.location.origin}/profile`,
-          scopes: "pages_manage_ads,ads_management,leads_retrieval,pages_read_engagement",
-        },
-      });
-      if (error) throw error;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          title: "Not authenticated",
+          description: "Please sign in first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const META_APP_ID = "1289562338907498";
+      const REDIRECT_URI = encodeURIComponent(
+        "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/facebook-oauth-callback"
+      );
+      const SCOPES = encodeURIComponent(
+        "pages_manage_ads,ads_management,leads_retrieval,pages_read_engagement"
+      );
+      // Encode user token in state so the callback can identify them
+      const STATE = encodeURIComponent(session.access_token);
+
+      const oauthUrl =
+        `https://www.facebook.com/v21.0/dialog/oauth?` +
+        `client_id=${META_APP_ID}` +
+        `&redirect_uri=${REDIRECT_URI}` +
+        `&scope=${SCOPES}` +
+        `&state=${STATE}` +
+        `&response_type=code`;
+
+      window.location.href = oauthUrl;
     } catch (error: any) {
       toast({
         title: "Error connecting Facebook",
-        description: error.message,
+        description: error.message || "Something went wrong. Try again.",
         variant: "destructive",
       });
     }
@@ -372,16 +393,16 @@ export default function Profile() {
                     <span className="text-sm">Status</span>
                     <Badge
                       variant={
-                        profile?.facebook_connected ? "default" : "secondary"
+                        !!business?.facebook_page_id ? "default" : "secondary"
                       }
                     >
-                      {profile?.facebook_connected
+                      {!!business?.facebook_page_id
                         ? "Connected"
                         : "Not Connected"}
                     </Badge>
                   </div>
 
-                  {!profile?.facebook_connected && (
+                  {!business?.facebook_page_id && (
                     <>
                       <Separator />
                       <p className="text-xs text-muted-foreground">
@@ -398,7 +419,7 @@ export default function Profile() {
                     </>
                   )}
 
-                  {profile?.facebook_connected && business?.facebook_ad_account_id && (
+                  {!!business?.facebook_page_id && business?.facebook_ad_account_id && (
                     <div className="text-xs text-muted-foreground">
                       Ad Account: {business.facebook_ad_account_id}
                     </div>

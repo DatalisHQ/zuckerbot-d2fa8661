@@ -310,12 +310,18 @@ const Onboarding = () => {
         throw new Error(insertError.message);
       }
 
-      // 3. Mark onboarding completed on the profiles table (if it exists)
+      // 3. Upsert profiles row to mark onboarding completed
       try {
         await supabase
           .from("profiles")
-          .update({ onboarding_completed: true })
-          .eq("user_id", userId);
+          .upsert({
+            user_id: userId,
+            email: (await supabase.auth.getUser()).data.user?.email || null,
+            full_name: null,
+            business_name: form.businessName,
+            onboarding_completed: true,
+            facebook_connected: false,
+          }, { onConflict: "user_id" });
       } catch {
         // profiles table may not exist in v2 — that's fine
       }
