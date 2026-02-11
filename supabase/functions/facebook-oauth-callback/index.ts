@@ -18,10 +18,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const META_APP_ID = "1119807469249263";
 const META_APP_SECRET = Deno.env.get("META_APP_SECRET") || "";
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://bqqmkiocynvlaianwisd.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const SITE_URL = Deno.env.get("PUBLIC_SITE_URL") || "https://zuckerbot.ai";
-const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/facebook-oauth-callback`;
+// Hardcode redirect URI to ensure exact match with what's registered in Meta
+const REDIRECT_URI = "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/facebook-oauth-callback";
 
 serve(async (req: Request) => {
   const url = new URL(req.url);
@@ -67,7 +68,8 @@ serve(async (req: Request) => {
 
     if (!tokenRes.ok || !tokenData.access_token) {
       console.error("[fb-oauth] Token exchange failed:", tokenData);
-      return Response.redirect(`${SITE_URL}/profile?fb_error=token_exchange_failed`, 302);
+      const errDetail = encodeURIComponent(tokenData?.error?.message || JSON.stringify(tokenData).substring(0, 200));
+      return Response.redirect(`${SITE_URL}/profile?fb_error=token_exchange_failed&detail=${errDetail}`, 302);
     }
 
     let accessToken = tokenData.access_token;
@@ -145,7 +147,8 @@ serve(async (req: Request) => {
 
     if (updateError) {
       console.error("[fb-oauth] Failed to update business:", updateError);
-      return Response.redirect(`${SITE_URL}/profile?fb_error=save_failed`, 302);
+      const errDetail = encodeURIComponent(updateError.message || "unknown");
+      return Response.redirect(`${SITE_URL}/profile?fb_error=save_failed&detail=${errDetail}`, 302);
     }
 
     // Also update profiles.facebook_connected flag

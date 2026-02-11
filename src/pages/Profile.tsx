@@ -68,6 +68,28 @@ export default function Profile() {
 
   useEffect(() => {
     fetchData();
+
+    // Check for Facebook OAuth callback results in URL params
+    const params = new URLSearchParams(window.location.search);
+    const fbError = params.get("fb_error");
+    const fbConnected = params.get("fb_connected");
+    const fbDetail = params.get("detail");
+
+    if (fbError) {
+      toast({
+        title: "Facebook connection failed",
+        description: `Error: ${fbError}${fbDetail ? ` — ${fbDetail}` : ""}`,
+        variant: "destructive",
+      });
+      // Clean URL
+      window.history.replaceState({}, "", "/profile");
+    } else if (fbConnected === "true") {
+      toast({
+        title: "Facebook connected! ✅",
+        description: "Your Facebook account has been linked successfully.",
+      });
+      window.history.replaceState({}, "", "/profile");
+    }
   }, []);
 
   const fetchData = async () => {
