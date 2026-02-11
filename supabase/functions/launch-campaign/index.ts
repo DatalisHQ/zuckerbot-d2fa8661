@@ -179,7 +179,7 @@ serve(async (req: Request) => {
       {
         name: campaignName,
         objective: "OUTCOME_LEADS",
-        status: "ACTIVE",
+        status: "PAUSED", // Create paused — activate only after all steps succeed
         special_ad_categories: JSON.stringify([]), // Must be a JSON array, not "[]" string
       },
       fbToken
@@ -239,7 +239,7 @@ serve(async (req: Request) => {
       targeting: JSON.stringify(targeting),
       promoted_object: JSON.stringify({ page_id: pageId }), // REQUIRED for lead gen
       destination_type: "ON_AD", // REQUIRED for lead form ads
-      status: "ACTIVE",
+      status: "PAUSED", // Create paused — activate after all steps succeed
       start_time: new Date().toISOString(),
     };
 
@@ -377,7 +377,7 @@ serve(async (req: Request) => {
         name: `${campaignName} – Ad`,
         adset_id: metaAdSetId,
         creative: JSON.stringify({ creative_id: metaCreativeId }),
-        status: "ACTIVE",
+        status: "PAUSED", // Create paused — activate after all steps succeed
       },
       fbToken
     );
@@ -392,7 +392,35 @@ serve(async (req: Request) => {
     const metaAdId = adResult.data.id;
     console.log("[launch-campaign] Ad created:", metaAdId);
 
-    // ── Step 6: Insert campaign into database ───────────────────────────────
+    // ── Step 6: Activate everything ─────────────────────────────────────────
+    // All objects created successfully in PAUSED state — now activate them
+    console.log("[launch-campaign] All objects created. Activating...");
+
+    const activateAd = await metaPost(`/${metaAdId}`, { status: "ACTIVE" }, fbToken);
+    if (!activateAd.ok) {
+      console.error("[launch-campaign] Failed to activate ad:", activateAd.rawBody);
+      // Clean up: delete the campaign (cascades to ad set + ad)
+      await metaPost(`/${metaCampaignId}`, {}, fbToken); // will use DELETE below
+      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${fbToken}`, { method: "DELETE" });
+      return errorResponse(502, activateAd.data.error?.message || "Failed to activate ad", {
+        meta_error: activateAd.data.error,
+        step: "activate",
+      });
+    }
+
+    const activateAdSet = await metaPost(`/${metaAdSetId}`, { status: "ACTIVE" }, fbToken);
+    if (!activateAdSet.ok) {
+      console.error("[launch-campaign] Failed to activate ad set:", activateAdSet.rawBody);
+    }
+
+    const activateCampaign = await metaPost(`/${metaCampaignId}`, { status: "ACTIVE" }, fbToken);
+    if (!activateCampaign.ok) {
+      console.error("[launch-campaign] Failed to activate campaign:", activateCampaign.rawBody);
+    }
+
+    console.log("[launch-campaign] All objects activated successfully");
+
+    // ── Step 7: Insert campaign into database ───────────────────────────────
     const { data: campaign, error: insertError } = await supabase
       .from("campaigns")
       .insert({
