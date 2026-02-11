@@ -285,11 +285,12 @@ serve(async (req: Request) => {
           url: "https://zuckerbot.ai/privacy",
           link_text: "Privacy Policy",
         }),
-        follow_up_action_url: "https://zuckerbot.ai/thank-you",
-        // Thank you page configuration
+        // Thank you page configuration — button_type is required
         thank_you_page: JSON.stringify({
           title: "Thanks for your enquiry!",
           body: `${business.name} will be in touch shortly.`,
+          button_type: "VIEW_WEBSITE",
+          button_url: "https://zuckerbot.ai/",
         }),
       },
       fbToken
