@@ -331,9 +331,8 @@ serve(async (req: Request) => {
       ctaType = "CONTACT_US";
     }
 
-    // The link field is REQUIRED even for lead gen ads.
-    // Use the Facebook page URL as the link destination.
-    const pageLink = `https://www.facebook.com/${pageId}`;
+    // The link field is REQUIRED and must be an EXTERNAL URL (not a Facebook page).
+    const pageLink = "https://zuckerbot.ai/";
 
     const objectStorySpec: Record<string, unknown> = {
       page_id: pageId,
