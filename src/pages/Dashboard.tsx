@@ -8,6 +8,15 @@ import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
 import { trackPageView } from "@/utils/analytics";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -39,6 +48,9 @@ import {
   Play,
   Target,
   FileText,
+  ShieldCheck,
+  BarChart3,
+  Zap,
 } from "lucide-react";
 
 // ─── Local Interfaces ──────────────────────────────────────────────────────
@@ -84,6 +96,73 @@ interface Lead {
   status: string;
   sms_sent: boolean;
   created_at: string;
+}
+
+// ─── Admin Interfaces ──────────────────────────────────────────────────────
+
+interface AdminUser {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  created_at: string;
+  has_business: boolean;
+  business_name: string | null;
+  has_campaign: boolean;
+  campaign_count: number;
+  subscription_status: string;
+  subscription_tier: string;
+  subscription_end: string | null;
+  facebook_connected: boolean;
+  onboarding_completed: boolean;
+}
+
+interface AdminCampaign {
+  id: string;
+  name: string;
+  status: string;
+  daily_budget_cents: number;
+  leads_count: number;
+  spend_cents: number;
+  impressions: number;
+  clicks: number;
+  cpl_cents: number | null;
+  performance_status: string;
+  created_at: string;
+  launched_at: string | null;
+  last_synced_at: string | null;
+  business_id: string;
+  business_name: string;
+  user_email: string;
+}
+
+interface MarketingInsights {
+  impressions: number;
+  clicks: number;
+  spend: string;
+  ctr: string;
+  cpc: string;
+  cpp: string;
+  reach: number;
+  actions: Array<{ action_type: string; value: string }>;
+}
+
+interface AdminStats {
+  total_users: number;
+  active_trials: number;
+  paying_customers: number;
+  mrr_cents: number;
+  conversion_rate: string;
+  users: AdminUser[];
+  total_businesses: number;
+  total_campaigns: number;
+  active_campaigns: number;
+  total_leads: number;
+  total_spend_cents: number;
+  total_impressions: number;
+  total_clicks: number;
+  campaigns: AdminCampaign[];
+  marketing_insights: MarketingInsights | null;
+  fetched_at: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -149,6 +228,48 @@ const LEAD_STATUS_COLORS: Record<string, string> = {
   lost: "bg-red-500/10 text-red-700 border-red-200 dark:text-red-400 dark:border-red-800",
 };
 
+const SUB_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  active: {
+    label: "Active",
+    className: "bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800",
+  },
+  trial: {
+    label: "Trial",
+    className: "bg-blue-500/10 text-blue-700 border-blue-200 dark:text-blue-400 dark:border-blue-800",
+  },
+  expired: {
+    label: "Expired",
+    className: "bg-red-500/10 text-red-700 border-red-200 dark:text-red-400 dark:border-red-800",
+  },
+  cancelled: {
+    label: "Cancelled",
+    className: "bg-red-500/10 text-red-700 border-red-200 dark:text-red-400 dark:border-red-800",
+  },
+  none: {
+    label: "No Sub",
+    className: "bg-gray-500/10 text-gray-500 border-gray-200 dark:text-gray-400 dark:border-gray-700",
+  },
+};
+
+const CAMPAIGN_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  active: {
+    label: "Active",
+    className: "bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800",
+  },
+  paused: {
+    label: "Paused",
+    className: "bg-yellow-500/10 text-yellow-700 border-yellow-200 dark:text-yellow-400 dark:border-yellow-800",
+  },
+  draft: {
+    label: "Draft",
+    className: "bg-gray-500/10 text-gray-500 border-gray-200 dark:text-gray-400 dark:border-gray-700",
+  },
+  ended: {
+    label: "Ended",
+    className: "bg-red-500/10 text-red-700 border-red-200 dark:text-red-400 dark:border-red-800",
+  },
+};
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 const Dashboard = () => {
@@ -162,6 +283,12 @@ const Dashboard = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  
+  // ─── Admin State ────────────────────────────────────────────────────────
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
 
   const loadDashboard = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -170,6 +297,10 @@ const Dashboard = () => {
       return;
     }
 
+    // Check if this is an admin user
+    const isAdminUser = session.user.email === 'davisgrainger@gmail.com';
+    setIsAdmin(isAdminUser);
+
     // Check if user has completed onboarding by checking for a business record
     const { data: bizCheck } = await supabase
       .from("businesses" as any)
@@ -177,7 +308,7 @@ const Dashboard = () => {
       .eq("user_id", session.user.id)
       .maybeSingle();
 
-    if (!bizCheck) {
+    if (!bizCheck && !isAdminUser) {
       navigate("/onboarding");
       return;
     }
@@ -213,7 +344,187 @@ const Dashboard = () => {
       setLeads((leadData as unknown as Lead[]) || []);
     }
 
+    // Load admin data if admin user
+    if (isAdminUser) {
+      await loadAdminData();
+    }
+
     setIsLoading(false);
+  };
+
+  // ─── Load Admin Data ───────────────────────────────────────────────────────
+
+  const loadAdminData = async () => {
+    if (!isAdmin) return;
+
+    setIsLoadingAdmin(true);
+    setAdminError(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      // Fetch admin stats using direct Supabase queries
+      await Promise.all([
+        fetchUserStats(),
+        fetchCampaignStats(),
+        fetchMarketingInsights(),
+      ]);
+    } catch (error: any) {
+      console.error('[Dashboard] Admin data error:', error);
+      setAdminError(error.message || 'Failed to load admin data');
+    } finally {
+      setIsLoadingAdmin(false);
+    }
+  };
+
+  const fetchUserStats = async () => {
+    try {
+      // Get total users and recent signups
+      const { data: users, error: usersError } = await supabase
+        .from("profiles" as any)
+        .select(`
+          user_id,
+          email,
+          full_name,
+          created_at,
+          facebook_connected,
+          onboarding_completed
+        `)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (usersError) throw usersError;
+
+      // Get businesses count
+      const { count: businessCount } = await supabase
+        .from("businesses" as any)
+        .select("*", { count: 'exact', head: true });
+
+      // Transform users data
+      const adminUsers: AdminUser[] = (users || []).map((user: any) => ({
+        id: user.user_id,
+        email: user.email,
+        full_name: user.full_name,
+        created_at: user.created_at,
+        has_business: false, // We'll update this below
+        business_name: null,
+        has_campaign: false,
+        campaign_count: 0,
+        subscription_status: 'none',
+        subscription_tier: 'free',
+        subscription_end: null,
+        facebook_connected: user.facebook_connected || false,
+        onboarding_completed: user.onboarding_completed || false,
+      }));
+
+      setAdminStats(prev => prev ? {
+        ...prev,
+        total_users: users?.length || 0,
+        users: adminUsers,
+        total_businesses: businessCount || 0,
+        fetched_at: new Date().toISOString(),
+      } : {
+        total_users: users?.length || 0,
+        active_trials: 0,
+        paying_customers: 0,
+        mrr_cents: 0,
+        conversion_rate: "0",
+        users: adminUsers,
+        total_businesses: businessCount || 0,
+        total_campaigns: 0,
+        active_campaigns: 0,
+        total_leads: 0,
+        total_spend_cents: 0,
+        total_impressions: 0,
+        total_clicks: 0,
+        campaigns: [],
+        marketing_insights: null,
+        fetched_at: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('[Dashboard] User stats error:', error);
+    }
+  };
+
+  const fetchCampaignStats = async () => {
+    try {
+      // Get all campaigns with business info
+      const { data: campaigns, error: campaignsError } = await supabase
+        .from("campaigns" as any)
+        .select(`
+          *,
+          businesses!inner (
+            name,
+            user_id,
+            profiles!inner (
+              email
+            )
+          )
+        `)
+        .order("created_at", { ascending: false });
+
+      if (campaignsError) throw campaignsError;
+
+      const adminCampaigns: AdminCampaign[] = (campaigns || []).map((camp: any) => ({
+        id: camp.id,
+        name: camp.name,
+        status: camp.status,
+        daily_budget_cents: camp.daily_budget_cents,
+        leads_count: camp.leads_count || 0,
+        spend_cents: camp.spend_cents || 0,
+        impressions: camp.impressions || 0,
+        clicks: camp.clicks || 0,
+        cpl_cents: camp.cpl_cents,
+        performance_status: camp.performance_status,
+        created_at: camp.created_at,
+        launched_at: camp.launched_at,
+        last_synced_at: camp.last_synced_at,
+        business_id: camp.business_id,
+        business_name: camp.businesses?.name || 'Unknown',
+        user_email: camp.businesses?.profiles?.email || 'Unknown',
+      }));
+
+      // Calculate totals
+      const totalSpend = adminCampaigns.reduce((sum, c) => sum + (c.spend_cents || 0), 0);
+      const totalLeads = adminCampaigns.reduce((sum, c) => sum + (c.leads_count || 0), 0);
+      const totalImpressions = adminCampaigns.reduce((sum, c) => sum + (c.impressions || 0), 0);
+      const totalClicks = adminCampaigns.reduce((sum, c) => sum + (c.clicks || 0), 0);
+      const activeCampaigns = adminCampaigns.filter(c => c.status === 'active').length;
+
+      setAdminStats(prev => prev ? {
+        ...prev,
+        total_campaigns: adminCampaigns.length,
+        active_campaigns: activeCampaigns,
+        total_leads: totalLeads,
+        total_spend_cents: totalSpend,
+        total_impressions: totalImpressions,
+        total_clicks: totalClicks,
+        campaigns: adminCampaigns,
+        fetched_at: new Date().toISOString(),
+      } : null);
+    } catch (error) {
+      console.error('[Dashboard] Campaign stats error:', error);
+    }
+  };
+
+  const fetchMarketingInsights = async () => {
+    try {
+      // Try to fetch Meta marketing insights for our own campaign
+      const MARKETING_CAMPAIGN_ID = "120241673514780057";
+      
+      // This would require Facebook access token - for now we'll skip it
+      // In a real implementation, you'd need to store a long-lived access token
+      console.log('[Dashboard] Marketing insights fetch skipped - would need FB token');
+      
+      setAdminStats(prev => prev ? {
+        ...prev,
+        marketing_insights: null,
+        fetched_at: new Date().toISOString(),
+      } : null);
+    } catch (error) {
+      console.error('[Dashboard] Marketing insights error:', error);
+    }
   };
 
   useEffect(() => {
@@ -435,7 +746,7 @@ const Dashboard = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <Navbar />
+        <Navbar isAdmin={isAdmin} />
         <div className="flex items-center justify-center py-24">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -447,7 +758,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+      <Navbar isAdmin={isAdmin} />
       <main className="container mx-auto px-4 py-8 max-w-5xl">
         <div className="space-y-8">
           {/* Header */}
@@ -798,11 +1109,359 @@ const Dashboard = () => {
               </div>
             )}
           </section>
+
+          {/* ─── Admin Section ───────────────────────────────────────────── */}
+          {isAdmin && (
+            <>
+              {/* Admin divider */}
+              <div className="border-t pt-8">
+                <div className="flex items-center gap-2 mb-6">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  <h2 className="text-xl font-semibold">Admin Overview</h2>
+                  <Badge variant="outline" className="text-xs">
+                    Admin Mode
+                  </Badge>
+                </div>
+
+                {adminError && (
+                  <Card className="mb-6">
+                    <CardContent className="py-4">
+                      <p className="text-sm text-destructive">
+                        Unable to load admin data: {adminError}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {isLoadingAdmin && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    <span className="ml-2 text-sm text-muted-foreground">Loading admin data...</span>
+                  </div>
+                )}
+
+                {adminStats && (
+                  <div className="space-y-6">
+                    {/* Admin Stats Row */}
+                    <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                      <AdminStatCard
+                        icon={Users}
+                        label="Total Sign-ups"
+                        value={String(adminStats.total_users)}
+                      />
+                      <AdminStatCard
+                        icon={Zap}
+                        label="Active Trials"
+                        value={String(adminStats.active_trials)}
+                        accent="blue"
+                      />
+                      <AdminStatCard
+                        icon={DollarSign}
+                        label="Paying Customers"
+                        value={String(adminStats.paying_customers)}
+                        accent="green"
+                      />
+                      <AdminStatCard
+                        icon={TrendingUp}
+                        label="MRR"
+                        value={adminStats.mrr_cents > 0 ? formatCurrency(adminStats.mrr_cents) : "$0"}
+                        accent="green"
+                      />
+                      <AdminStatCard
+                        icon={Target}
+                        label="Trial→Paid"
+                        value={`${adminStats.conversion_rate}%`}
+                      />
+                      <AdminStatCard
+                        icon={Megaphone}
+                        label="Total Ad Spend"
+                        value={adminStats.total_spend_cents > 0 ? formatCurrency(adminStats.total_spend_cents) : "$0"}
+                      />
+                    </div>
+
+                    {/* Marketing Campaign Performance */}
+                    <section className="space-y-4">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        Marketing Campaign Performance
+                      </h3>
+                      {adminStats.marketing_insights ? (
+                        <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+                          <AdminMetricCard
+                            label="Impressions"
+                            value={adminStats.marketing_insights.impressions.toLocaleString()}
+                          />
+                          <AdminMetricCard
+                            label="Reach"
+                            value={adminStats.marketing_insights.reach.toLocaleString()}
+                          />
+                          <AdminMetricCard
+                            label="Clicks"
+                            value={adminStats.marketing_insights.clicks.toLocaleString()}
+                          />
+                          <AdminMetricCard
+                            label="CTR"
+                            value={`${parseFloat(adminStats.marketing_insights.ctr).toFixed(2)}%`}
+                          />
+                          <AdminMetricCard
+                            label="Spend"
+                            value={`$${parseFloat(adminStats.marketing_insights.spend).toFixed(2)}`}
+                          />
+                          <AdminMetricCard
+                            label="CPC"
+                            value={`$${parseFloat(adminStats.marketing_insights.cpc).toFixed(2)}`}
+                          />
+                        </div>
+                      ) : (
+                        <Card>
+                          <CardContent className="py-8 text-center">
+                            <BarChart3 className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                              No marketing campaign data available yet.
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Campaign ID: 120241673514780057
+                            </p>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </section>
+
+                    {/* Recent Signups Table */}
+                    <section className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <Users className="h-4 w-4 text-primary" />
+                          Recent Sign-ups
+                        </h3>
+                        <Badge variant="outline">{adminStats.total_users} users</Badge>
+                      </div>
+
+                      {adminStats.users.length === 0 ? (
+                        <Card>
+                          <CardContent className="py-12 text-center">
+                            <Users className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">No users yet.</p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <Card>
+                          <CardContent className="p-0">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Email</TableHead>
+                                  <TableHead>Signed Up</TableHead>
+                                  <TableHead className="text-center">Business</TableHead>
+                                  <TableHead className="text-center">Campaigns</TableHead>
+                                  <TableHead className="text-center">FB</TableHead>
+                                  <TableHead>Subscription</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {adminStats.users.map((user) => {
+                                  const subBadge = SUB_STATUS_BADGE[user.subscription_status] || SUB_STATUS_BADGE.none;
+                                  return (
+                                    <TableRow key={user.id}>
+                                      <TableCell className="font-medium text-sm max-w-[200px] truncate">
+                                        {user.email || "—"}
+                                        {user.full_name && (
+                                          <span className="block text-xs text-muted-foreground truncate">
+                                            {user.full_name}
+                                          </span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-sm">
+                                        <span title={user.created_at ? formatDate(user.created_at) : ""}>
+                                          {user.created_at ? relativeTime(user.created_at) : "—"}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {user.has_business ? (
+                                          <Badge variant="outline" className="bg-green-500/10 text-green-700 border-green-200 text-xs">
+                                            ✓
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">—</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center text-sm">
+                                        {user.campaign_count > 0 ? (
+                                          <Badge variant="outline" className="text-xs">
+                                            {user.campaign_count}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {user.facebook_connected ? (
+                                          <Badge variant="outline" className="bg-blue-500/10 text-blue-700 border-blue-200 text-xs">
+                                            ✓
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">—</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs ${subBadge.className}`}
+                                        >
+                                          {subBadge.label}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </section>
+
+                    {/* All User Campaigns Overview */}
+                    <section className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <Megaphone className="h-4 w-4 text-primary" />
+                          All User Campaigns
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{adminStats.active_campaigns} active</Badge>
+                          <Badge variant="secondary">{adminStats.total_campaigns} total</Badge>
+                        </div>
+                      </div>
+
+                      {adminStats.campaigns.length === 0 ? (
+                        <Card>
+                          <CardContent className="py-12 text-center">
+                            <Megaphone className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">No campaigns created yet.</p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <Card>
+                          <CardContent className="p-0">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Campaign</TableHead>
+                                  <TableHead>User</TableHead>
+                                  <TableHead>Status</TableHead>
+                                  <TableHead className="text-right">Budget/day</TableHead>
+                                  <TableHead className="text-right">Impressions</TableHead>
+                                  <TableHead className="text-right">Clicks</TableHead>
+                                  <TableHead className="text-right">Leads</TableHead>
+                                  <TableHead className="text-right">Spend</TableHead>
+                                  <TableHead className="text-right">CPL</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {adminStats.campaigns.map((campaign) => {
+                                  const statusBadge = CAMPAIGN_STATUS_BADGE[campaign.status] || CAMPAIGN_STATUS_BADGE.draft;
+                                  const ctr = campaign.impressions > 0
+                                    ? ((campaign.clicks / campaign.impressions) * 100).toFixed(2)
+                                    : "0.00";
+
+                                  return (
+                                    <TableRow key={campaign.id}>
+                                      <TableCell className="font-medium text-sm max-w-[180px]">
+                                        <span className="truncate block">{campaign.name}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {campaign.business_name}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="text-sm max-w-[150px] truncate">
+                                        {campaign.user_email}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs ${statusBadge.className}`}
+                                        >
+                                          {statusBadge.label}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm">
+                                        {formatCurrency(campaign.daily_budget_cents)}
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm">
+                                        {campaign.impressions.toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm">
+                                        {campaign.clicks.toLocaleString()}
+                                        <span className="text-xs text-muted-foreground ml-1">
+                                          ({ctr}%)
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm font-medium">
+                                        {campaign.leads_count}
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm">
+                                        {formatCurrency(campaign.spend_cents)}
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm">
+                                        {campaign.cpl_cents != null
+                                          ? formatCurrency(campaign.cpl_cents)
+                                          : "—"}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                              <TableFooter>
+                                <TableRow>
+                                  <TableCell className="font-semibold" colSpan={4}>
+                                    Totals
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold">
+                                    {adminStats.total_impressions.toLocaleString()}
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold">
+                                    {adminStats.total_clicks.toLocaleString()}
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold">
+                                    {adminStats.total_leads}
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold">
+                                    {formatCurrency(adminStats.total_spend_cents)}
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold">
+                                    {adminStats.total_leads > 0
+                                      ? formatCurrency(Math.round(adminStats.total_spend_cents / adminStats.total_leads))
+                                      : "—"}
+                                  </TableCell>
+                                </TableRow>
+                              </TableFooter>
+                            </Table>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </section>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </main>
     </div>
   );
 };
+
+// ─── Helper Functions ──────────────────────────────────────────────────────
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 // ─── Stat Card Sub-Component ────────────────────────────────────────────────
 
@@ -825,6 +1484,53 @@ function StatCard({
           <p className="text-2xl font-bold leading-none">{value}</p>
           <p className="text-xs text-muted-foreground mt-1 truncate">{label}</p>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Admin Stat Card Sub-Component ──────────────────────────────────────────
+
+function AdminStatCard({
+  icon: Icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  accent?: "blue" | "green";
+}) {
+  const accentClasses = accent === "green"
+    ? "bg-green-500/10 text-green-600"
+    : accent === "blue"
+    ? "bg-blue-500/10 text-blue-600"
+    : "bg-primary/10 text-primary";
+
+  return (
+    <Card>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${accentClasses}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-2xl font-bold leading-none">{value}</p>
+          <p className="text-xs text-muted-foreground mt-1 truncate">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Admin Metric Card (for marketing insights) ────────────────────────────
+
+function AdminMetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <Card>
+      <CardContent className="p-4 text-center">
+        <p className="text-2xl font-bold">{value}</p>
+        <p className="text-xs text-muted-foreground mt-1">{label}</p>
       </CardContent>
     </Card>
   );

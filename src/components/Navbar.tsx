@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { LogOut, LayoutDashboard, Megaphone, Users, Settings, Menu, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { LogOut, LayoutDashboard, Megaphone, Users, Settings, Menu, X, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useEnhancedAuth } from "@/utils/auth";
 
@@ -11,7 +12,7 @@ const NAV_LINKS = [
   { href: "/profile", label: "Settings", icon: Settings },
 ];
 
-export const Navbar = () => {
+export const Navbar = ({ isAdmin = false }: { isAdmin?: boolean }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout } = useEnhancedAuth();
@@ -34,6 +35,12 @@ export const Navbar = () => {
               <span className="text-xs font-bold text-primary-foreground">Z</span>
             </div>
             ZuckerBot
+            {isAdmin && (
+              <Badge variant="outline" className="text-xs gap-1">
+                <ShieldCheck className="h-3 w-3" />
+                Admin
+              </Badge>
+            )}
           </Link>
 
           {/* Desktop Nav */}
