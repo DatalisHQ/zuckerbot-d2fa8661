@@ -7,6 +7,17 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Loader2,
   Plus,
   Megaphone,
@@ -22,6 +33,11 @@ import {
   Eye,
   MousePointerClick,
   RefreshCw,
+  Trash2,
+  Pause,
+  Play,
+  Target,
+  FileText,
 } from "lucide-react";
 
 // ─── Local Interfaces ──────────────────────────────────────────────────────
@@ -49,6 +65,13 @@ interface Campaign {
   last_synced_at: string | null;
   created_at: string;
   launched_at: string | null;
+  ad_headline: string | null;
+  ad_copy: string | null;
+  ad_image_url: string | null;
+  meta_campaign_id: string | null;
+  meta_adset_id: string | null;
+  meta_ad_id: string | null;
+  radius_km: number;
 }
 
 interface Lead {
@@ -85,6 +108,11 @@ function relativeTime(dateStr: string): string {
 
 function formatCurrency(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+function truncateText(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen).trimEnd() + "…";
 }
 
 const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -131,6 +159,8 @@ const Dashboard = () => {
   const [business, setBusiness] = useState<Business | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const loadDashboard = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -238,6 +268,154 @@ const Dashboard = () => {
       });
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // ─── Delete Campaign Handler ──────────────────────────────────────────────
+
+  const handleDeleteCampaign = async (campaignId: string) => {
+    setDeletingId(campaignId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast({
+          title: "Not authenticated",
+          description: "Please sign in again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const res = await fetch(
+        `https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/delete-campaign`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ campaign_id: campaignId }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to delete campaign");
+      }
+
+      // Remove from local state
+      setCampaigns((prev) => prev.filter((c) => c.id !== campaignId));
+
+      toast({
+        title: "Campaign deleted",
+        description: data.message || "Campaign has been removed.",
+      });
+    } catch (err: any) {
+      console.error("[Dashboard] Delete campaign error:", err);
+      toast({
+        title: "Delete failed",
+        description: err.message || "Could not delete campaign. Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // ─── Pause/Resume Campaign Handler ────────────────────────────────────────
+
+  const handleToggleCampaignStatus = async (campaign: Campaign) => {
+    if (!campaign.meta_campaign_id) {
+      toast({
+        title: "Cannot toggle status",
+        description: "This campaign has no Meta campaign ID.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newStatus = campaign.status === "active" ? "PAUSED" : "ACTIVE";
+    const newLocalStatus = newStatus === "ACTIVE" ? "active" : "paused";
+    setTogglingId(campaign.id);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast({
+          title: "Not authenticated",
+          description: "Please sign in again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Get the Facebook access token from the business
+      const { data: bizData } = await supabase
+        .from("businesses" as any)
+        .select("facebook_access_token")
+        .eq("id", campaign.business_id)
+        .single();
+
+      const biz = bizData as unknown as { facebook_access_token: string | null } | null;
+
+      if (!biz?.facebook_access_token) {
+        toast({
+          title: "Facebook not connected",
+          description: "Please reconnect your Facebook account.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Call Meta API to update campaign status
+      const metaRes = await fetch(
+        `https://graph.facebook.com/v21.0/${campaign.meta_campaign_id}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            status: newStatus,
+            access_token: biz.facebook_access_token,
+          }),
+        }
+      );
+
+      const metaData = await metaRes.json();
+
+      if (!metaRes.ok && !metaData.success) {
+        const errMsg = metaData?.error?.message || "Failed to update status on Meta";
+        throw new Error(errMsg);
+      }
+
+      // Update local DB
+      await supabase
+        .from("campaigns" as any)
+        .update({ status: newLocalStatus } as any)
+        .eq("id", campaign.id);
+
+      // Update local state
+      setCampaigns((prev) =>
+        prev.map((c) =>
+          c.id === campaign.id
+            ? { ...c, status: newLocalStatus, performance_status: newLocalStatus === "paused" ? "paused" : c.performance_status }
+            : c
+        )
+      );
+
+      toast({
+        title: newLocalStatus === "active" ? "Campaign resumed" : "Campaign paused",
+        description: `"${campaign.name}" is now ${newLocalStatus}.`,
+      });
+    } catch (err: any) {
+      console.error("[Dashboard] Toggle status error:", err);
+      toast({
+        title: "Status update failed",
+        description: err.message || "Could not update campaign status.",
+        variant: "destructive",
+      });
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -353,6 +531,10 @@ const Dashboard = () => {
                   const perfBadge =
                     PERFORMANCE_BADGE[campaign.performance_status] ||
                     PERFORMANCE_BADGE.learning;
+                  const isDeleting = deletingId === campaign.id;
+                  const isToggling = togglingId === campaign.id;
+                  const canToggle = campaign.meta_campaign_id && (campaign.status === "active" || campaign.status === "paused");
+
                   return (
                     <Card
                       key={campaign.id}
@@ -385,7 +567,25 @@ const Dashboard = () => {
                             : `Created ${relativeTime(campaign.created_at)}`}
                         </CardDescription>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="space-y-3">
+                        {/* Ad headline + copy snippet */}
+                        {(campaign.ad_headline || campaign.ad_copy) && (
+                          <div className="space-y-1 border-l-2 border-primary/20 pl-3">
+                            {campaign.ad_headline && (
+                              <p className="text-sm font-medium flex items-center gap-1.5">
+                                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                {campaign.ad_headline}
+                              </p>
+                            )}
+                            {campaign.ad_copy && (
+                              <p className="text-xs text-muted-foreground leading-relaxed">
+                                {truncateText(campaign.ad_copy, 80)}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Stats row */}
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                           <span className="text-muted-foreground">
                             <strong className="text-foreground">
@@ -393,6 +593,15 @@ const Dashboard = () => {
                             </strong>
                             /day
                           </span>
+                          {campaign.radius_km > 0 && (
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Target className="h-3.5 w-3.5" />
+                              <strong className="text-foreground">
+                                {campaign.radius_km}
+                              </strong>
+                              km
+                            </span>
+                          )}
                           <span className="text-muted-foreground">
                             <strong className="text-foreground">
                               {campaign.leads_count}
@@ -420,11 +629,80 @@ const Dashboard = () => {
                             </span>
                           )}
                         </div>
+
                         {campaign.last_synced_at && (
-                          <p className="text-xs text-muted-foreground mt-2">
+                          <p className="text-xs text-muted-foreground">
                             Last synced {relativeTime(campaign.last_synced_at)}
                           </p>
                         )}
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2 pt-1">
+                          {/* Pause/Resume button */}
+                          {canToggle && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={isToggling}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleCampaignStatus(campaign);
+                              }}
+                            >
+                              {isToggling ? (
+                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                              ) : campaign.status === "active" ? (
+                                <Pause className="h-3.5 w-3.5 mr-1.5" />
+                              ) : (
+                                <Play className="h-3.5 w-3.5 mr-1.5" />
+                              )}
+                              {campaign.status === "active" ? "Pause" : "Resume"}
+                            </Button>
+                          )}
+
+                          {/* Delete button with confirmation */}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                disabled={isDeleting}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {isDeleting ? (
+                                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                                )}
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete "{campaign.name}"?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will delete the campaign from Facebook and remove all data.
+                                  This cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={(e) => e.stopPropagation()}>
+                                  Cancel
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteCampaign(campaign.id);
+                                  }}
+                                >
+                                  Delete Campaign
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       </CardContent>
                     </Card>
                   );
