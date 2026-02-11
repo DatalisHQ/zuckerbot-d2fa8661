@@ -41,22 +41,19 @@ serve(async (req: Request) => {
     }
 
     const token = authHeader.replace("Bearer ", "");
+    
+    // Use anon client for auth validation (admin client can't validate user JWTs)
+    const supabaseClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY") ?? "");
+    
     const {
       data: { user },
       error: authError,
-    } = await supabaseAdmin.auth.getUser(token);
+    } = await supabaseClient.auth.getUser(token);
 
     if (authError || !user) {
+      console.log(`[admin-stats] Auth error:`, authError?.message || "No user");
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
-
-    // ── Admin check: user must own the first business ever created ────────
-    const { data: firstBusiness } = await supabaseAdmin
-      .from("businesses")
-      .select("user_id")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .single();
 
     // Admin access: only allow specific email
     const ADMIN_EMAILS = ["davisgrainger@gmail.com"];
