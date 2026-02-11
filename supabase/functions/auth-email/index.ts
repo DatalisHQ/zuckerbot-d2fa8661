@@ -91,7 +91,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "ZuckerBot <onboarding@resend.dev>", // Use verified Resend domain for now
+        from: "ZuckerBot <noreply@updates.resend.dev>", // Use Resend's verified subdomain
         to: [email],
         subject,
         html,
