@@ -33,6 +33,10 @@ const Auth = () => {
         if (profile?.onboarding_completed) {
           navigate("/dashboard");
         } else {
+          // Fire pixel event for new signups landing on onboarding
+          if (typeof window !== "undefined" && (window as any).fbq) {
+            (window as any).fbq("track", "CompleteRegistration");
+          }
           navigate("/onboarding");
         }
       }
@@ -79,6 +83,11 @@ const Auth = () => {
       });
 
       if (error) throw error;
+
+      // Fire Meta Pixel signup event
+      if (typeof window !== "undefined" && (window as any).fbq) {
+        (window as any).fbq("track", "CompleteRegistration");
+      }
 
       toast({
         title: "Check your email",
