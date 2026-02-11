@@ -13,6 +13,8 @@ const corsHeaders = {
 
 interface GenerateCampaignRequest {
   business_id: string;
+  usp?: string;
+  current_offer?: string;
 }
 
 interface AdVariant {
@@ -86,7 +88,7 @@ serve(async (req: Request) => {
     }
 
     // ── Parse request body ──────────────────────────────────────────────────
-    const { business_id } = (await req.json()) as GenerateCampaignRequest;
+    const { business_id, usp, current_offer } = (await req.json()) as GenerateCampaignRequest;
 
     if (!business_id) {
       return new Response(
@@ -140,7 +142,10 @@ serve(async (req: Request) => {
       `Write 3 high-converting Facebook ad variants for this business:\n\n` +
       `Business: ${business.name}\n` +
       `Trade/Service: ${tradeLabel}\n` +
-      `Location: ${locationLabel} ${business.postcode || ""}\n\n` +
+      `Location: ${locationLabel} ${business.postcode || ""}\n` +
+      `${usp ? `Unique selling point: ${usp}\n` : ""}` +
+      `${current_offer ? `Current offer/promotion: ${current_offer}\n` : ""}` +
+      `\n` +
       `Return JSON with this exact structure:\n` +
       `{\n` +
       `  "variants": [\n` +
@@ -161,6 +166,8 @@ serve(async (req: Request) => {
       `- Write like a local tradie would talk, not a marketing agency. Keep it punchy.\n` +
       `- NO clichés like "your one-stop shop" or "we've got you covered".\n` +
       `- The CTA should match the angle — e.g. urgency → "Call Now", trust → "Learn More", value → "Get Quote".\n` +
+      `- If a unique selling point is provided, weave it naturally into at least 2 of the 3 variants.\n` +
+      `- If a current offer is provided, feature it prominently in at least 1 variant.\n` +
       `- Make ${business.name} sound like a real local business people would actually call.`;
 
     console.log("[generate-campaign] Calling Claude API for business:", business.name);

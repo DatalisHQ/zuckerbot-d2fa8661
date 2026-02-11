@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
 import { Loader2, Sparkles, Image as ImageIcon, ThumbsUp, Save, Rocket } from "lucide-react";
@@ -60,14 +62,16 @@ function fallbackAdVariants(business: Business): AdVariant[] {
 }
 
 async function fetchAIVariants(
-  businessId: string
+  businessId: string,
+  usp?: string,
+  currentOffer?: string
 ): Promise<{ variants: AdVariant[]; targeting: { daily_budget_cents: number; radius_km: number } } | null> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return null;
 
     const response = await supabase.functions.invoke("generate-campaign", {
-      body: { business_id: businessId },
+      body: { business_id: businessId, usp: usp || "", current_offer: currentOffer || "" },
     });
 
     if (response.error || !response.data?.variants) return null;
@@ -98,6 +102,10 @@ const CampaignCreator = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [hasGenerated, setHasGenerated] = useState(false);
+
+  const [usp, setUsp] = useState("");
+  const [currentOffer, setCurrentOffer] = useState("");
 
   const [variants, setVariants] = useState<AdVariant[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<number>(1);
@@ -148,23 +156,26 @@ const CampaignCreator = () => {
       }
 
       setIsLoading(false);
-
-      // Call AI edge function, fall back to local generation
-      setIsGenerating(true);
-      const aiResult = await fetchAIVariants(biz.id);
-      if (aiResult) {
-        setVariants(aiResult.variants);
-        setDailyBudget(Math.round(aiResult.targeting.daily_budget_cents / 100));
-        setRadiusKm(aiResult.targeting.radius_km);
-      } else {
-        setVariants(fallbackAdVariants(biz));
-      }
-      setIsGenerating(false);
-      setShowPreview(true);
     };
 
     fetchBusiness();
   }, [navigate, toast]);
+
+  const handleGenerate = async () => {
+    if (!business) return;
+    setIsGenerating(true);
+    const aiResult = await fetchAIVariants(business.id, usp, currentOffer);
+    if (aiResult) {
+      setVariants(aiResult.variants);
+      setDailyBudget(Math.round(aiResult.targeting.daily_budget_cents / 100));
+      setRadiusKm(aiResult.targeting.radius_km);
+    } else {
+      setVariants(fallbackAdVariants(business));
+    }
+    setIsGenerating(false);
+    setHasGenerated(true);
+    setShowPreview(true);
+  };
 
   const selectedAd = variants.find((v) => v.id === selectedVariant) || variants[0];
 
@@ -301,8 +312,44 @@ const CampaignCreator = () => {
             </p>
           </div>
 
+          {/* Tell us more (optional) — pre-generation step */}
+          {!hasGenerated && !isGenerating && (
+            <section className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Tell us about your business</CardTitle>
+                  <CardDescription>Optional — helps our AI write better ads for you</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="usp">What makes you different?</Label>
+                    <Input
+                      id="usp"
+                      value={usp}
+                      onChange={(e) => setUsp(e.target.value)}
+                      placeholder="e.g. 20 years experience, same-day service, family owned"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="offer">Any current offer?</Label>
+                    <Input
+                      id="offer"
+                      value={currentOffer}
+                      onChange={(e) => setCurrentOffer(e.target.value)}
+                      placeholder="e.g. 10% off first job, free quote this month, no call-out fee"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+              <Button size="lg" className="w-full" onClick={handleGenerate}>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Generate My Ad
+              </Button>
+            </section>
+          )}
+
           {/* Ad Variant Selection */}
-          {showPreview && (
+          {hasGenerated && showPreview && (
             <>
               <section className="space-y-4">
                 <h2 className="text-xl font-semibold">Choose Your Ad</h2>
