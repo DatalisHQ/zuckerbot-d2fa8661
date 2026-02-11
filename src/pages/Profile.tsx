@@ -176,7 +176,7 @@ export default function Profile() {
         return;
       }
 
-      const META_APP_ID = "1289562338907498";
+      const META_APP_ID = "1119807469249263";
       const REDIRECT_URI = encodeURIComponent(
         "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/facebook-oauth-callback"
       );

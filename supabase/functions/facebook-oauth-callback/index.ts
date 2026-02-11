@@ -16,7 +16,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 // 8. Redirect user back to /profile
 // ─────────────────────────────────────────────────────────────────────────────
 
-const META_APP_ID = "1289562338907498";
+const META_APP_ID = "1119807469249263";
 const META_APP_SECRET = Deno.env.get("META_APP_SECRET") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
