@@ -58,12 +58,11 @@ serve(async (req: Request) => {
       .limit(1)
       .single();
 
-    if (!firstBusiness || firstBusiness.user_id !== user.id) {
-      // Fallback: also check if the user's email is in admin list
-      const ADMIN_EMAILS = ["copernicus913@gmail.com"];
-      if (!user.email || !ADMIN_EMAILS.includes(user.email)) {
-        return jsonResponse({ error: "Forbidden — admin access only" }, 403);
-      }
+    // Admin access: only allow specific email
+    const ADMIN_EMAILS = ["davisgrainger@gmail.com"];
+    if (!user.email || !ADMIN_EMAILS.includes(user.email)) {
+      console.log(`[admin-stats] Access denied for email: ${user.email}`);
+      return jsonResponse({ error: "Forbidden — admin access only" }, 403);
     }
 
     // ── Fetch all profiles (users) ────────────────────────────────────────
