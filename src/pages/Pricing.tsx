@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Check, Zap, Wrench } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
 
 const starterFeatures = [
   "1 active campaign",
@@ -30,6 +31,11 @@ export default function Pricing() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  useEffect(() => {
+    // Track page view
+    trackPageView('/pricing', 'ZuckerBot — Choose Your Plan');
+  }, []);
+
   const handleSubscribe = async (priceId: string) => {
     try {
       setLoading(priceId);
@@ -39,6 +45,14 @@ export default function Pricing() {
         navigate("/auth");
         return;
       }
+
+      // Determine plan and value from priceId
+      const planInfo = priceId.includes('starter') 
+        ? { plan: 'starter', value: 49 }
+        : { plan: 'pro', value: 99 };
+
+      // Track begin_checkout event
+      trackFunnelEvent.beginCheckout(planInfo.plan, planInfo.value);
 
       const { data, error } = await supabase.functions.invoke("create-checkout", {
         body: { priceId },

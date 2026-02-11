@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
+import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
 import {
   Zap,
   Phone,
@@ -39,9 +40,25 @@ const TRADES = [
 
 const Index = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [tradeIndex, setTradeIndex] = useState(0);
+
+  // Track page view on load
+  useEffect(() => {
+    // Get URL parameters for source/medium tracking from ads
+    const urlParams = new URLSearchParams(location.search);
+    const source = urlParams.get('utm_source') || urlParams.get('source');
+    const medium = urlParams.get('utm_medium') || urlParams.get('medium');
+    
+    // Track landing page view
+    trackFunnelEvent.viewLanding(source || undefined, medium || undefined);
+    trackPageView('/', 'ZuckerBot — Facebook ads for Aussie tradies', {
+      source,
+      medium,
+    });
+  }, [location]);
 
   // Auth check
   useEffect(() => {
@@ -67,10 +84,13 @@ const Index = () => {
   }, []);
 
   const handleCTA = async () => {
+    // Track that user clicked get started
     if (!user) {
+      trackFunnelEvent.startSignup();
       navigate("/auth");
       return;
     }
+    
     const { data: profile } = await supabase
       .from("profiles")
       .select("onboarding_completed")

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
 import { Loader2, Sparkles, Image as ImageIcon, ThumbsUp, Save, Rocket } from "lucide-react";
+import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
 
 // ─── Local Interfaces ──────────────────────────────────────────────────────
 
@@ -115,6 +116,10 @@ const CampaignCreator = () => {
 
   // Fetch business on mount
   useEffect(() => {
+    // Track page view
+    trackFunnelEvent.viewCampaignCreator();
+    trackPageView('/campaign/new', 'ZuckerBot — Create Campaign');
+
     const fetchBusiness = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
@@ -163,6 +168,10 @@ const CampaignCreator = () => {
 
   const handleGenerate = async () => {
     if (!business) return;
+    
+    // Track ad copy generation
+    trackFunnelEvent.generateAdCopy(business.trade);
+    
     setIsGenerating(true);
     const aiResult = await fetchAIVariants(business.id, usp, currentOffer);
     if (aiResult) {
@@ -198,6 +207,9 @@ const CampaignCreator = () => {
 
     try {
       if (launch) {
+        // Track campaign creation before launch
+        trackFunnelEvent.createCampaign(dailyBudget * 100, radiusKm);
+        
         // Launch flow — edge function creates the campaign on Meta AND in the DB
         const { data: launchData, error: launchError } = await supabase.functions.invoke("launch-campaign", {
           body: {
@@ -220,12 +232,28 @@ const CampaignCreator = () => {
           return;
         }
 
+        // Track successful campaign launch
+        const campaignId = launchData?.campaign_id || 'unknown';
+        trackFunnelEvent.launchCampaign(campaignId, dailyBudget);
+        
+        // Check if this might be their first campaign
+        const { data: existingCampaigns } = await supabase
+          .from("campaigns" as any)
+          .select("id")
+          .eq("business_id", business.id);
+        
+        if (!existingCampaigns || existingCampaigns.length <= 1) {
+          trackFunnelEvent.launchFirstCampaign(campaignId, dailyBudget);
+        }
+
         toast({
           title: "Campaign launched! 🚀",
           description: "Your ad is now live on Facebook. Check the dashboard for performance.",
         });
       } else {
         // Draft flow — just save locally
+        trackFunnelEvent.createCampaign(dailyBudget * 100, radiusKm);
+        
         const { error } = await supabase.from("campaigns" as any).insert({
           business_id: business.id,
           name: `${business.trade} Campaign — ${business.suburb}`,

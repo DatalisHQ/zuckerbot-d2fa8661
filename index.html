@@ -19,6 +19,27 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
+    <!-- Google Analytics 4 -->
+    <script>
+      // Only load GA4 if measurement ID is provided and not in development
+      if ('%VITE_GA4_MEASUREMENT_ID%' && '%VITE_GA4_MEASUREMENT_ID%' !== '' && '%VITE_GA4_MEASUREMENT_ID%' !== 'G-XXXXXXXXXX') {
+        (function() {
+          var script = document.createElement('script');
+          script.async = true;
+          script.src = 'https://www.googletagmanager.com/gtag/js?id=%VITE_GA4_MEASUREMENT_ID%';
+          document.head.appendChild(script);
+
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', '%VITE_GA4_MEASUREMENT_ID%', {
+            send_page_view: true,
+            country: 'AU'
+          });
+        })();
+      }
+    </script>
+
     <!-- Meta Pixel (script in head, noscript fallback in body) -->
     <script>
       !function(f,b,e,v,n,t,s)

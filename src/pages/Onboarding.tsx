@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
 import {
   Select,
   SelectContent,
@@ -120,6 +121,10 @@ const Onboarding = () => {
   // ── Auth check ─────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Track page view
+    trackFunnelEvent.viewOnboarding();
+    trackPageView('/onboarding', 'ZuckerBot — Business Setup');
+
     const checkUser = async () => {
       const { user, isValid } = await validateSession();
       if (!isValid || !user) {
@@ -325,6 +330,14 @@ const Onboarding = () => {
       } catch {
         // profiles table may not exist in v2 — that's fine
       }
+
+      // Track onboarding completion
+      const effectiveTrade = form.trade || form.customTrade;
+      trackFunnelEvent.completeOnboarding(
+        effectiveTrade,
+        form.suburb,
+        form.businessName
+      );
 
       toast({
         title: "You're all set! 🎉",

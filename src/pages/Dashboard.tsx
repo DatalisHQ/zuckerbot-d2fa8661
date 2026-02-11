@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
+import { trackPageView } from "@/utils/analytics";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -216,6 +217,8 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    // Track page view
+    trackPageView('/dashboard', 'ZuckerBot — Dashboard');
     loadDashboard();
   }, [navigate]);
 

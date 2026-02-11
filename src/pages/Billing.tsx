@@ -7,6 +7,7 @@ import { Navbar } from "@/components/Navbar";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreditCard, Calendar, Zap, Wrench, ArrowUpRight } from "lucide-react";
+import { trackPageView } from "@/utils/analytics";
 
 interface SubscriptionInfo {
   subscribed: boolean;
@@ -23,6 +24,10 @@ export default function Billing() {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Track page view with plan context
+    trackPageView('/billing', 'ZuckerBot — Billing', {
+      page_location: window.location.href,
+    });
     fetchSubscriptionInfo();
     fetchCampaignCount();
   }, []);

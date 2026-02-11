@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Zap } from "lucide-react";
+import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -19,6 +20,9 @@ const Auth = () => {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Track page view
+    trackPageView('/auth', 'ZuckerBot — Sign In or Sign Up');
+
     const checkUser = async () => {
       const {
         data: { session },
@@ -37,6 +41,8 @@ const Auth = () => {
           if (typeof window !== "undefined" && (window as any).fbq) {
             (window as any).fbq("track", "CompleteRegistration");
           }
+          // Track GA4 signup completion
+          trackFunnelEvent.completeSignup('google');
           navigate("/onboarding");
         }
       }
@@ -88,6 +94,9 @@ const Auth = () => {
       if (typeof window !== "undefined" && (window as any).fbq) {
         (window as any).fbq("track", "CompleteRegistration");
       }
+
+      // Track GA4 signup event
+      trackFunnelEvent.completeSignup('email');
 
       // Send welcome email (fire-and-forget — don't block sign-up flow)
       try {
