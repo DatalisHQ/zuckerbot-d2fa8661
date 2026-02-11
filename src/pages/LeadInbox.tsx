@@ -127,6 +127,23 @@ const LeadInbox = () => {
         prev.map((l) => (l.id === leadId ? { ...l, status: newStatus } : l))
       );
 
+      // Fire Conversion API feedback — tell Meta about lead quality
+      // "won" or "contacted" = good signal, "lost" = bad signal
+      if (["won", "contacted", "lost"].includes(newStatus)) {
+        const quality = newStatus === "lost" ? "bad" : "good";
+        supabase.functions
+          .invoke("sync-conversions", {
+            body: { lead_id: leadId, quality },
+          })
+          .then(({ error: capiError }) => {
+            if (capiError) {
+              console.warn("[LeadInbox] CAPI sync failed:", capiError);
+            } else {
+              console.log(`[LeadInbox] CAPI: sent ${quality} signal for lead ${leadId}`);
+            }
+          });
+      }
+
       toast({
         title: "Lead updated",
         description: `Marked as ${newStatus}.`,
