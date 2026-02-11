@@ -419,10 +419,24 @@ export default function Profile() {
                     </>
                   )}
 
-                  {!!business?.facebook_page_id && business?.facebook_ad_account_id && (
-                    <div className="text-xs text-muted-foreground">
-                      Ad Account: {business.facebook_ad_account_id}
-                    </div>
+                  {!!business?.facebook_page_id && (
+                    <>
+                      <Separator />
+                      {business?.facebook_ad_account_id && (
+                        <div className="text-xs text-muted-foreground">
+                          Ad Account: {business.facebook_ad_account_id}
+                        </div>
+                      )}
+                      <Button
+                        className="w-full"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleConnectFacebook}
+                      >
+                        <Facebook className="w-4 h-4 mr-2" />
+                        Reconnect Facebook
+                      </Button>
+                    </>
                   )}
                 </CardContent>
               </Card>
