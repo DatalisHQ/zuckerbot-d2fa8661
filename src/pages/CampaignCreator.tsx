@@ -20,6 +20,8 @@ interface Business {
   postcode: string;
   state: string;
   phone: string;
+  facebook_page_id: string | null;
+  facebook_ad_account_id: string | null;
 }
 
 interface AdVariant {
@@ -166,29 +168,67 @@ const CampaignCreator = () => {
 
   const selectedAd = variants.find((v) => v.id === selectedVariant) || variants[0];
 
+  const facebookConnected = !!(business?.facebook_page_id && business?.facebook_ad_account_id);
+
   const saveCampaign = async (launch: boolean) => {
     if (!business || !selectedAd) return;
+
+    // If launching, check Facebook connection first
+    if (launch && !facebookConnected) {
+      toast({
+        title: "Connect Facebook first",
+        description: "You need to link your Facebook ad account before launching. Head to Settings to connect.",
+      });
+      navigate("/profile");
+      return;
+    }
+
     setIsSaving(true);
 
     try {
-      const { error } = await supabase.from("campaigns" as any).insert({
+      const { data: campaign, error } = await supabase.from("campaigns" as any).insert({
         business_id: business.id,
         name: `${business.trade} Campaign — ${business.suburb}`,
-        status: "draft",
+        status: launch ? "launching" : "draft",
         daily_budget_cents: dailyBudget * 100,
         radius_km: radiusKm,
         ad_copy: selectedAd.body,
         ad_headline: selectedAd.headline,
-      } as any);
+      } as any).select().single();
 
       if (error) throw error;
 
-      toast({
-        title: launch ? "Campaign saved!" : "Draft saved!",
-        description: launch
-          ? "Connect Facebook to go live."
-          : "You can finish setting up later.",
-      });
+      if (launch && campaign) {
+        // Call launch-campaign edge function
+        const { error: launchError } = await supabase.functions.invoke("launch-campaign", {
+          body: { campaign_id: (campaign as any).id },
+        });
+
+        if (launchError) {
+          // Save succeeded but launch failed — update status back to draft
+          await supabase.from("campaigns" as any)
+            .update({ status: "draft" } as any)
+            .eq("id", (campaign as any).id);
+
+          toast({
+            title: "Campaign saved, but launch failed",
+            description: launchError.message || "We saved your campaign as a draft. Try launching again later.",
+            variant: "destructive",
+          });
+          navigate("/dashboard");
+          return;
+        }
+
+        toast({
+          title: "Campaign launched! 🚀",
+          description: "Your ad is now live on Facebook. Check the dashboard for performance.",
+        });
+      } else {
+        toast({
+          title: "Draft saved!",
+          description: "You can finish setting up and launch later.",
+        });
+      }
 
       navigate("/dashboard");
     } catch (err: any) {
@@ -415,20 +455,40 @@ const CampaignCreator = () => {
                 </section>
               )}
 
+              {/* Facebook Connection Notice */}
+              {!facebookConnected && (
+                <section>
+                  <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+                    <CardContent className="flex items-center gap-4 py-4">
+                      <div className="text-2xl">⚠️</div>
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">Facebook account not connected</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          You can save your campaign as a draft now and connect Facebook later in Settings.
+                        </p>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => navigate("/profile")}>
+                        Connect
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </section>
+              )}
+
               {/* Action Buttons */}
               <section className="flex flex-col sm:flex-row gap-3 pt-4">
                 <Button
                   className="flex-1"
                   size="lg"
                   onClick={() => saveCampaign(true)}
-                  disabled={isSaving}
+                  disabled={isSaving || !facebookConnected}
                 >
                   {isSaving ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
                     <Rocket className="h-4 w-4 mr-2" />
                   )}
-                  Launch Campaign
+                  {facebookConnected ? "Launch Campaign" : "Connect Facebook to Launch"}
                 </Button>
                 <Button
                   className="flex-1"
