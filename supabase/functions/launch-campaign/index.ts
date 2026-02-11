@@ -81,11 +81,14 @@ serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
+      console.error("[launch-campaign] Auth failed:", authError?.message);
       return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
+        JSON.stringify({ error: "Unauthorized", detail: authError?.message }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    console.log("[launch-campaign] User authenticated:", user.id, user.email);
 
     // ── Parse request body ──────────────────────────────────────────────────
     const body = (await req.json()) as LaunchCampaignRequest;
@@ -126,8 +129,16 @@ serve(async (req: Request) => {
     }
 
     if (business.user_id !== user.id) {
+      console.error("[launch-campaign] Ownership mismatch:", {
+        business_user_id: business.user_id,
+        auth_user_id: user.id,
+        business_id: business_id,
+      });
       return new Response(
-        JSON.stringify({ error: "You do not own this business" }),
+        JSON.stringify({ 
+          error: "You do not own this business",
+          debug: { business_user_id: business.user_id, auth_user_id: user.id }
+        }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
