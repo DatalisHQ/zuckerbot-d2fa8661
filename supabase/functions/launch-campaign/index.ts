@@ -269,7 +269,7 @@ serve(async (req: Request) => {
     const leadFormResult = await metaPost(
       `/${pageId}/leadgen_forms`,
       {
-        name: `${business.name} Lead Form`,
+        name: `${business.name} Lead Form – ${Date.now()}`,
         questions: JSON.stringify([
           { type: "FULL_NAME" },
           { type: "PHONE" },
