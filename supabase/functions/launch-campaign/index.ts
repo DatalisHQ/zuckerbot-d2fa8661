@@ -223,6 +223,7 @@ serve(async (req: Request) => {
         daily_budget: String(daily_budget_cents || 1500), // Meta expects cents
         billing_event: "IMPRESSIONS",
         optimization_goal: "LEAD_GENERATION",
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
         targeting: JSON.stringify(targeting),
         status: "ACTIVE",
         // Start immediately
