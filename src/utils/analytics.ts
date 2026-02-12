@@ -217,4 +217,4 @@ export const initializeGA4 = (): void => {
   } catch (error) {
     console.error('[Analytics] Error initializing GA4:', error);
   }
-};
+};// GA4 configured: G-N4TYF593NL
