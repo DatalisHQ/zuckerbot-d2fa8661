@@ -187,6 +187,27 @@ interface MarketingInsights {
   actions: Array<{ action_type: string; value: string }>;
 }
 
+interface GA4Analytics {
+  property_id?: string;
+  last_30_days?: {
+    page_views: string | number;
+    sessions: string | number;
+    users: string | number;
+    conversion_rate: string | number;
+  };
+  top_pages?: Array<{
+    path: string;
+    views: string | number;
+  }>;
+  traffic_sources?: Array<{
+    source: string;
+    sessions: string | number;
+  }>;
+  configured: boolean;
+  setup_needed?: boolean;
+  message?: string;
+}
+
 interface AdminStats {
   total_users: number;
   active_trials: number;
@@ -203,6 +224,7 @@ interface AdminStats {
   total_clicks: number;
   campaigns: AdminCampaign[];
   marketing_insights: MarketingInsights | null;
+  ga4_analytics?: GA4Analytics | null;
   fetched_at: string;
 }
 
@@ -1306,6 +1328,84 @@ const Dashboard = () => {
                             </p>
                             <p className="text-xs text-muted-foreground mt-1">
                               Campaign ID: 120241673514780057
+                            </p>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </section>
+
+                    {/* GA4 Analytics */}
+                    <section className="space-y-4">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-primary" />
+                        Website Analytics (GA4)
+                      </h3>
+                      {adminStats.ga4_analytics?.configured ? (
+                        <div className="space-y-4">
+                          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                            <AdminMetricCard
+                              label="Page Views (30d)"
+                              value={adminStats.ga4_analytics.last_30_days?.page_views?.toLocaleString() || "—"}
+                            />
+                            <AdminMetricCard
+                              label="Sessions (30d)"
+                              value={adminStats.ga4_analytics.last_30_days?.sessions?.toLocaleString() || "—"}
+                            />
+                            <AdminMetricCard
+                              label="Users (30d)"
+                              value={adminStats.ga4_analytics.last_30_days?.users?.toLocaleString() || "—"}
+                            />
+                            <AdminMetricCard
+                              label="Conversion Rate"
+                              value={`${adminStats.ga4_analytics.last_30_days?.conversion_rate || "0"}%`}
+                            />
+                          </div>
+                          
+                          <div className="grid md:grid-cols-2 gap-4">
+                            {/* Top Pages */}
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-sm">Top Pages</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-2">
+                                  {adminStats.ga4_analytics.top_pages?.map((page, i) => (
+                                    <div key={i} className="flex justify-between text-sm">
+                                      <span className="truncate">{page.path}</span>
+                                      <span className="text-muted-foreground">{page.views}</span>
+                                    </div>
+                                  )) || <p className="text-sm text-muted-foreground">No data</p>}
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            {/* Traffic Sources */}
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-sm">Traffic Sources</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-2">
+                                  {adminStats.ga4_analytics.traffic_sources?.map((source, i) => (
+                                    <div key={i} className="flex justify-between text-sm">
+                                      <span className="capitalize">{source.source}</span>
+                                      <span className="text-muted-foreground">{source.sessions}</span>
+                                    </div>
+                                  )) || <p className="text-sm text-muted-foreground">No data</p>}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+                      ) : (
+                        <Card>
+                          <CardContent className="py-8 text-center">
+                            <TrendingUp className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                              GA4 Analytics not configured yet.
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {adminStats.ga4_analytics?.message || "Add GA4_MEASUREMENT_ID to environment variables"}
                             </p>
                           </CardContent>
                         </Card>

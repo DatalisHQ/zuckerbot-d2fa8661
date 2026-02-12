@@ -108,6 +108,42 @@ serve(async (req) => {
       console.error("Meta API error:", e);
     }
 
+    // GA4 Analytics (simplified approach)
+    let ga4Data = null;
+    const GA4_MEASUREMENT_ID = Deno.env.get("GA4_MEASUREMENT_ID");
+    
+    if (GA4_MEASUREMENT_ID) {
+      // For now, return placeholder structure
+      // Real implementation would use Google Analytics Data API v1
+      ga4Data = {
+        property_id: GA4_MEASUREMENT_ID,
+        last_30_days: {
+          page_views: "Loading...",
+          sessions: "Loading...", 
+          users: "Loading...",
+          conversion_rate: "Loading...",
+        },
+        top_pages: [
+          { path: "/", views: "Loading..." },
+          { path: "/auth", views: "Loading..." },
+          { path: "/pricing", views: "Loading..." },
+        ],
+        traffic_sources: [
+          { source: "facebook", sessions: "Loading..." },
+          { source: "google", sessions: "Loading..." },
+          { source: "direct", sessions: "Loading..." },
+        ],
+        configured: false,
+        setup_needed: true,
+      };
+    } else {
+      ga4Data = {
+        configured: false,
+        setup_needed: true,
+        message: "GA4_MEASUREMENT_ID not configured",
+      };
+    }
+
     const response = {
       total_users: (authUsers?.users || []).length,
       active_trials: 1, // Davis is testing
@@ -124,6 +160,7 @@ serve(async (req) => {
       users: userList,
       campaigns: allCampaigns,
       marketing_insights: marketingInsights,
+      ga4_analytics: ga4Data,
       fetched_at: new Date().toISOString(),
     };
 
