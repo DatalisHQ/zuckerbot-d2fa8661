@@ -399,8 +399,6 @@ const Dashboard = () => {
   // ─── Load Admin Data ───────────────────────────────────────────────────────
 
   const loadAdminData = async () => {
-    if (!isAdmin) return;
-
     setIsLoadingAdmin(true);
     setAdminError(null);
 
@@ -408,13 +406,28 @@ const Dashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
 
-      // Fetch admin stats using direct Supabase queries
-      await Promise.all([
-        fetchUserStats(),
-        fetchCampaignStats(),
-        fetchMarketingInsights(),
-        fetchStripePayments(session.access_token),
-      ]);
+      // Fetch all admin data from edge function (bypasses RLS)
+      const res = await fetch(
+        `https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/admin-data`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Admin data fetch failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      setAdminStats(data);
+
+      // Also fetch Stripe data separately
+      await fetchStripePayments(session.access_token);
     } catch (error: any) {
       console.error('[Dashboard] Admin data error:', error);
       setAdminError(error.message || 'Failed to load admin data');
