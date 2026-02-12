@@ -51,6 +51,8 @@ import {
   ShieldCheck,
   BarChart3,
   Zap,
+  CreditCard,
+  ExternalLink,
 } from "lucide-react";
 
 // ─── Local Interfaces ──────────────────────────────────────────────────────
@@ -133,6 +135,45 @@ interface AdminCampaign {
   business_id: string;
   business_name: string;
   user_email: string;
+}
+
+interface StripePayment {
+  id: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  refunded: boolean;
+  customer_email: string | null;
+  customer_name: string | null;
+  description: string | null;
+  invoice_url: string | null;
+  created: number;
+}
+
+interface StripeSubscription {
+  id: string;
+  status: string;
+  customer_id: string;
+  plan_amount_cents: number;
+  plan_currency: string;
+  plan_interval: string;
+  current_period_end: number;
+  cancel_at_period_end: boolean;
+  created: number;
+}
+
+interface StripeSummary {
+  total_revenue_cents: number;
+  failed_count: number;
+  refunded_count: number;
+  active_subscriptions: number;
+}
+
+interface StripeData {
+  payments: StripePayment[];
+  subscriptions: StripeSubscription[];
+  summary: StripeSummary;
+  fetched_at: string;
 }
 
 interface MarketingInsights {
@@ -289,6 +330,9 @@ const Dashboard = () => {
   const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
+  const [stripeData, setStripeData] = useState<StripeData | null>(null);
+  const [stripeError, setStripeError] = useState<string | null>(null);
+  const [isLoadingStripe, setIsLoadingStripe] = useState(false);
 
   const loadDashboard = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -369,6 +413,7 @@ const Dashboard = () => {
         fetchUserStats(),
         fetchCampaignStats(),
         fetchMarketingInsights(),
+        fetchStripePayments(session.access_token),
       ]);
     } catch (error: any) {
       console.error('[Dashboard] Admin data error:', error);
@@ -524,6 +569,33 @@ const Dashboard = () => {
       } : null);
     } catch (error) {
       console.error('[Dashboard] Marketing insights error:', error);
+    }
+  };
+
+  const fetchStripePayments = async (accessToken: string) => {
+    setIsLoadingStripe(true);
+    setStripeError(null);
+    try {
+      const res = await fetch(
+        `https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/admin-stripe-payments`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load Stripe data");
+      }
+      setStripeData(data);
+    } catch (error: any) {
+      console.error("[Dashboard] Stripe payments error:", error);
+      setStripeError(error.message || "Failed to load Stripe data");
+    } finally {
+      setIsLoadingStripe(false);
     }
   };
 
@@ -1438,6 +1510,221 @@ const Dashboard = () => {
                             </Table>
                           </CardContent>
                         </Card>
+                      )}
+                    </section>
+
+                    {/* ─── Stripe Payments Section ─────────────────────────── */}
+                    <section className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <CreditCard className="h-4 w-4 text-primary" />
+                          Stripe Payments
+                        </h3>
+                        {stripeData && (
+                          <Badge variant="outline" className="text-xs">
+                            {stripeData.payments.length} recent
+                          </Badge>
+                        )}
+                      </div>
+
+                      {isLoadingStripe && (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                          <span className="ml-2 text-sm text-muted-foreground">Loading Stripe data...</span>
+                        </div>
+                      )}
+
+                      {stripeError && (
+                        <Card>
+                          <CardContent className="py-4">
+                            <p className="text-sm text-destructive">
+                              Unable to load Stripe data: {stripeError}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {stripeData && (
+                        <div className="space-y-4">
+                          {/* Summary Stats */}
+                          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                            <AdminStatCard
+                              icon={DollarSign}
+                              label="Total Revenue"
+                              value={`$${(stripeData.summary.total_revenue_cents / 100).toFixed(2)}`}
+                              accent="green"
+                            />
+                            <AdminStatCard
+                              icon={CreditCard}
+                              label="Active Subs"
+                              value={String(stripeData.summary.active_subscriptions)}
+                              accent="blue"
+                            />
+                            <AdminStatCard
+                              icon={Zap}
+                              label="Failed Payments"
+                              value={String(stripeData.summary.failed_count)}
+                            />
+                            <AdminStatCard
+                              icon={RefreshCw}
+                              label="Refunded"
+                              value={String(stripeData.summary.refunded_count)}
+                            />
+                          </div>
+
+                          {/* Payments Table */}
+                          {stripeData.payments.length === 0 ? (
+                            <Card>
+                              <CardContent className="py-12 text-center">
+                                <CreditCard className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+                                <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+                              </CardContent>
+                            </Card>
+                          ) : (
+                            <Card>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-base">Recent Payments</CardTitle>
+                              </CardHeader>
+                              <CardContent className="p-0">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Date</TableHead>
+                                      <TableHead>Customer</TableHead>
+                                      <TableHead className="text-right">Amount (AUD)</TableHead>
+                                      <TableHead>Status</TableHead>
+                                      <TableHead className="text-center">Receipt</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {stripeData.payments.map((payment) => {
+                                      const paymentDate = new Date(payment.created * 1000);
+                                      const displayStatus = payment.refunded
+                                        ? "refunded"
+                                        : payment.status;
+                                      const statusClass =
+                                        displayStatus === "succeeded"
+                                          ? "bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800"
+                                          : displayStatus === "failed"
+                                          ? "bg-red-500/10 text-red-700 border-red-200 dark:text-red-400 dark:border-red-800"
+                                          : displayStatus === "refunded"
+                                          ? "bg-yellow-500/10 text-yellow-700 border-yellow-200 dark:text-yellow-400 dark:border-yellow-800"
+                                          : "bg-gray-500/10 text-gray-500 border-gray-200";
+
+                                      return (
+                                        <TableRow key={payment.id}>
+                                          <TableCell className="text-sm whitespace-nowrap">
+                                            {paymentDate.toLocaleDateString("en-AU", {
+                                              day: "numeric",
+                                              month: "short",
+                                              year: "numeric",
+                                            })}
+                                            <span className="block text-xs text-muted-foreground">
+                                              {paymentDate.toLocaleTimeString("en-AU", {
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                              })}
+                                            </span>
+                                          </TableCell>
+                                          <TableCell className="text-sm max-w-[200px] truncate">
+                                            {payment.customer_email || "—"}
+                                            {payment.customer_name && (
+                                              <span className="block text-xs text-muted-foreground truncate">
+                                                {payment.customer_name}
+                                              </span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-right text-sm font-medium">
+                                            ${(payment.amount_cents / 100).toFixed(2)}
+                                          </TableCell>
+                                          <TableCell>
+                                            <Badge
+                                              variant="outline"
+                                              className={`text-xs capitalize ${statusClass}`}
+                                            >
+                                              {displayStatus}
+                                            </Badge>
+                                          </TableCell>
+                                          <TableCell className="text-center">
+                                            {payment.invoice_url ? (
+                                              <a
+                                                href={payment.invoice_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                                onClick={(e) => e.stopPropagation()}
+                                              >
+                                                <ExternalLink className="h-3 w-3" />
+                                                View
+                                              </a>
+                                            ) : (
+                                              <span className="text-xs text-muted-foreground">—</span>
+                                            )}
+                                          </TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              </CardContent>
+                            </Card>
+                          )}
+
+                          {/* Active Subscriptions */}
+                          {stripeData.subscriptions.length > 0 && (
+                            <Card>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-base">Active Subscriptions</CardTitle>
+                              </CardHeader>
+                              <CardContent className="p-0">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Subscription ID</TableHead>
+                                      <TableHead className="text-right">Amount</TableHead>
+                                      <TableHead>Interval</TableHead>
+                                      <TableHead>Renews</TableHead>
+                                      <TableHead>Status</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {stripeData.subscriptions.map((sub) => (
+                                      <TableRow key={sub.id}>
+                                        <TableCell className="text-sm font-mono text-xs max-w-[200px] truncate">
+                                          {sub.id}
+                                        </TableCell>
+                                        <TableCell className="text-right text-sm font-medium">
+                                          ${(sub.plan_amount_cents / 100).toFixed(2)}
+                                        </TableCell>
+                                        <TableCell className="text-sm capitalize">
+                                          {sub.plan_interval}
+                                        </TableCell>
+                                        <TableCell className="text-sm">
+                                          {new Date(sub.current_period_end * 1000).toLocaleDateString("en-AU", {
+                                            day: "numeric",
+                                            month: "short",
+                                            year: "numeric",
+                                          })}
+                                          {sub.cancel_at_period_end && (
+                                            <span className="block text-xs text-yellow-600">Cancels at end</span>
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Badge
+                                            variant="outline"
+                                            className="text-xs bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800 capitalize"
+                                          >
+                                            {sub.status}
+                                          </Badge>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </CardContent>
+                            </Card>
+                          )}
+                        </div>
                       )}
                     </section>
                   </div>
