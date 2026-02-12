@@ -134,7 +134,7 @@ const Index = () => {
                   <Button variant="ghost">Sign In</Button>
                 </Link>
                 <Link to="/auth">
-                  <Button>Get Started Free</Button>
+                  <Button>Get Leads in 60s</Button>
                 </Link>
               </>
             )}
@@ -150,22 +150,20 @@ const Index = () => {
           </Badge>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight">
-            Facebook ads for your
+            Stop paying agencies $2K/month.
             <br />
-            <span className="text-primary inline-block min-w-[200px] transition-all duration-500">
-              {TRADES[tradeIndex]}
-            </span>{" "}
-            business
+            <span className="text-primary">Get leads in 60 seconds.</span>
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Tell us what you do and where you work. We'll create your Facebook ad,
-            launch it, and send you the leads. Five minutes, no marketing degree required.
+            While other <span className="text-foreground font-medium">{TRADES[tradeIndex].toLowerCase()}s</span> are still waiting for quotes, 
+            you could be getting Facebook leads sent straight to your phone. 
+            <strong className="text-foreground">Set up in 60 seconds.</strong>
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
             <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
-              Get customers now
+              Get leads in 60 seconds
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
             <Button
@@ -181,7 +179,7 @@ const Index = () => {
           </div>
 
           <p className="text-sm text-muted-foreground">
-            No lock-in contracts. Cancel anytime. Starts at $49/mo.
+            <strong className="text-foreground">$49/mo</strong> instead of $2000/mo agencies. Cancel anytime.
           </p>
         </div>
       </section>
@@ -191,20 +189,20 @@ const Index = () => {
         <div className="container mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 text-center">
             <div>
-              <div className="text-2xl font-bold">5 min</div>
+              <div className="text-2xl font-bold">60 sec</div>
               <div className="text-sm text-muted-foreground">Setup to live ad</div>
             </div>
             <div>
+              <div className="text-2xl font-bold">$49</div>
+              <div className="text-sm text-muted-foreground">vs $2K agencies</div>
+            </div>
+            <div>
               <div className="text-2xl font-bold">&lt;$15</div>
-              <div className="text-sm text-muted-foreground">Avg cost per lead</div>
+              <div className="text-sm text-muted-foreground">Cost per lead</div>
             </div>
             <div>
-              <div className="text-2xl font-bold">25km</div>
-              <div className="text-sm text-muted-foreground">Local targeting radius</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold">Auto</div>
-              <div className="text-sm text-muted-foreground">SMS to every lead</div>
+              <div className="text-2xl font-bold">47+</div>
+              <div className="text-sm text-muted-foreground">Tradies using it</div>
             </div>
           </div>
         </div>
@@ -214,10 +212,10 @@ const Index = () => {
       <section id="how-it-works" className="container mx-auto px-4 sm:px-6 py-20">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-            Three steps. Five minutes. Done.
+            Three steps. Sixty seconds. Done.
           </h2>
           <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            No agencies, no jargon, no wasted hours learning Facebook Ads Manager.
+            While agencies take weeks and charge $2K/month, you'll be live in 60 seconds.
           </p>
         </div>
 
@@ -280,10 +278,10 @@ const Index = () => {
         <div className="container mx-auto px-4 sm:px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Why tradies switch to ZuckerBot
+              While other tradies wait, you get leads
             </h2>
             <p className="text-lg text-muted-foreground">
-              We're not an agency. We're not a course. We're the tool that replaces both.
+              Ditch the agencies. Skip the courses. Get leads in 60 seconds.
             </p>
           </div>
 
@@ -291,13 +289,13 @@ const Index = () => {
             {[
               {
                 icon: Clock,
-                title: "5 minutes, not 5 hours",
-                desc: "No learning curve. No Ads Manager. Just answer a few questions and you're live.",
+                title: "60 seconds, not 60 days",
+                desc: "While other tradies are still learning Facebook Ads, you're already getting leads.",
               },
               {
                 icon: DollarSign,
-                title: "$49/mo, not $500/mo",
-                desc: "Agencies charge $300–$500/mo for the same thing. Keep the difference.",
+                title: "$49/mo, not $2000/mo",
+                desc: "Stop paying agencies $2K/month. Do it yourself for $49. Keep the difference.",
               },
               {
                 icon: MessageSquare,
@@ -443,13 +441,13 @@ const Index = () => {
       <section className="container mx-auto px-4 sm:px-6 py-24">
         <div className="max-w-3xl mx-auto text-center space-y-8">
           <h2 className="text-3xl sm:text-4xl font-bold">
-            Stop paying agencies. Start getting leads.
+            Don't get left behind. Get leads in 60 seconds.
           </h2>
           <p className="text-xl text-muted-foreground">
-            Set up your first ad in the time it takes to have a coffee.
+            While other tradies are still paying agencies $2K/month, you could be getting leads for $49.
           </p>
           <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
-            Get started — it's free
+            Get leads now — free trial
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
         </div>
