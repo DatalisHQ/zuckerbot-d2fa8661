@@ -332,9 +332,9 @@ const Onboarding = () => {
       }
 
       // Track onboarding completion
-      const effectiveTrade = form.trade || form.customTrade;
+      const tradeName = form.trade === "Other" ? form.customTrade : form.trade;
       trackFunnelEvent.completeOnboarding(
-        effectiveTrade,
+        tradeName,
         form.suburb,
         form.businessName
       );
