@@ -273,7 +273,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ── Why tradies love it ─────────────────────────────────────────── */}
+      {/* ── Why small businesses love it ──────────────────────────────── */}
       <section className="bg-muted/30 border-y border-border/40 py-20">
         <div className="container mx-auto px-4 sm:px-6">
           <div className="text-center mb-16">
