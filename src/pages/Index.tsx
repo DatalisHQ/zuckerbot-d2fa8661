@@ -23,17 +23,17 @@ import {
 
 // ─── Trades for the rotating hero text ──────────────────────────────────────
 
-const TRADES = [
-  "Plumber",
-  "Sparky",
-  "Landscaper",
-  "Cleaner",
-  "Painter",
-  "Roofer",
-  "Concreter",
-  "Chippy",
-  "Fencer",
-  "Tiler",
+const BUSINESSES = [
+  "Restaurant",
+  "Gym",
+  "Salon",
+  "Dentist",
+  "Real Estate Agent",
+  "Café",
+  "Retailer",
+  "Physio",
+  "Accountant",
+  "Tradie",
 ];
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ const Index = () => {
   const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [tradeIndex, setTradeIndex] = useState(0);
+  const [businessIndex, setBusinessIndex] = useState(0);
 
   // Track page view on load
   useEffect(() => {
@@ -54,7 +54,7 @@ const Index = () => {
     
     // Track landing page view
     trackFunnelEvent.viewLanding(source || undefined, medium || undefined);
-    trackPageView('/', 'ZuckerBot — Facebook ads for Aussie tradies', {
+    trackPageView('/', 'ZuckerBot — Facebook Ads in 60 Seconds', {
       source,
       medium,
     });
@@ -75,10 +75,10 @@ const Index = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Rotating trade text
+  // Rotating business text
   useEffect(() => {
     const interval = setInterval(() => {
-      setTradeIndex((prev) => (prev + 1) % TRADES.length);
+      setBusinessIndex((prev) => (prev + 1) % BUSINESSES.length);
     }, 2000);
     return () => clearInterval(interval);
   }, []);
@@ -146,17 +146,17 @@ const Index = () => {
       <section className="container mx-auto px-4 sm:px-6 pt-16 sm:pt-24 pb-16">
         <div className="max-w-4xl mx-auto text-center space-y-8">
           <Badge variant="secondary" className="text-sm px-4 py-1.5">
-            🇦🇺 Built for Aussie tradies
+            🚀 The $49 agency alternative
           </Badge>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight">
             Stop paying agencies $2K/month.
             <br />
-            <span className="text-primary">Get leads in 60 seconds.</span>
+            <span className="text-primary">Run your own Facebook ads in 60 seconds.</span>
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            While other <span className="text-foreground font-medium">{TRADES[tradeIndex].toLowerCase()}s</span> are still waiting for quotes, 
+            While other <span className="text-foreground font-medium">{BUSINESSES[businessIndex]}s</span> are still paying agencies, 
             you could be getting Facebook leads sent straight to your phone. 
             <strong className="text-foreground">Set up in 60 seconds.</strong>
           </p>
@@ -202,7 +202,7 @@ const Index = () => {
             </div>
             <div>
               <div className="text-2xl font-bold">47+</div>
-              <div className="text-sm text-muted-foreground">Tradies using it</div>
+              <div className="text-sm text-muted-foreground">Businesses using it</div>
             </div>
           </div>
         </div>
@@ -229,9 +229,9 @@ const Index = () => {
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
                 <MapPin className="w-6 h-6 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold">Tell us your trade</h3>
+              <h3 className="text-xl font-semibold">Tell us your business</h3>
               <p className="text-muted-foreground leading-relaxed">
-                Pick your trade, enter your suburb, and upload a photo of your work.
+                Pick your business type, enter your suburb, and upload a photo.
                 That's the hard part done.
               </p>
             </CardContent>
@@ -248,7 +248,7 @@ const Index = () => {
               </div>
               <h3 className="text-xl font-semibold">AI writes your ad</h3>
               <p className="text-muted-foreground leading-relaxed">
-                Our AI creates 3 ad options tailored to your trade and area.
+                Our AI creates 3 ad options tailored to your business and area.
                 Pick one, tweak the budget, hit launch.
               </p>
             </CardContent>
@@ -278,7 +278,7 @@ const Index = () => {
         <div className="container mx-auto px-4 sm:px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              While other tradies wait, you get leads
+              Why small businesses love it
             </h2>
             <p className="text-lg text-muted-foreground">
               Ditch the agencies. Skip the courses. Get leads in 60 seconds.
@@ -290,7 +290,7 @@ const Index = () => {
               {
                 icon: Clock,
                 title: "60 seconds, not 60 days",
-                desc: "While other tradies are still learning Facebook Ads, you're already getting leads.",
+                desc: "While competitors are still learning Facebook Ads, you're already getting leads.",
               },
               {
                 icon: DollarSign,
@@ -310,7 +310,7 @@ const Index = () => {
               {
                 icon: TrendingUp,
                 title: "AI-written ad copy",
-                desc: "Our AI knows what works for tradies. No more staring at a blank text box.",
+                desc: "Our AI knows what works for your business type. No more staring at a blank text box.",
               },
               {
                 icon: Shield,
@@ -344,11 +344,11 @@ const Index = () => {
             ))}
           </div>
           <blockquote className="text-2xl sm:text-3xl font-medium leading-relaxed text-foreground">
-            "I was paying a bloke $400 a month to run my Facebook ads. Set this up
-            in my smoko break and got 3 leads the first day."
+            "I was paying an agency $1,800/month to run my Facebook ads. Set this up
+            over lunch and got 5 enquiries the first weekend."
           </blockquote>
           <div className="text-muted-foreground">
-            <span className="font-semibold text-foreground">Mick T.</span> · Plumber · Brisbane
+            <span className="font-semibold text-foreground">Sarah K.</span> · Café Owner · Melbourne
           </div>
         </div>
       </section>
@@ -432,7 +432,7 @@ const Index = () => {
           </div>
 
           <p className="text-center text-sm text-muted-foreground mt-8">
-            Both plans include a 7-day free trial. No credit card required to start.
+            Both plans include a 7-day free trial. Cancel anytime.
           </p>
         </div>
       </section>
@@ -444,7 +444,7 @@ const Index = () => {
             Don't get left behind. Get leads in 60 seconds.
           </h2>
           <p className="text-xl text-muted-foreground">
-            While other tradies are still paying agencies $2K/month, you could be getting leads for $49.
+            While other businesses are still paying agencies $2K/month, you could be getting leads for $49.
           </p>
           <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
             Get leads now — free trial

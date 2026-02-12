@@ -150,10 +150,10 @@ serve(async (req: Request) => {
 
     const results: {
       lead_sms: { sent: boolean; error?: string; twilio_sid?: string };
-      tradie_sms: { sent: boolean; error?: string; twilio_sid?: string };
+      owner_sms: { sent: boolean; error?: string; twilio_sid?: string };
     } = {
       lead_sms: { sent: false },
-      tradie_sms: { sent: false },
+      owner_sms: { sent: false },
     };
 
     // ── Step 1: Send SMS to lead ────────────────────────────────────────────
@@ -201,55 +201,55 @@ serve(async (req: Request) => {
       console.warn("[send-sms] Lead has no phone number, skipping lead SMS");
     }
 
-    // ── Step 2: Send notification SMS to tradie ─────────────────────────────
+    // ── Step 2: Send notification SMS to business owner ────────────────────
     if (business.phone) {
       const leadName = lead.name || "Unknown";
       const leadPhone = lead.phone || "N/A";
       const leadSuburb = lead.suburb || "unknown area";
-      const tradieMessage = `New lead from Facebook! ${leadName} (${leadPhone}) in ${leadSuburb}. Reach out ASAP!`;
+      const ownerMessage = `New lead from Facebook! ${leadName} (${leadPhone}) in ${leadSuburb}. Reach out ASAP!`;
 
-      console.log("[send-sms] Sending notification to tradie:", business.phone);
+      console.log("[send-sms] Sending notification to business owner:", business.phone);
 
-      const tradieResult = await sendTwilioSms(
+      const ownerResult = await sendTwilioSms(
         business.phone,
-        tradieMessage,
+        ownerMessage,
         twilioAccountSid,
         twilioAuthToken,
         twilioPhoneNumber
       );
 
-      if (tradieResult.ok && tradieResult.data.sid) {
-        results.tradie_sms = { sent: true, twilio_sid: tradieResult.data.sid };
-        console.log("[send-sms] Tradie SMS sent:", tradieResult.data.sid);
+      if (ownerResult.ok && ownerResult.data.sid) {
+        results.owner_sms = { sent: true, twilio_sid: ownerResult.data.sid };
+        console.log("[send-sms] Owner SMS sent:", ownerResult.data.sid);
 
         // Log to sms_log
         await supabase.from("sms_log").insert({
           lead_id: lead.id,
           to_phone: business.phone,
-          message: tradieMessage,
+          message: ownerMessage,
           status: "sent",
-          twilio_sid: tradieResult.data.sid,
+          twilio_sid: ownerResult.data.sid,
         });
       } else {
         const errMsg =
-          tradieResult.data.error_message || "Failed to send SMS to tradie";
-        results.tradie_sms = { sent: false, error: errMsg };
-        console.error("[send-sms] Tradie SMS failed:", tradieResult.data);
+          ownerResult.data.error_message || "Failed to send SMS to business owner";
+        results.owner_sms = { sent: false, error: errMsg };
+        console.error("[send-sms] Owner SMS failed:", ownerResult.data);
 
         // Log failure to sms_log
         await supabase.from("sms_log").insert({
           lead_id: lead.id,
           to_phone: business.phone,
-          message: tradieMessage,
+          message: ownerMessage,
           status: "failed",
         });
       }
     } else {
-      results.tradie_sms = {
+      results.owner_sms = {
         sent: false,
         error: "Business has no phone number",
       };
-      console.warn("[send-sms] Business has no phone number, skipping tradie SMS");
+      console.warn("[send-sms] Business has no phone number, skipping owner SMS");
     }
 
     // ── Step 3: Mark lead as sms_sent ───────────────────────────────────────
@@ -269,9 +269,9 @@ serve(async (req: Request) => {
     // ── Return response ─────────────────────────────────────────────────────
     return new Response(
       JSON.stringify({
-        success: results.lead_sms.sent || results.tradie_sms.sent,
+        success: results.lead_sms.sent || results.owner_sms.sent,
         lead_sms: results.lead_sms,
-        tradie_sms: results.tradie_sms,
+        owner_sms: results.owner_sms,
       }),
       {
         status: 200,

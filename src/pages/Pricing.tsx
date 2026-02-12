@@ -79,7 +79,7 @@ export default function Pricing() {
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4">
-            Simple pricing for busy tradies
+            Simple pricing for small businesses
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             Stop wasting time on ads. Let ZuckerBot fill your pipeline with quality leads — so you can get back on the tools.
@@ -94,7 +94,7 @@ export default function Pricing() {
                 <Wrench className="h-5 w-5 text-muted-foreground" />
                 <CardTitle>Starter</CardTitle>
               </div>
-              <CardDescription>Perfect for solo tradies getting started with Facebook ads</CardDescription>
+              <CardDescription>Perfect for businesses getting started with Facebook ads</CardDescription>
               <div className="pt-2">
                 <span className="text-4xl font-bold">$49</span>
                 <span className="text-muted-foreground">/mo AUD</span>
@@ -132,7 +132,7 @@ export default function Pricing() {
                 <Zap className="h-5 w-5 text-primary" />
                 <CardTitle>Pro</CardTitle>
               </div>
-              <CardDescription>For tradies ready to scale — more campaigns, more leads, more jobs</CardDescription>
+              <CardDescription>For growing businesses — more campaigns, more leads, more customers</CardDescription>
               <div className="pt-2">
                 <span className="text-4xl font-bold">$99</span>
                 <span className="text-muted-foreground">/mo AUD</span>

@@ -103,7 +103,7 @@ function buildCampaignLaunchedHtml(
           <tr>
             <td style="background-color:#fafafa;padding:24px 40px;border-top:1px solid #e4e4e7;">
               <p style="margin:0;color:#a1a1aa;font-size:12px;line-height:1.5;text-align:center;">
-                ZuckerBot — Facebook ads on autopilot for tradies 🇦🇺<br>
+                ZuckerBot — Facebook ads on autopilot for small businesses 🇦🇺<br>
                 <a href="https://zuckerbot.ai/unsubscribe" style="color:#a1a1aa;text-decoration:underline;">Unsubscribe</a>
               </p>
             </td>

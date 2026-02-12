@@ -47,22 +47,18 @@ import { cn } from "@/lib/utils";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const TRADES = [
-  "Plumber",
-  "Electrician",
-  "Carpenter",
-  "Landscaper",
-  "Cleaner",
-  "Painter",
-  "Roofer",
-  "Fencer",
-  "Concreter",
-  "Tiler",
-  "Bricklayer",
-  "HVAC/Air Con",
-  "Pest Control",
-  "Pool Maintenance",
-  "Handyman",
+const BUSINESS_TYPES = [
+  "Restaurant / Café",
+  "Gym / Fitness",
+  "Beauty / Salon",
+  "Dental / Medical",
+  "Real Estate",
+  "Retail / E-commerce",
+  "Professional Services",
+  "Trades / Home Services",
+  "Health & Wellness",
+  "Education / Tutoring",
+  "Automotive",
 ] as const;
 
 const STATES = ["QLD", "NSW", "VIC", "SA", "WA", "TAS", "NT", "ACT"] as const;
@@ -436,7 +432,7 @@ const Onboarding = () => {
           <Card>
             <CardContent className="pt-6 space-y-6">
               <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold">What's your trade?</h2>
+                <h2 className="text-2xl font-bold">What's your business?</h2>
                 <p className="text-muted-foreground">
                   Tell us what you do — we'll tailor your ads to suit.
                 </p>
@@ -444,7 +440,7 @@ const Onboarding = () => {
 
               {/* Trade selector (searchable combobox) */}
               <div className="space-y-2">
-                <Label>Trade</Label>
+                <Label>Business type</Label>
                 <Popover open={tradeOpen} onOpenChange={setTradeOpen}>
                   <PopoverTrigger asChild>
                     <Button
@@ -453,17 +449,17 @@ const Onboarding = () => {
                       aria-expanded={tradeOpen}
                       className="w-full justify-between font-normal"
                     >
-                      {form.trade || "Select your trade…"}
+                      {form.trade || "Select your business type…"}
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                     <Command>
-                      <CommandInput placeholder="Search trades…" />
+                      <CommandInput placeholder="Search business types…" />
                       <CommandList>
-                        <CommandEmpty>No trade found.</CommandEmpty>
+                        <CommandEmpty>No business type found.</CommandEmpty>
                         <CommandGroup>
-                          {TRADES.map((t) => (
+                          {BUSINESS_TYPES.map((t) => (
                             <CommandItem
                               key={t}
                               value={t}
@@ -618,10 +614,10 @@ const Onboarding = () => {
           <Card>
             <CardContent className="pt-6 space-y-6">
               <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold">Show off your work</h2>
+                <h2 className="text-2xl font-bold">Show off your business</h2>
                 <p className="text-muted-foreground">
-                  Upload 1–3 photos of your best jobs. These will be used in
-                  your Facebook ads.
+                  Upload 1–3 photos — your space, products, or happy customers.
+                  These will be used in your Facebook ads.
                 </p>
               </div>
 

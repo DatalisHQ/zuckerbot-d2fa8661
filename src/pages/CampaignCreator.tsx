@@ -44,19 +44,19 @@ function fallbackAdVariants(business: Business): AdVariant[] {
     {
       id: 1,
       headline: `${suburb} Locals Love ${name}`,
-      body: `5-star ${tradeLower} right here in ${suburb}. Licensed, insured, and actually on time. Free quotes — no call-out fee.`,
-      cta: "Get Quote",
+      body: `5-star ${tradeLower} right in ${suburb}. Book online or call — new customers get a special intro offer.`,
+      cta: "Learn More",
     },
     {
       id: 2,
-      headline: `Need a ${trade} Today?`,
-      body: `${name} has same-day availability in ${suburb} & surrounds. Don't wait — spots fill up fast. Call now for a fixed-price quote.`,
-      cta: "Call Now",
+      headline: `Looking for a ${trade} in ${suburb}?`,
+      body: `${name} has openings this week in ${suburb} & surrounds. Don't wait — spots fill fast.`,
+      cta: "Book Now",
     },
     {
       id: 3,
-      headline: `${name} — ${suburb} ${trade}`,
-      body: `Local ${tradeLower} doing quality work at honest prices. See why ${suburb} locals keep coming back. No surprises, just results.`,
+      headline: `${name} — ${suburb}'s Favourite ${trade}`,
+      body: `Local ${tradeLower} delivering quality results at honest prices. See why ${suburb} keeps coming back.`,
       cta: "Learn More",
     },
   ];
@@ -358,7 +358,7 @@ const CampaignCreator = () => {
                       id="usp"
                       value={usp}
                       onChange={(e) => setUsp(e.target.value)}
-                      placeholder="e.g. 20 years experience, same-day service, family owned"
+                      placeholder="e.g. 20 years experience, award-winning service, locally owned"
                     />
                   </div>
                   <div className="space-y-2">

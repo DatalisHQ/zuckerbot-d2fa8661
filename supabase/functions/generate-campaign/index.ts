@@ -49,6 +49,17 @@ const TRADE_INTERESTS: Record<string, string[]> = {
   fencer: ["home improvement", "fencing", "outdoor living", "home security"],
   tiler: ["home improvement", "bathroom renovation", "tiling", "home renovation"],
   builder: ["home improvement", "construction", "home renovation", "building"],
+  restaurant: ["restaurants", "food and drink", "dining out", "local restaurants"],
+  gym: ["fitness", "gym", "health and wellness", "exercise"],
+  salon: ["beauty", "hair salon", "beauty salon", "personal care"],
+  dental: ["dental care", "dentist", "health", "medical"],
+  real_estate: ["real estate", "property", "home buying", "investment"],
+  retail: ["shopping", "retail", "online shopping", "e-commerce"],
+  professional_services: ["business services", "consulting", "professional services", "accounting"],
+  cafe: ["coffee", "cafes", "food and drink", "brunch"],
+  health_wellness: ["health and wellness", "wellness", "self care", "fitness"],
+  education: ["education", "tutoring", "learning", "courses"],
+  automotive: ["automotive", "cars", "auto repair", "car maintenance"],
 };
 
 const DEFAULT_INTERESTS = ["home improvement", "home maintenance", "home services"];
@@ -133,7 +144,7 @@ serve(async (req: Request) => {
     const locationLabel = [business.suburb, business.state].filter(Boolean).join(", ");
 
     const systemPrompt =
-      `You are Australia's best Facebook ad copywriter, specialising in local trades and service businesses. ` +
+      `You are Australia's best Facebook ad copywriter, specialising in local small businesses — restaurants, gyms, salons, dental practices, retail, professional services, and tradies. ` +
       `You write ads that feel human, specific, and local — never generic or corporate. ` +
       `You understand that Meta's Andromeda algorithm rewards creative diversity, so each variant must use a genuinely different angle and tone. ` +
       `You write in natural Australian English. Respond ONLY with valid JSON — no markdown fences, no explanation.`;
@@ -141,7 +152,7 @@ serve(async (req: Request) => {
     const userPrompt =
       `Write 3 high-converting Facebook ad variants for this business:\n\n` +
       `Business: ${business.name}\n` +
-      `Trade/Service: ${tradeLabel}\n` +
+      `Business type: ${tradeLabel}\n` +
       `Location: ${locationLabel} ${business.postcode || ""}\n` +
       `${usp ? `Unique selling point: ${usp}\n` : ""}` +
       `${current_offer ? `Current offer/promotion: ${current_offer}\n` : ""}` +
@@ -157,13 +168,13 @@ serve(async (req: Request) => {
       `RULES — follow these exactly:\n` +
       `- Headlines ≤40 chars. Body ≤125 chars. Hard limits.\n` +
       `- Australian English ("metre", "colour", "organise").\n` +
-      `- Reference the SPECIFIC trade — e.g. "plumber", "sparkie", "landscaper". Never say "tradesperson" or repeat the trade name generically.\n` +
+      `- Reference the SPECIFIC business type naturally. A café is a café, a gym is a gym. Don't say "business" generically.\n` +
       `- Use the suburb name naturally — locals should feel like this ad is for THEIR area.\n` +
       `- Each variant must use a DIFFERENT psychological angle:\n` +
       `  1. Social proof / trust (reviews, years in business, "locals trust us")\n` +
       `  2. Urgency / availability ("same-day", "booking up fast", "this week only")\n` +
       `  3. Value / outcome ("free quote", "fixed price", "no call-out fee", the end result they get)\n` +
-      `- Write like a local tradie would talk, not a marketing agency. Keep it punchy.\n` +
+      `- Write like a smart local business owner — conversational, confident, not corporate. Keep it punchy.\n` +
       `- NO clichés like "your one-stop shop" or "we've got you covered".\n` +
       `- The CTA should match the angle — e.g. urgency → "Call Now", trust → "Learn More", value → "Get Quote".\n` +
       `- If a unique selling point is provided, weave it naturally into at least 2 of the 3 variants.\n` +

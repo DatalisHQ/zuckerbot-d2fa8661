@@ -53,7 +53,7 @@ function buildTrialEndingHtml(name?: string): string {
                       <tr>
                         <td>
                           <p style="margin:0 0 4px;color:#2563eb;font-size:15px;font-weight:700;">Starter — $49/mo</p>
-                          <p style="margin:0;color:#3f3f46;font-size:14px;line-height:1.5;">Perfect for tradies just getting started with Facebook ads</p>
+                          <p style="margin:0;color:#3f3f46;font-size:14px;line-height:1.5;">Perfect for businesses just getting started</p>
                         </td>
                       </tr>
                     </table>
@@ -66,7 +66,7 @@ function buildTrialEndingHtml(name?: string): string {
                       <tr>
                         <td>
                           <p style="margin:0 0 4px;color:#2563eb;font-size:15px;font-weight:700;">Pro — $99/mo</p>
-                          <p style="margin:0;color:#3f3f46;font-size:14px;line-height:1.5;">For busy tradies who want more campaigns and advanced features</p>
+                          <p style="margin:0;color:#3f3f46;font-size:14px;line-height:1.5;">For growing businesses who want more</p>
                         </td>
                       </tr>
                     </table>
@@ -75,7 +75,7 @@ function buildTrialEndingHtml(name?: string): string {
               </table>
 
               <p style="margin:0 0 32px;color:#3f3f46;font-size:16px;line-height:1.6;">
-                Either way, it's less than the cost of a single job — and most tradies land multiple jobs a week through their ads. Pretty solid ROI if you ask me. 📈
+                Either way, it's less than the cost of a single job — and most businesses land multiple customers a week through their ads. Pretty solid ROI if you ask me. 📈
               </p>
 
               <!-- CTA Button -->
@@ -110,7 +110,7 @@ function buildTrialEndingHtml(name?: string): string {
           <tr>
             <td style="background-color:#fafafa;padding:24px 40px;border-top:1px solid #e4e4e7;">
               <p style="margin:0;color:#a1a1aa;font-size:12px;line-height:1.5;text-align:center;">
-                ZuckerBot — Facebook ads on autopilot for tradies 🇦🇺<br>
+                ZuckerBot — Facebook ads on autopilot for small businesses 🇦🇺<br>
                 <a href="https://zuckerbot.ai/unsubscribe" style="color:#a1a1aa;text-decoration:underline;">Unsubscribe</a>
               </p>
             </td>

@@ -1,5 +1,5 @@
 // sync-conversions — Meta Conversion API feedback loop
-// When a tradie marks a lead as "won" or "lost", we tell Meta's CAPI
+// When a business owner marks a lead as "won" or "lost", we tell Meta's CAPI
 // so Andromeda optimises for better quality leads.
 //
 // Input: { lead_id: string, quality: "good" | "bad" }

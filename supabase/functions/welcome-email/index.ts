@@ -39,7 +39,7 @@ function buildWelcomeHtml(name?: string): string {
             <td style="padding:40px 40px 24px;">
               <h2 style="margin:0 0 16px;color:#18181b;font-size:22px;font-weight:600;">G'day ${firstName}! 👋</h2>
               <p style="margin:0 0 16px;color:#3f3f46;font-size:16px;line-height:1.6;">
-                I'm Davis — I built ZuckerBot because I reckon every tradie deserves customers rolling in without the headache of figuring out Facebook ads.
+                I'm Davis — I built ZuckerBot because I reckon every small business deserves customers rolling in without the headache of figuring out Facebook ads.
               </p>
               <p style="margin:0 0 24px;color:#3f3f46;font-size:16px;line-height:1.6;">
                 You've got a <strong>7-day free trial</strong> to give it a proper go. Here's how it works — dead simple:
@@ -88,7 +88,7 @@ function buildWelcomeHtml(name?: string): string {
               </table>
 
               <p style="margin:0 0 32px;color:#3f3f46;font-size:16px;line-height:1.6;">
-                Most tradies have their first campaign running in under 5 minutes. No marketing degree needed. 💪
+                Most businesses have their first campaign running in under 5 minutes. No marketing degree needed. 💪
               </p>
 
               <!-- CTA Button -->
@@ -119,7 +119,7 @@ function buildWelcomeHtml(name?: string): string {
           <tr>
             <td style="background-color:#fafafa;padding:24px 40px;border-top:1px solid #e4e4e7;">
               <p style="margin:0;color:#a1a1aa;font-size:12px;line-height:1.5;text-align:center;">
-                ZuckerBot — Facebook ads on autopilot for tradies 🇦🇺<br>
+                ZuckerBot — Facebook ads on autopilot for small businesses 🇦🇺<br>
                 <a href="https://zuckerbot.ai/unsubscribe" style="color:#a1a1aa;text-decoration:underline;">Unsubscribe</a>
               </p>
             </td>
