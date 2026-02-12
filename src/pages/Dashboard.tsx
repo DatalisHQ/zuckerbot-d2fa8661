@@ -408,7 +408,7 @@ const Dashboard = () => {
 
       // Fetch all admin data from edge function (bypasses RLS)
       const res = await fetch(
-        `https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/admin-data`,
+        `https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/simple-admin`,
         {
           method: "POST",
           headers: {
