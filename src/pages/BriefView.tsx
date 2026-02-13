@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
 import {
   Zap,
   Download,
@@ -14,6 +15,7 @@ import {
   Calendar,
   AlertCircle,
   Loader2,
+  BarChart3,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -62,6 +64,168 @@ function renderMarkdown(md: string): string {
     .join('\n');
 
   return html;
+}
+
+// ─── ROI Calculator ──────────────────────────────────────────────────────────
+
+function ROICalculator({ plan }: { plan: any }) {
+  // Extract baseline metrics from the execution plan
+  const campaigns = plan.campaigns || [];
+  const baselineDailyBudgetCents = campaigns.reduce(
+    (sum: number, c: any) => sum + (c.budget_daily_cents || 2000), 0
+  );
+
+  // Get average target metrics across campaigns
+  const avgCtrPct = campaigns.reduce(
+    (sum: number, c: any) => sum + (c.kpis?.target_ctr_pct || 1.5), 0
+  ) / Math.max(campaigns.length, 1);
+  const avgCpcCents = campaigns.reduce(
+    (sum: number, c: any) => sum + (c.kpis?.target_cpc_cents || 80), 0
+  ) / Math.max(campaigns.length, 1);
+  const avgCplCents = campaigns.reduce(
+    (sum: number, c: any) => sum + (c.kpis?.target_cpl_cents || 1500), 0
+  ) / Math.max(campaigns.length, 1);
+
+  // Slider state — daily budget in dollars
+  const baselineDailyDollars = Math.round(baselineDailyBudgetCents / 100);
+  const [dailyBudget, setDailyBudget] = useState(
+    Math.max(10, Math.min(baselineDailyDollars, 500))
+  );
+
+  // Calculate projections based on slider
+  const projections = useMemo(() => {
+    const monthlySpend = dailyBudget * 30;
+    const cpmEstimate = (avgCpcCents / 100) / (avgCtrPct / 100); // CPM from CPC and CTR
+    const monthlyImpressions = Math.round((monthlySpend / (cpmEstimate > 0 ? cpmEstimate : 5)) * 1000);
+    const monthlyClicks = Math.round(monthlyImpressions * (avgCtrPct / 100));
+    const costPerClick = monthlyClicks > 0 ? monthlySpend / monthlyClicks : 0;
+    const conversionRate = avgCplCents > 0 ? (avgCpcCents / avgCplCents) : 0.1; // clicks to leads
+    const monthlyLeads = Math.round(monthlyClicks * Math.min(conversionRate, 0.15));
+    const costPerLead = monthlyLeads > 0 ? monthlySpend / monthlyLeads : 0;
+
+    // Assume average customer value (conservative)
+    const avgCustomerValue = 500; // $500 per customer (conservative for most small businesses)
+    const leadToCustomerRate = 0.2; // 20% of leads become customers
+    const monthlyCustomers = Math.round(monthlyLeads * leadToCustomerRate);
+    const monthlyRevenue = monthlyCustomers * avgCustomerValue;
+    const roi = monthlySpend > 0 ? ((monthlyRevenue - monthlySpend) / monthlySpend) * 100 : 0;
+
+    return {
+      monthlySpend,
+      monthlyImpressions,
+      monthlyClicks,
+      costPerClick,
+      monthlyLeads: Math.max(monthlyLeads, 1),
+      costPerLead,
+      monthlyCustomers: Math.max(monthlyCustomers, 0),
+      monthlyRevenue,
+      roi,
+    };
+  }, [dailyBudget, avgCtrPct, avgCpcCents, avgCplCents]);
+
+  const formatNum = (n: number) => {
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return n.toLocaleString();
+  };
+
+  return (
+    <div className="mb-12 print:mb-8">
+      <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2 pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+        <BarChart3 className="w-5 h-5 text-blue-500" />
+        Interactive ROI Calculator
+      </h2>
+      <p className="text-sm text-slate-500 mb-6">
+        Adjust your daily ad spend to see projected results based on industry benchmarks for your business type.
+      </p>
+
+      {/* Budget slider */}
+      <div className="p-6 rounded-xl bg-gradient-to-br from-blue-50 to-slate-50 dark:from-blue-950/30 dark:to-slate-900 border border-blue-200 dark:border-blue-800 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Daily Ad Spend
+          </label>
+          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+            ${dailyBudget}/day
+          </div>
+        </div>
+        <Slider
+          value={[dailyBudget]}
+          onValueChange={([val]) => setDailyBudget(val)}
+          min={10}
+          max={500}
+          step={5}
+          className="mb-3"
+        />
+        <div className="flex justify-between text-xs text-slate-400">
+          <span>$10/day</span>
+          <span className="text-blue-500 font-medium">
+            ${(dailyBudget * 30).toLocaleString()}/month
+          </span>
+          <span>$500/day</span>
+        </div>
+      </div>
+
+      {/* Projected results grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+          <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+            {formatNum(projections.monthlyImpressions)}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">Monthly Impressions</div>
+        </div>
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+          <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+            {formatNum(projections.monthlyClicks)}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">Monthly Clicks</div>
+        </div>
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+            {projections.monthlyLeads}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">Estimated Leads</div>
+        </div>
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+          <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+            ${projections.costPerLead.toFixed(0)}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">Cost Per Lead</div>
+        </div>
+      </div>
+
+      {/* Revenue projection */}
+      <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4 uppercase tracking-wide">
+          Revenue Projection
+        </h3>
+        <div className="grid grid-cols-3 gap-6 text-center">
+          <div>
+            <div className="text-sm text-slate-500 mb-1">Monthly Spend</div>
+            <div className="text-xl font-bold text-red-500">
+              -${projections.monthlySpend.toLocaleString()}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-slate-500 mb-1">Est. Revenue</div>
+            <div className="text-xl font-bold text-green-600 dark:text-green-400">
+              +${projections.monthlyRevenue.toLocaleString()}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-slate-500 mb-1">Projected ROI</div>
+            <div className={`text-xl font-bold ${projections.roi > 0 ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
+              {projections.roi > 0 ? "+" : ""}{projections.roi.toFixed(0)}%
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-slate-400 mt-4 text-center">
+          Based on {avgCtrPct.toFixed(1)}% CTR, ${(avgCpcCents/100).toFixed(2)} CPC, and 20% lead-to-customer conversion.
+          Assumes $500 average customer value. Actual results may vary.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -337,6 +501,11 @@ export default function BriefView() {
               ))}
             </div>
           </div>
+        )}
+
+        {/* Interactive ROI Calculator */}
+        {plan?.campaigns && plan.campaigns.length > 0 && (
+          <ROICalculator plan={plan} />
         )}
 
         {/* Full brief markdown */}
