@@ -1,4 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+
+// ─── Supabase client for logging ─────────────────────────────────────────────
+const supabaseAdmin = createClient(
+  Deno.env.get("SUPABASE_URL") ?? "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  { auth: { persistSession: false } }
+);
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -290,6 +298,17 @@ serve(async (req: Request) => {
         );
       } catch (err) {
         console.error("[generate-preview] Scrape failed:", err);
+
+        // Log scrape failure
+        await supabaseAdmin.from("preview_logs").insert({
+          url,
+          has_images: false,
+          ip_address: ip,
+          user_agent: req.headers.get("user-agent") || null,
+          success: false,
+          error_message: `Scrape failed: ${err.message}`,
+        }).catch(() => {});
+
         return new Response(
           JSON.stringify({
             error: "scrape_failed",
@@ -326,6 +345,19 @@ serve(async (req: Request) => {
       businessName
     );
 
+    // Log successful preview
+    await supabaseAdmin.from("preview_logs").insert({
+      url: url || null,
+      has_images: !!images && images.length > 0,
+      image_count: images?.length || 0,
+      business_name: businessName,
+      ip_address: ip,
+      user_agent: req.headers.get("user-agent") || null,
+      success: true,
+    }).then(({ error: logError }) => {
+      if (logError) console.error("[generate-preview] Log insert error:", logError);
+    });
+
     return new Response(
       JSON.stringify({
         business_name: businessName,
@@ -339,6 +371,21 @@ serve(async (req: Request) => {
     );
   } catch (error) {
     console.error("[generate-preview] Unexpected error:", error);
+
+    // Log failed preview
+    const failIp =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      req.headers.get("cf-connecting-ip") ||
+      "unknown";
+    await supabaseAdmin.from("preview_logs").insert({
+      url: null,
+      has_images: false,
+      ip_address: failIp,
+      user_agent: req.headers.get("user-agent") || null,
+      success: false,
+      error_message: error.message || "Unknown error",
+    }).catch(() => {});
+
     return new Response(
       JSON.stringify({
         error: error.message || "Something went wrong. Please try again.",
