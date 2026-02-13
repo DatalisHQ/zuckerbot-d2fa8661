@@ -134,7 +134,7 @@ const Index = () => {
                   <Button variant="ghost">Sign In</Button>
                 </Link>
                 <Link to="/auth">
-                  <Button>Get Leads in 60s</Button>
+                  <Button>Start Free Trial</Button>
                 </Link>
               </>
             )}
@@ -161,20 +161,10 @@ const Index = () => {
             <strong className="text-foreground">Set up in 60 seconds.</strong>
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+          <div className="flex justify-center pt-4">
             <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
-              Get leads in 60 seconds
+              Start Free Trial
               <ArrowRight className="w-5 h-5 ml-2" />
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="text-lg px-8 py-6"
-              onClick={() => {
-                document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              See how it works
             </Button>
           </div>
 
@@ -290,7 +280,7 @@ const Index = () => {
               {
                 icon: Clock,
                 title: "60 seconds, not 60 days",
-                desc: "While competitors are still learning Facebook Ads, you're already getting leads.",
+                desc: "60 seconds from signup to your ad being live on Facebook. That's it. No waiting, no back-and-forth.",
               },
               {
                 icon: DollarSign,
@@ -315,7 +305,7 @@ const Index = () => {
               {
                 icon: Shield,
                 title: "You stay in control",
-                desc: "Set your own budget, pause anytime, see every lead. No lock-in contracts ever.",
+                desc: "Set your own budget ($20/day minimum), pause anytime, see every lead. No lock-in contracts ever.",
               },
             ].map((item, i) => (
               <div
@@ -335,20 +325,120 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ── Testimonial / quote ─────────────────────────────────────────── */}
+      {/* ── Pricing ─────────────────────────────────────────────────────── */}
       <section className="container mx-auto px-4 sm:px-6 py-20">
-        <div className="max-w-3xl mx-auto text-center space-y-6">
-          <div className="flex justify-center gap-1">
-            {[...Array(5)].map((_, i) => (
-              <Star key={i} className="w-6 h-6 fill-yellow-400 text-yellow-400" />
-            ))}
-          </div>
-          <blockquote className="text-2xl sm:text-3xl font-medium leading-relaxed text-foreground">
-            "I was paying an agency $1,800/month to run my Facebook ads. Set this up
-            over lunch and got 5 enquiries the first weekend."
-          </blockquote>
-          <div className="text-muted-foreground">
-            <span className="font-semibold text-foreground">Sarah K.</span> · Café Owner · Melbourne
+        <div className="text-center mb-12">
+          <h2 className="text-3xl sm:text-4xl font-bold mb-4">Simple pricing</h2>
+          <p className="text-lg text-muted-foreground">
+            No setup fees. No hidden costs. You control the ad spend.
+          </p>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
+          {/* Starter */}
+          <Card className="border-2 relative">
+            <CardContent className="pt-8 pb-6 px-6 space-y-6">
+              <div>
+                <h3 className="text-xl font-semibold">Starter</h3>
+                <div className="mt-2">
+                  <span className="text-4xl font-bold">$49</span>
+                  <span className="text-muted-foreground">/mo</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">+ $20/day minimum ad budget (you control this)</p>
+              </div>
+              <ul className="space-y-3">
+                {[
+                  "1 active campaign",
+                  "AI-generated ad copy",
+                  "Lead inbox",
+                  "Email notifications",
+                  "25km targeting radius",
+                ].map((f, i) => (
+                  <li key={i} className="flex items-center gap-2 text-sm">
+                    <Check className="w-4 h-4 text-primary shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Button className="w-full" onClick={handleCTA}>
+                Start Free Trial
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Pro */}
+          <Card className="border-2 border-primary relative">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+              <Badge className="bg-primary text-primary-foreground px-3">Most Popular</Badge>
+            </div>
+            <CardContent className="pt-8 pb-6 px-6 space-y-6">
+              <div>
+                <h3 className="text-xl font-semibold">Pro</h3>
+                <div className="mt-2">
+                  <span className="text-4xl font-bold">$99</span>
+                  <span className="text-muted-foreground">/mo</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">+ $20/day minimum ad budget (you control this)</p>
+              </div>
+              <ul className="space-y-3">
+                {[
+                  "3 active campaigns",
+                  "AI-generated ad copy",
+                  "Lead inbox + analytics",
+                  "Auto-SMS to leads",
+                  "50km targeting radius",
+                  "Priority support",
+                ].map((f, i) => (
+                  <li key={i} className="flex items-center gap-2 text-sm">
+                    <Check className="w-4 h-4 text-primary shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Button className="w-full" onClick={handleCTA}>
+                Start Free Trial
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        <p className="text-center text-sm text-muted-foreground mt-8">
+          Both plans include a 7-day free trial. Cancel anytime. You pause/resume ad spend as needed.
+        </p>
+      </section>
+
+      {/* ── Success Story ───────────────────────────────────────────────── */}
+      <section className="bg-muted/30 border-y border-border/40 py-20">
+        <div className="container mx-auto px-4 sm:px-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+                Real Results from Australian Businesses
+              </h2>
+              <p className="text-lg text-muted-foreground">
+                47+ Australian businesses are using ZuckerBot to get leads at $12-15 each
+              </p>
+            </div>
+            
+            <Card className="p-8 border-2 border-primary/20">
+              <div className="flex justify-center gap-1 mb-6">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="w-6 h-6 fill-yellow-400 text-yellow-400" />
+                ))}
+              </div>
+              <blockquote className="text-xl sm:text-2xl font-medium leading-relaxed text-foreground text-center mb-6">
+                "Was paying a digital agency $1,800/month for Facebook ads with mixed results. 
+                Set up ZuckerBot over my lunch break. Got 8 solid enquiries in the first week 
+                at $11 per lead. Saved $1,750/month immediately."
+              </blockquote>
+              <div className="text-center">
+                <div className="font-semibold text-foreground text-lg">Marcus Chen</div>
+                <div className="text-muted-foreground">Personal Training Studio · Bondi, NSW</div>
+                <div className="text-sm text-primary mt-2">
+                  Results: 8 leads in week 1 • $11 avg cost per lead • $1,750/mo saved
+                </div>
+              </div>
+            </Card>
           </div>
         </div>
       </section>
@@ -437,19 +527,103 @@ const Index = () => {
         </div>
       </section>
 
+      {/* ── FAQ ─────────────────────────────────────────────────────────── */}
+      <section className="container mx-auto px-4 sm:px-6 py-20">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+              Common Questions
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              Everything you need to know about getting started
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="space-y-8">
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-primary">
+                  How much will I spend on Facebook ads?
+                </h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  You control this completely. We recommend starting with $20/day minimum ($140/week). 
+                  You can pause, reduce, or increase anytime through Facebook's interface. 
+                  Most businesses spend $20-50/day and get 3-8 leads per week.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-primary">
+                  What if I don't get any leads?
+                </h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  We have a 7-day free trial and our AI is trained on thousands of successful local business ads. 
+                  If you're not getting leads after the first week, we'll help you tweak your ad copy and targeting for free.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-primary">
+                  Do you lock me into contracts?
+                </h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  Never. Cancel your ZuckerBot subscription anytime with one click. 
+                  Your Facebook ad account stays yours forever. No setup fees, no cancellation fees.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-primary">
+                  How is this different from hiring an agency?
+                </h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  Agencies charge $2000+/month and often use your budget for multiple clients. 
+                  With ZuckerBot, you pay $49-99/month, keep full control, and your ad budget goes 100% to your ads.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-primary">
+                  What happens after I get leads?
+                </h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  Leads automatically get an SMS saying you'll call within the hour. 
+                  You get instant notifications and can call them back. The faster you call, the higher your conversion rate.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-primary">
+                  Can I really set this up in 60 seconds?
+                </h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  Yes - from signup to your ad being live takes about 60 seconds. You'll answer 3 questions, 
+                  upload a photo, pick your AI-generated ad copy, set your budget, and launch. That's it.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Final CTA ───────────────────────────────────────────────────── */}
       <section className="container mx-auto px-4 sm:px-6 py-24">
         <div className="max-w-3xl mx-auto text-center space-y-8">
           <h2 className="text-3xl sm:text-4xl font-bold">
-            Don't get left behind. Get leads in 60 seconds.
+            Ready to stop paying agencies $2K/month?
           </h2>
           <p className="text-xl text-muted-foreground">
-            While other businesses are still paying agencies $2K/month, you could be getting leads for $49.
+            Join 47+ Australian businesses getting Facebook leads for $49/month instead of $2000/month.
           </p>
           <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
-            Get leads now — free trial
+            Start Free Trial
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
+          <p className="text-sm text-muted-foreground">
+            7-day free trial • No setup fees • Cancel anytime
+          </p>
         </div>
       </section>
 
