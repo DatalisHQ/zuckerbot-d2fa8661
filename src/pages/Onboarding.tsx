@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
 import { mpFunnel } from "@/lib/mixpanel";
 import {
@@ -31,17 +33,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import {
   Loader2,
-  Wrench,
+  Building,
   MapPin,
-  Camera,
   ChevronLeft,
   ChevronRight,
   Check,
   ChevronsUpDown,
-  Upload,
-  X,
-  ImagePlus,
   LogOut,
+  Globe,
 } from "lucide-react";
 import { useEnhancedAuth, validateSession } from "@/utils/auth";
 import { cn } from "@/lib/utils";
@@ -62,33 +61,43 @@ const BUSINESS_TYPES = [
   "Automotive",
 ] as const;
 
+/** Business types that default to "local" targeting */
+const LOCAL_BUSINESS_TYPES = new Set([
+  "Restaurant / Café",
+  "Gym / Fitness",
+  "Beauty / Salon",
+  "Dental / Medical",
+  "Real Estate",
+  "Trades / Home Services",
+  "Health & Wellness",
+  "Automotive",
+  "Education / Tutoring",
+]);
+
+/** Business types that default to "online" targeting */
+const ONLINE_BUSINESS_TYPES = new Set([
+  "Retail / E-commerce",
+  "Professional Services",
+]);
+
 const STATES = ["QLD", "NSW", "VIC", "SA", "WA", "TAS", "NT", "ACT"] as const;
-
-const STEPS = [
-  { label: "Your Trade", icon: Wrench },
-  { label: "Location", icon: MapPin },
-  { label: "Photos", icon: Camera },
-] as const;
-
-const MAX_PHOTOS = 3;
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface PhotoFile {
-  file: File;
-  preview: string;
-  id: string;
-}
+type TargetType = "local" | "online";
 
 interface BusinessForm {
   trade: string;
   customTrade: string;
   businessName: string;
+  websiteUrl: string;
+  phone: string;
+  targetType: TargetType;
   suburb: string;
   postcode: string;
   state: string;
-  phone: string;
+  targetRadiusKm: number;
+  targetRegions: string[];
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -97,18 +106,20 @@ const Onboarding = () => {
   const [step, setStep] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
-  const [photos, setPhotos] = useState<PhotoFile[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<BusinessForm>({
     trade: "",
     customTrade: "",
     businessName: "",
+    websiteUrl: "",
+    phone: "",
+    targetType: "local",
     suburb: "",
     postcode: "",
     state: "",
-    phone: "",
+    targetRadiusKm: 25,
+    targetRegions: [],
   });
 
   const navigate = useNavigate();
@@ -120,7 +131,7 @@ const Onboarding = () => {
   useEffect(() => {
     // Track page view
     trackFunnelEvent.viewOnboarding();
-    trackPageView('/onboarding', 'ZuckerBot — Business Setup');
+    trackPageView("/onboarding", "ZuckerBot — Business Setup");
     mpFunnel.startOnboarding();
 
     const checkUser = async () => {
@@ -146,18 +157,10 @@ const Onboarding = () => {
     checkUser();
   }, [navigate]);
 
-  // ── Cleanup photo previews on unmount ──────────────────────────────────
-
-  useEffect(() => {
-    return () => {
-      photos.forEach((p) => URL.revokeObjectURL(p.preview));
-    };
-  }, [photos]);
-
   // ── Form helpers ───────────────────────────────────────────────────────
 
   const updateForm = useCallback(
-    (field: keyof BusinessForm, value: string) => {
+    <K extends keyof BusinessForm>(field: K, value: BusinessForm[K]) => {
       setForm((prev) => ({ ...prev, [field]: value }));
     },
     []
@@ -166,102 +169,62 @@ const Onboarding = () => {
   const effectiveTrade =
     form.trade === "Other" ? form.customTrade.trim() : form.trade;
 
-  const isStep1Valid = effectiveTrade.length > 0 && form.businessName.trim().length > 0;
-  const isStep2Valid =
-    form.suburb.trim().length > 0 &&
-    form.postcode.trim().length >= 4 &&
-    form.state.length > 0 &&
+  // Determine whether the selected business type naturally defaults to local or online
+  const isNaturallyLocal = LOCAL_BUSINESS_TYPES.has(form.trade);
+  const isNaturallyOnline = ONLINE_BUSINESS_TYPES.has(form.trade);
+
+  // When business type changes, auto-set target type
+  useEffect(() => {
+    if (isNaturallyOnline) {
+      updateForm("targetType", "online");
+    } else if (isNaturallyLocal) {
+      updateForm("targetType", "local");
+    }
+  }, [form.trade, isNaturallyLocal, isNaturallyOnline, updateForm]);
+
+  // Determine total steps: always 2 (step 1 = business info, step 2 = target area)
+  const totalSteps = 2;
+
+  // Step definitions for the progress bar
+  const stepDefs = [
+    { label: "Your Business", icon: Building },
+    { label: "Target Area", icon: MapPin },
+  ];
+
+  // ── Validation ─────────────────────────────────────────────────────────
+
+  const isStep1Valid =
+    effectiveTrade.length > 0 &&
+    form.businessName.trim().length > 0 &&
     form.phone.trim().length >= 8;
 
-  // ── Photo handling ─────────────────────────────────────────────────────
+  const isStep2Valid =
+    form.targetType === "online" ||
+    (form.targetType === "local" &&
+      form.suburb.trim().length > 0 &&
+      form.postcode.trim().length >= 4 &&
+      form.state.length > 0);
 
-  const handlePhotoSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files) return;
+  // ── Region toggle helpers ──────────────────────────────────────────────
 
-      const remaining = MAX_PHOTOS - photos.length;
-      const selected = Array.from(files).slice(0, remaining);
-
-      const invalid = selected.filter((f) => f.size > MAX_FILE_SIZE);
-      if (invalid.length > 0) {
-        toast({
-          title: "File too large",
-          description: "Each photo must be under 5MB.",
-          variant: "destructive",
-        });
-      }
-
-      const valid = selected.filter((f) => f.size <= MAX_FILE_SIZE);
-      const newPhotos: PhotoFile[] = valid.map((file) => ({
-        file,
-        preview: URL.createObjectURL(file),
-        id: crypto.randomUUID(),
-      }));
-
-      setPhotos((prev) => [...prev, ...newPhotos].slice(0, MAX_PHOTOS));
-
-      // Reset input so re-selecting the same file works
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    },
-    [photos.length, toast]
-  );
-
-  const removePhoto = useCallback((id: string) => {
-    setPhotos((prev) => {
-      const removed = prev.find((p) => p.id === id);
-      if (removed) URL.revokeObjectURL(removed.preview);
-      return prev.filter((p) => p.id !== id);
+  const toggleRegion = (state: string) => {
+    setForm((prev) => {
+      const regions = prev.targetRegions.includes(state)
+        ? prev.targetRegions.filter((r) => r !== state)
+        : [...prev.targetRegions, state];
+      return { ...prev, targetRegions: regions };
     });
-  }, []);
+  };
 
-  // ── Drag & Drop ────────────────────────────────────────────────────────
+  const allRegionsSelected = form.targetRegions.length === STATES.length;
 
-  const [isDragging, setIsDragging] = useState(false);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-
-      const files = e.dataTransfer.files;
-      if (!files) return;
-
-      const remaining = MAX_PHOTOS - photos.length;
-      const selected = Array.from(files)
-        .filter((f) => f.type.startsWith("image/"))
-        .slice(0, remaining);
-
-      const invalid = selected.filter((f) => f.size > MAX_FILE_SIZE);
-      if (invalid.length > 0) {
-        toast({
-          title: "File too large",
-          description: "Each photo must be under 5MB.",
-          variant: "destructive",
-        });
-      }
-
-      const valid = selected.filter((f) => f.size <= MAX_FILE_SIZE);
-      const newPhotos: PhotoFile[] = valid.map((file) => ({
-        file,
-        preview: URL.createObjectURL(file),
-        id: crypto.randomUUID(),
-      }));
-
-      setPhotos((prev) => [...prev, ...newPhotos].slice(0, MAX_PHOTOS));
-    },
-    [photos.length, toast]
-  );
+  const toggleAllRegions = () => {
+    if (allRegionsSelected) {
+      updateForm("targetRegions", []);
+    } else {
+      updateForm("targetRegions", [...STATES]);
+    }
+  };
 
   // ── Save & Submit ──────────────────────────────────────────────────────
 
@@ -270,76 +233,61 @@ const Onboarding = () => {
     setIsSaving(true);
 
     try {
-      // 1. Upload photos to Supabase Storage
-      const photoUrls: string[] = [];
+      // Build the insert payload
+      const insertData: Record<string, any> = {
+        user_id: userId,
+        name: form.businessName.trim(),
+        trade: effectiveTrade.toLowerCase(),
+        phone: form.phone.trim(),
+        website_url: form.websiteUrl.trim() || null,
+        target_type: form.targetType,
+        target_radius_km: form.targetType === "local" ? form.targetRadiusKm : null,
+      };
 
-      for (const photo of photos) {
-        const ext = photo.file.name.split(".").pop() || "jpg";
-        const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("business-photos")
-          .upload(path, photo.file, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-
-        if (uploadError) {
-          console.error("Photo upload failed:", uploadError);
-          continue; // Don't block onboarding for a failed photo upload
-        }
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("business-photos").getPublicUrl(path);
-
-        photoUrls.push(publicUrl);
+      if (form.targetType === "local") {
+        insertData.suburb = form.suburb.trim();
+        insertData.postcode = form.postcode.trim();
+        insertData.state = form.state;
       }
 
-      // 2. Insert business profile
       const { error: insertError } = await (supabase as any)
         .from("businesses")
-        .insert({
-          user_id: userId,
-          name: form.businessName.trim(),
-          trade: effectiveTrade.toLowerCase(),
-          suburb: form.suburb.trim(),
-          postcode: form.postcode.trim(),
-          state: form.state,
-          phone: form.phone.trim(),
-        });
+        .insert(insertData);
 
       if (insertError) {
         throw new Error(insertError.message);
       }
 
-      // 3. Upsert profiles row to mark onboarding completed
+      // Upsert profiles row to mark onboarding completed
       try {
-        await supabase
-          .from("profiles")
-          .upsert({
+        await supabase.from("profiles").upsert(
+          {
             user_id: userId,
-            email: (await supabase.auth.getUser()).data.user?.email || null,
+            email:
+              (await supabase.auth.getUser()).data.user?.email || null,
             full_name: null,
             business_name: form.businessName,
             onboarding_completed: true,
             facebook_connected: false,
-          }, { onConflict: "user_id" });
+          },
+          { onConflict: "user_id" }
+        );
       } catch {
         // profiles table may not exist in v2 — that's fine
       }
 
       // Track onboarding completion
-      const tradeName = form.trade === "Other" ? form.customTrade : form.trade;
+      const tradeName =
+        form.trade === "Other" ? form.customTrade : form.trade;
       trackFunnelEvent.completeOnboarding(
         tradeName,
-        form.suburb,
+        form.suburb || "online",
         form.businessName
       );
       mpFunnel.completeOnboarding({
         user_id: userId,
         business_type: tradeName,
-        location: form.suburb,
+        location: form.suburb || "online",
         business_name: form.businessName,
       });
 
@@ -365,13 +313,10 @@ const Onboarding = () => {
 
   // ── Navigation ─────────────────────────────────────────────────────────
 
-  const canGoNext =
-    (step === 0 && isStep1Valid) ||
-    (step === 1 && isStep2Valid) ||
-    step === 2;
+  const canGoNext = step === 0 && isStep1Valid;
 
   const goNext = () => {
-    if (step < STEPS.length - 1) setStep((s) => s + 1);
+    if (step < totalSteps - 1) setStep((s) => s + 1);
   };
 
   const goBack = () => {
@@ -384,7 +329,7 @@ const Onboarding = () => {
 
   // ── Render ─────────────────────────────────────────────────────────────
 
-  const progressValue = ((step + 1) / STEPS.length) * 100;
+  const progressValue = ((step + 1) / totalSteps) * 100;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -393,7 +338,7 @@ const Onboarding = () => {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <Wrench className="h-4 w-4 text-primary-foreground" />
+              <Building className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="text-lg font-semibold">Zuckerbot</span>
           </div>
@@ -409,7 +354,7 @@ const Onboarding = () => {
         {/* Progress */}
         <div className="mb-8 space-y-3">
           <div className="flex justify-between text-sm text-muted-foreground">
-            {STEPS.map((s, i) => {
+            {stepDefs.map((s, i) => {
               const Icon = s.icon;
               const isActive = i === step;
               const isDone = i < step;
@@ -435,14 +380,16 @@ const Onboarding = () => {
           <Progress value={progressValue} className="h-2" />
         </div>
 
-        {/* ── Step 1: Trade ─────────────────────────────────────────────── */}
+        {/* ── Step 1: About Your Business ───────────────────────────────── */}
         {step === 0 && (
           <Card>
             <CardContent className="pt-6 space-y-6">
               <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold">What's your business?</h2>
+                <h2 className="text-2xl font-bold">
+                  Tell us about your business
+                </h2>
                 <p className="text-muted-foreground">
-                  Tell us what you do — we'll tailor your ads to suit.
+                  We'll use this to tailor your ad campaigns.
                 </p>
               </div>
 
@@ -514,10 +461,12 @@ const Onboarding = () => {
               {/* Custom trade input (only if "Other") */}
               {form.trade === "Other" && (
                 <div className="space-y-2">
-                  <Label htmlFor="customTrade">What do you do?</Label>
+                  <Label htmlFor="customTrade">
+                    What does your business do?
+                  </Label>
                   <Input
                     id="customTrade"
-                    placeholder="e.g. Solar installer"
+                    placeholder="e.g. Solar installation, Dog walking"
                     value={form.customTrade}
                     onChange={(e) => updateForm("customTrade", e.target.value)}
                     autoFocus
@@ -527,80 +476,39 @@ const Onboarding = () => {
 
               {/* Business name */}
               <div className="space-y-2">
-                <Label htmlFor="businessName">Business Name</Label>
+                <Label htmlFor="businessName">Business name</Label>
                 <Input
                   id="businessName"
-                  placeholder="e.g. Dave's Plumbing"
+                  placeholder="e.g. Bright Spark Solar"
                   value={form.businessName}
                   onChange={(e) => updateForm("businessName", e.target.value)}
                 />
               </div>
-            </CardContent>
-          </Card>
-        )}
 
-        {/* ── Step 2: Location ──────────────────────────────────────────── */}
-        {step === 1 && (
-          <Card>
-            <CardContent className="pt-6 space-y-6">
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold">Where do you work?</h2>
-                <p className="text-muted-foreground">
-                  We'll target your ads to people nearby.
+              {/* Website URL */}
+              <div className="space-y-2">
+                <Label htmlFor="websiteUrl">
+                  Website URL{" "}
+                  <span className="text-muted-foreground font-normal">
+                    (optional)
+                  </span>
+                </Label>
+                <Input
+                  id="websiteUrl"
+                  placeholder="https://yourbusiness.com.au"
+                  value={form.websiteUrl}
+                  onChange={(e) => updateForm("websiteUrl", e.target.value)}
+                  type="url"
+                  inputMode="url"
+                />
+                <p className="text-xs text-muted-foreground">
+                  We'll use this to tailor your ads and landing pages.
                 </p>
               </div>
 
+              {/* Phone number */}
               <div className="space-y-2">
-                <Label htmlFor="suburb">Suburb</Label>
-                <Input
-                  id="suburb"
-                  placeholder="e.g. Paddington"
-                  value={form.suburb}
-                  onChange={(e) => updateForm("suburb", e.target.value)}
-                  autoFocus
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>State</Label>
-                  <Select
-                    value={form.state}
-                    onValueChange={(v) => updateForm("state", v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="State" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {STATES.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="postcode">Postcode</Label>
-                  <Input
-                    id="postcode"
-                    placeholder="4000"
-                    value={form.postcode}
-                    onChange={(e) =>
-                      updateForm(
-                        "postcode",
-                        e.target.value.replace(/\D/g, "").slice(0, 4)
-                      )
-                    }
-                    inputMode="numeric"
-                    maxLength={4}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number</Label>
+                <Label htmlFor="phone">Phone number</Label>
                 <Input
                   id="phone"
                   placeholder="04XX XXX XXX"
@@ -617,82 +525,175 @@ const Onboarding = () => {
           </Card>
         )}
 
-        {/* ── Step 3: Photos ────────────────────────────────────────────── */}
-        {step === 2 && (
+        {/* ── Step 2: Target Area ───────────────────────────────────────── */}
+        {step === 1 && (
           <Card>
             <CardContent className="pt-6 space-y-6">
               <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold">Show off your business</h2>
+                <h2 className="text-2xl font-bold">
+                  Where are your customers?
+                </h2>
                 <p className="text-muted-foreground">
-                  Upload 1–3 photos — your space, products, or happy customers.
-                  These will be used in your Facebook ads.
+                  Help us target the right audience for your business.
                 </p>
               </div>
 
-              {/* Drop zone */}
-              {photos.length < MAX_PHOTOS && (
-                <div
-                  className={cn(
-                    "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
-                    isDragging
-                      ? "border-primary bg-primary/5"
-                      : "border-muted-foreground/25 hover:border-primary/50"
-                  )}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    className="hidden"
-                    onChange={handlePhotoSelect}
-                  />
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-                      <ImagePlus className="h-6 w-6 text-muted-foreground" />
+              {/* Target type toggle */}
+              <div className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">
+                    {form.targetType === "local"
+                      ? "My business serves a specific area"
+                      : "My business serves customers anywhere"}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {form.targetType === "local"
+                      ? "We'll target ads to people near you"
+                      : "We'll target ads across your selected regions"}
+                  </p>
+                </div>
+                <Switch
+                  checked={form.targetType === "online"}
+                  onCheckedChange={(checked) =>
+                    updateForm("targetType", checked ? "online" : "local")
+                  }
+                />
+              </div>
+
+              {/* LOCAL: suburb, state, postcode, radius */}
+              {form.targetType === "local" && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="suburb">Suburb</Label>
+                    <Input
+                      id="suburb"
+                      placeholder="e.g. Paddington"
+                      value={form.suburb}
+                      onChange={(e) => updateForm("suburb", e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>State</Label>
+                      <Select
+                        value={form.state}
+                        onValueChange={(v) => updateForm("state", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="State" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {STATES.map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {s}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium">
-                        Drag photos here or click to browse
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        JPG, PNG, or WebP — max 5MB each
-                      </p>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="postcode">Postcode</Label>
+                      <Input
+                        id="postcode"
+                        placeholder="4000"
+                        value={form.postcode}
+                        onChange={(e) =>
+                          updateForm(
+                            "postcode",
+                            e.target.value.replace(/\D/g, "").slice(0, 4)
+                          )
+                        }
+                        inputMode="numeric"
+                        maxLength={4}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Radius slider */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Target radius</Label>
+                      <span className="text-sm font-medium text-primary">
+                        {form.targetRadiusKm} km
+                      </span>
+                    </div>
+                    <Slider
+                      value={[form.targetRadiusKm]}
+                      onValueChange={([val]) =>
+                        updateForm("targetRadiusKm", val)
+                      }
+                      min={10}
+                      max={100}
+                      step={5}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>10 km</span>
+                      <span>100 km</span>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Photo previews */}
-              {photos.length > 0 && (
-                <div className="grid grid-cols-3 gap-3">
-                  {photos.map((photo) => (
-                    <div key={photo.id} className="relative group aspect-square">
-                      <img
-                        src={photo.preview}
-                        alt="Upload preview"
-                        className="w-full h-full object-cover rounded-lg"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removePhoto(photo.id)}
-                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        aria-label="Remove photo"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+              {/* ONLINE: target regions */}
+              {form.targetType === "online" && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-muted-foreground" />
+                    <Label>Target regions</Label>
+                  </div>
+
+                  {/* All of Australia toggle */}
+                  <button
+                    type="button"
+                    onClick={toggleAllRegions}
+                    className={cn(
+                      "w-full rounded-lg border p-3 text-left text-sm transition-colors",
+                      allRegionsSelected
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "hover:border-primary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">All of Australia</span>
+                      {allRegionsSelected && (
+                        <Check className="h-4 w-4 text-primary" />
+                      )}
                     </div>
-                  ))}
+                  </button>
+
+                  {/* Individual state chips */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {STATES.map((s) => {
+                      const isSelected = form.targetRegions.includes(s);
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => toggleRegion(s)}
+                          className={cn(
+                            "rounded-md border px-3 py-2 text-sm font-medium transition-colors",
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "hover:border-primary/50"
+                          )}
+                        >
+                          {s}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {form.targetRegions.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      Select at least one region, or choose "All of Australia"
+                    </p>
+                  )}
                 </div>
               )}
-
-              <p className="text-xs text-muted-foreground text-center">
-                {photos.length}/{MAX_PHOTOS} photos added
-              </p>
             </CardContent>
           </Card>
         )}
@@ -708,27 +709,21 @@ const Onboarding = () => {
             <div /> /* spacer */
           )}
 
-          {step < STEPS.length - 1 ? (
+          {step === 0 ? (
             <Button onClick={goNext} disabled={!canGoNext}>
               Next
               <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           ) : (
-            <div className="flex gap-3">
-              {photos.length === 0 && (
-                <Button
-                  variant="ghost"
-                  onClick={handleSave}
-                  disabled={isSaving}
-                >
-                  Skip photos
-                </Button>
+            <Button
+              onClick={handleSave}
+              disabled={isSaving || !isStep2Valid}
+            >
+              {isSaving && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              <Button onClick={handleSave} disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save & Continue
-              </Button>
-            </div>
+              Save & Continue
+            </Button>
           )}
         </div>
       </main>
