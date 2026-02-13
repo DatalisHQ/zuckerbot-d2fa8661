@@ -83,10 +83,10 @@ export default function BriefView() {
         return;
       }
 
-      // Fetch brief with business details via service role (public page)
+      // Fetch brief
       const { data, error: fetchError } = await supabase
         .from("strategy_briefs" as any)
-        .select("id, brief_markdown, execution_plan, created_at, businesses!inner(name, trade, suburb, state)")
+        .select("id, brief_markdown, execution_plan, created_at, business_id")
         .eq("id", briefId)
         .maybeSingle();
 
@@ -95,15 +95,35 @@ export default function BriefView() {
         return;
       }
 
-      const biz = (data as any).businesses;
+      // Fetch business details separately
+      let businessName = "Business";
+      let businessTrade = "";
+      let businessLocation = "";
+
+      if (data.business_id) {
+        const { data: biz } = await supabase
+          .from("businesses" as any)
+          .select("name, trade, suburb, state")
+          .eq("id", data.business_id)
+          .maybeSingle();
+
+        if (biz) {
+          businessName = (biz as any).name || "Business";
+          businessTrade = (biz as any).trade || "";
+          businessLocation = (biz as any).suburb
+            ? `${(biz as any).suburb}, ${(biz as any).state}`
+            : "";
+        }
+      }
+
       setBrief({
         id: data.id as string,
         brief_markdown: data.brief_markdown as string,
         execution_plan: data.execution_plan,
         created_at: data.created_at as string,
-        business_name: biz?.name || "Business",
-        business_trade: biz?.trade || "",
-        business_location: biz ? `${biz.suburb}, ${biz.state}` : "",
+        business_name: businessName,
+        business_trade: businessTrade,
+        business_location: businessLocation,
       });
     } catch (err: any) {
       setError(err.message || "Failed to load brief");
