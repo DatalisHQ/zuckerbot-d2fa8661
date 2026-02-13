@@ -12,6 +12,7 @@ import {
   X,
   Facebook,
   ExternalLink,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,9 +26,11 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Navbar } from "@/components/Navbar";
+import MediaManager from "@/components/MediaManager";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -61,6 +64,7 @@ export default function Profile() {
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [business, setBusiness] = useState<Business | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [editMode, setEditMode] = useState(false);
   const [formData, setFormData] = useState({ full_name: "", phone: "" });
   const [isLoading, setIsLoading] = useState(true);
@@ -101,6 +105,8 @@ export default function Profile() {
         navigate("/auth");
         return;
       }
+
+      setCurrentUser(user);
 
       // Fetch profile
       const { data: profileData } = await supabase
@@ -252,14 +258,14 @@ export default function Profile() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
+      <main className="container mx-auto px-4 py-8 max-w-6xl">
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold">Settings</h1>
               <p className="text-muted-foreground">
-                Manage your account and business details
+                Manage your account, business details, and media files
               </p>
             </div>
             {!editMode && (
@@ -270,7 +276,24 @@ export default function Profile() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Tabs defaultValue="account" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-3 max-w-md">
+              <TabsTrigger value="account" className="flex items-center gap-2">
+                <User className="w-4 h-4" />
+                Account
+              </TabsTrigger>
+              <TabsTrigger value="media" className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4" />
+                Media
+              </TabsTrigger>
+              <TabsTrigger value="billing" className="flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Billing
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="account" className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main column */}
             <div className="lg:col-span-2 space-y-6">
               {/* Account info */}
@@ -497,6 +520,36 @@ export default function Profile() {
               </Card>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="media" className="space-y-6">
+          {currentUser && <MediaManager userId={currentUser.id} />}
+        </TabsContent>
+
+        <TabsContent value="billing" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Subscription & Billing</CardTitle>
+              <CardDescription>
+                Manage your subscription plan and billing information
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Current Plan</span>
+                <Badge variant="secondary">Free Trial</Badge>
+              </div>
+              <Separator />
+              <Button className="w-full" variant="outline" asChild>
+                <a href="/billing">Manage Billing & Subscription</a>
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Upgrade to unlock advanced campaign features and higher spending limits.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
         </div>
       </main>
     </div>

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
+import ImageSelector from "@/components/ImageSelector";
 import { Loader2, Sparkles, Image as ImageIcon, ThumbsUp, Save, Rocket } from "lucide-react";
 import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
 import { mpFunnel } from "@/lib/mixpanel";
@@ -100,7 +101,8 @@ const CampaignCreator = () => {
   const { toast } = useToast();
 
   const [business, setBusiness] = useState<Business | null>(null);
-  const [businessPhoto, setBusinessPhoto] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -129,6 +131,8 @@ const CampaignCreator = () => {
         return;
       }
 
+      setCurrentUser(session.user);
+
       const { data, error } = await supabase
         .from("businesses" as any)
         .select("*")
@@ -148,18 +152,24 @@ const CampaignCreator = () => {
       const biz = data as unknown as Business;
       setBusiness(biz);
 
-      // Fetch first business photo from storage
-      const { data: photos } = await supabase.storage
-        .from("business-photos")
-        .list(session.user.id, { limit: 1, sortBy: { column: "created_at", order: "asc" } });
-
-      if (photos && photos.length > 0) {
-        const { data: urlData } = supabase.storage
+      // Auto-select first few images as a convenience
+      try {
+        const { data: photos } = await supabase.storage
           .from("business-photos")
-          .getPublicUrl(`${session.user.id}/${photos[0].name}`);
-        if (urlData?.publicUrl) {
-          setBusinessPhoto(urlData.publicUrl);
+          .list(session.user.id, { limit: 3, sortBy: { column: "created_at", order: "desc" } });
+
+        if (photos && photos.length > 0) {
+          const imageUrls = photos.map(photo => {
+            const { data: urlData } = supabase.storage
+              .from("business-photos")
+              .getPublicUrl(`${session.user.id}/${photo.name}`);
+            return urlData.publicUrl;
+          }).filter(Boolean);
+          
+          setSelectedImages(imageUrls);
         }
+      } catch (err) {
+        console.log('No images found, continuing without pre-selection');
       }
 
       setIsLoading(false);
@@ -196,6 +206,16 @@ const CampaignCreator = () => {
   const saveCampaign = async (launch: boolean) => {
     if (!business || !selectedAd) return;
 
+    // Check if images are selected for launch
+    if (launch && selectedImages.length === 0) {
+      toast({
+        title: "Select images for your campaign",
+        description: "Please choose at least one image before launching your campaign.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // If launching, check Facebook connection first
     if (launch && !facebookConnected) {
       toast({
@@ -214,6 +234,7 @@ const CampaignCreator = () => {
         trackFunnelEvent.createCampaign(dailyBudget * 100, radiusKm);
         
         // Launch flow — edge function creates the campaign on Meta AND in the DB
+        // Note: Edge function currently supports single image, will be enhanced for multi-image support
         const { data: launchData, error: launchError } = await supabase.functions.invoke("launch-campaign", {
           body: {
             business_id: business.id,
@@ -222,6 +243,8 @@ const CampaignCreator = () => {
             cta: selectedAd.cta,
             daily_budget_cents: dailyBudget * 100,
             radius_km: radiusKm,
+            image_url: selectedImages.length > 0 ? selectedImages[0] : undefined,
+            selected_images: selectedImages, // For future multi-image support
           },
         });
 
@@ -383,9 +406,32 @@ const CampaignCreator = () => {
             </section>
           )}
 
-          {/* Ad Variant Selection */}
+          {/* Image Selection */}
           {hasGenerated && showPreview && (
             <>
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold">Select Campaign Images</h2>
+                  {selectedImages.length > 1 && (
+                    <Badge variant="secondary" className="text-xs">
+                      Multi-image testing enabled
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-muted-foreground text-sm">
+                  Choose up to 5 images for your campaign. Facebook will automatically test different images to find the best performing ones and show your best image more often.
+                </p>
+                {currentUser && (
+                  <ImageSelector
+                    userId={currentUser.id}
+                    selectedImages={selectedImages}
+                    onSelectionChange={setSelectedImages}
+                    maxSelection={5}
+                  />
+                )}
+              </section>
+
+              {/* Ad Variant Selection */}
               <section className="space-y-4">
                 <h2 className="text-xl font-semibold">Choose Your Ad</h2>
                 <div className="grid gap-4 md:grid-cols-3">
@@ -508,16 +554,23 @@ const CampaignCreator = () => {
                     </div>
                     {/* Ad image */}
                     <div className="bg-muted aspect-video flex items-center justify-center border-y overflow-hidden">
-                      {businessPhoto ? (
-                        <img
-                          src={businessPhoto}
-                          alt={`${business?.name} — ${business?.trade}`}
-                          className="w-full h-full object-cover"
-                        />
+                      {selectedImages.length > 0 ? (
+                        <div className="relative w-full h-full">
+                          <img
+                            src={selectedImages[0]}
+                            alt={`${business?.name} — ${business?.trade}`}
+                            className="w-full h-full object-cover"
+                          />
+                          {selectedImages.length > 1 && (
+                            <div className="absolute top-2 right-2 bg-black/60 text-white px-2 py-1 rounded text-xs">
+                              +{selectedImages.length - 1} more image{selectedImages.length > 2 ? 's' : ''}
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <div className="text-center space-y-2 text-muted-foreground">
                           <ImageIcon className="h-10 w-10 mx-auto" />
-                          <p className="text-xs">Upload photos in Settings to preview your ad</p>
+                          <p className="text-xs">Select images above to preview your ad</p>
                         </div>
                       )}
                     </div>
