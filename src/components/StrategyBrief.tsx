@@ -237,14 +237,12 @@ export default function StrategyBrief({ businessId, businessName, autoGenerate =
             </div>
           </div>
           <div className="flex gap-2">
-            {brief.presentation_url && (
-              <Button variant="outline" size="sm" asChild>
-                <a href={brief.presentation_url} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="w-4 h-4 mr-1" />
-                  View Presentation
-                </a>
-              </Button>
-            )}
+            <Button variant="outline" size="sm" asChild>
+              <a href={`/brief/${brief.brief_id}`} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-4 h-4 mr-1" />
+                View Full Report
+              </a>
+            </Button>
             <Button
               variant="outline"
               size="sm"
