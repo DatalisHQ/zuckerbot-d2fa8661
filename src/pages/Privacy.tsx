@@ -33,15 +33,16 @@ const Privacy = () => {
           <section>
             <p>
               ZuckerBot ("we", "us", "our") is operated by DatalisHQ. We provide an AI-powered
-              Facebook advertising platform for Australian small businesses at{" "}
+              Facebook advertising platform for small businesses at{" "}
               <a href="https://zuckerbot.ai" className="text-primary hover:underline">
                 zuckerbot.ai
               </a>
               . This policy explains what data we collect, how we use it, and your rights.
             </p>
             <p>
-              We're committed to complying with the Australian Privacy Act 1988 (Cth) and the
-              Australian Privacy Principles (APPs).
+              We're committed to complying with the Australian Privacy Act 1988 (Cth), the
+              Australian Privacy Principles (APPs), and applicable international privacy laws
+              including the GDPR (for EU/UK users) and the CCPA (for California residents).
             </p>
           </section>
 
@@ -155,18 +156,28 @@ const Privacy = () => {
 
           {/* 5. Australian Privacy Act */}
           <section>
-            <h2 className="text-xl font-semibold mb-3">5. Australian Privacy Act compliance</h2>
+            <h2 className="text-xl font-semibold mb-3">5. Privacy law compliance</h2>
             <p>
-              We handle personal information in accordance with the Privacy Act 1988 (Cth) and the
-              13 Australian Privacy Principles. You have the right to:
+              We handle personal information in accordance with the Australian Privacy Act 1988 (Cth),
+              the 13 Australian Privacy Principles, and applicable international privacy laws. You have the right to:
             </p>
             <ul className="list-disc pl-6 space-y-2 mt-3">
               <li>Access the personal information we hold about you.</li>
               <li>Request correction of inaccurate or out-of-date information.</li>
               <li>Request deletion of your personal information.</li>
               <li>
-                Complain to the Office of the Australian Information Commissioner (OAIC) if you
-                believe we have breached the APPs.
+                <strong>Australian users:</strong> Complain to the Office of the Australian Information
+                Commissioner (OAIC) if you believe we have breached the APPs.
+              </li>
+              <li>
+                <strong>EU/UK users:</strong> Exercise your rights under the GDPR, including the right to
+                data portability, the right to restrict processing, and the right to lodge a complaint
+                with your local data protection authority.
+              </li>
+              <li>
+                <strong>California residents:</strong> Exercise your rights under the CCPA, including the
+                right to know, delete, and opt out of the sale of personal information. We do not sell
+                your personal information.
               </li>
             </ul>
             <p className="mt-3">

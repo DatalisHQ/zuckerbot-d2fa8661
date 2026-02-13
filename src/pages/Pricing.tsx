@@ -99,7 +99,7 @@ export default function Pricing() {
               <CardDescription>Perfect for businesses getting started with Facebook ads</CardDescription>
               <div className="pt-2">
                 <span className="text-4xl font-bold">$49</span>
-                <span className="text-muted-foreground">/mo AUD</span>
+                <span className="text-muted-foreground">/mo</span>
               </div>
             </CardHeader>
             <CardContent className="flex-1">
@@ -137,7 +137,7 @@ export default function Pricing() {
               <CardDescription>For growing businesses — more campaigns, more leads, more customers</CardDescription>
               <div className="pt-2">
                 <span className="text-4xl font-bold">$99</span>
-                <span className="text-muted-foreground">/mo AUD</span>
+                <span className="text-muted-foreground">/mo</span>
               </div>
             </CardHeader>
             <CardContent className="flex-1">
@@ -167,7 +167,7 @@ export default function Pricing() {
             All plans include a <strong>7-day free trial</strong>. Cancel anytime — no lock-in contracts.
           </p>
           <p className="text-sm text-muted-foreground">
-            Prices in Australian dollars. GST included.
+            Prices in AUD. Converted at checkout.
           </p>
         </div>
       </div>

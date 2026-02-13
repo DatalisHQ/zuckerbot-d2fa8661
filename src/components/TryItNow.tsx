@@ -243,19 +243,28 @@ export default function TryItNow() {
               ))}
             </div>
 
-            {/* CTA */}
-            <div className="text-center space-y-4 pt-4">
-              <p className="text-lg font-medium">
-                Like what you see? Launch these ads for real.
-              </p>
-              <Button
-                size="lg"
-                className="text-lg px-8 py-6"
-                onClick={() => navigate("/auth")}
-              >
-                Start Free Trial to Launch These Ads
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
+            {/* CTA — Primary conversion point */}
+            <div className="text-center space-y-6 pt-8">
+              <div className="bg-primary/5 border-2 border-primary/20 rounded-2xl p-8 space-y-4">
+                <h3 className="text-2xl font-bold">
+                  Ready to launch these ads for real?
+                </h3>
+                <p className="text-lg text-muted-foreground max-w-md mx-auto">
+                  Start your <strong className="text-foreground">7-day free trial</strong> and 
+                  get these ads live on Facebook in 60 seconds. No credit card required to start.
+                </p>
+                <Button
+                  size="lg"
+                  className="text-lg px-10 py-7 shadow-lg hover:shadow-xl transition-shadow"
+                  onClick={() => navigate("/auth")}
+                >
+                  Start Free Trial — Launch These Ads
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  $49/mo after trial • Cancel anytime • No lock-in contracts
+                </p>
+              </div>
               <div>
                 <Button variant="ghost" onClick={reset}>
                   Try another business

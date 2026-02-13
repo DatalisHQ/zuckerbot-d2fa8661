@@ -144,10 +144,11 @@ serve(async (req: Request) => {
     const locationLabel = [business.suburb, business.state].filter(Boolean).join(", ");
 
     const systemPrompt =
-      `You are Australia's best Facebook ad copywriter, specialising in local small businesses — restaurants, gyms, salons, dental practices, retail, professional services, and tradies. ` +
+      `You are a world-class Facebook ad copywriter, specialising in local small businesses — restaurants, gyms, salons, dental practices, retail, professional services, and tradespeople. ` +
       `You write ads that feel human, specific, and local — never generic or corporate. ` +
       `You understand that Meta's Andromeda algorithm rewards creative diversity, so each variant must use a genuinely different angle and tone. ` +
-      `You write in natural Australian English. Respond ONLY with valid JSON — no markdown fences, no explanation.`;
+      `Adapt your language to the business's location — use natural local English (e.g., Australian English for AU businesses, American English for US businesses). ` +
+      `Respond ONLY with valid JSON — no markdown fences, no explanation.`;
 
     const userPrompt =
       `Write 3 high-converting Facebook ad variants for this business:\n\n` +
@@ -167,9 +168,9 @@ serve(async (req: Request) => {
       `}\n\n` +
       `RULES — follow these exactly:\n` +
       `- Headlines ≤40 chars. Body ≤125 chars. Hard limits.\n` +
-      `- Australian English ("metre", "colour", "organise").\n` +
+      `- Use natural local English appropriate for the business's location. Australian businesses: "metre", "colour", "organise". US businesses: "meter", "color", "organize".\n` +
       `- Reference the SPECIFIC business type naturally. A café is a café, a gym is a gym. Don't say "business" generically.\n` +
-      `- Use the suburb name naturally — locals should feel like this ad is for THEIR area.\n` +
+      `- Use the location name naturally — locals should feel like this ad is for THEIR area.\n` +
       `- Each variant must use a DIFFERENT psychological angle:\n` +
       `  1. Social proof / trust (reviews, years in business, "locals trust us")\n` +
       `  2. Urgency / availability ("same-day", "booking up fast", "this week only")\n` +

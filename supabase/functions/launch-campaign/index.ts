@@ -128,7 +128,7 @@ serve(async (req: Request) => {
     const { data: business, error: bizError } = await supabase
       .from("businesses")
       .select(
-        "id, user_id, name, trade, suburb, state, lat, lng, " +
+        "id, user_id, name, trade, suburb, state, country, lat, lng, " +
         "facebook_access_token, facebook_ad_account_id, facebook_page_id"
       )
       .eq("id", business_id)
@@ -215,9 +215,16 @@ serve(async (req: Request) => {
         },
       ];
     } else {
-      // Fallback: target Australia-wide if no lat/lng
-      geoLocations.countries = ["AU"];
-      console.warn("[launch-campaign] No lat/lng for business, falling back to AU country targeting");
+      // Fallback: target country-wide if no lat/lng
+      const countryCode: Record<string, string> = {
+        "Australia": "AU",
+        "United States": "US",
+        "United Kingdom": "GB",
+        "Canada": "CA",
+      };
+      const cc = countryCode[business.country] || "AU";
+      geoLocations.countries = [cc];
+      console.warn(`[launch-campaign] No lat/lng for business, falling back to ${cc} country targeting`);
     }
 
     const targeting: Record<string, unknown> = {
@@ -276,8 +283,8 @@ serve(async (req: Request) => {
           { type: "EMAIL" },
           {
             type: "CUSTOM",
-            key: "suburb",
-            label: "What suburb are you in?",
+            key: "location",
+            label: "What area are you in?",
           },
         ]),
         // privacy_policy is passed as a JSON object with url + link_text

@@ -47,7 +47,7 @@ const Terms = () => {
           <section>
             <h2 className="text-xl font-semibold mb-3">2. Service description</h2>
             <p>
-              ZuckerBot is an AI-powered platform that helps Australian small businesses create and
+              ZuckerBot is an AI-powered platform that helps small businesses create and
               manage Facebook advertising campaigns. Our Service includes:
             </p>
             <ul className="list-disc pl-6 space-y-2 mt-3">
@@ -158,7 +158,7 @@ const Terms = () => {
               </li>
               <li>
                 You retain responsibility for ensuring your ads are truthful, not misleading, and
-                comply with Australian Consumer Law and Meta's advertising policies.
+                comply with applicable consumer protection laws and Meta's advertising policies.
               </li>
             </ul>
           </section>
@@ -184,7 +184,7 @@ const Terms = () => {
           {/* 8. Limitation of liability */}
           <section>
             <h2 className="text-xl font-semibold mb-3">8. Limitation of liability</h2>
-            <p>To the maximum extent permitted by Australian law:</p>
+            <p>To the maximum extent permitted by applicable law:</p>
             <ul className="list-disc pl-6 space-y-2 mt-3">
               <li>
                 ZuckerBot is provided "as is" without warranties of any kind, whether express or
@@ -209,7 +209,8 @@ const Terms = () => {
             </ul>
             <p className="mt-3">
               Nothing in these terms excludes or limits any rights you have under the Australian
-              Consumer Law that cannot be excluded or limited by contract.
+              Consumer Law or other applicable consumer protection laws that cannot be excluded
+              or limited by contract.
             </p>
           </section>
 
@@ -244,6 +245,12 @@ const Terms = () => {
               These terms are governed by and construed in accordance with the laws of the
               Commonwealth of Australia. Any disputes arising from these terms or the Service will
               be subject to the exclusive jurisdiction of the courts of Australia.
+            </p>
+            <p className="mt-2">
+              If you are accessing the Service from outside Australia, you are responsible for
+              compliance with local laws to the extent they apply. Nothing in these terms excludes
+              or limits any mandatory consumer protection rights you may have under the laws of
+              your jurisdiction.
             </p>
           </section>
 

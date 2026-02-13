@@ -193,12 +193,12 @@ const Index = () => {
               <div className="text-sm text-muted-foreground">vs $2K agencies</div>
             </div>
             <div>
-              <div className="text-2xl font-bold">&lt;$15</div>
-              <div className="text-sm text-muted-foreground">Cost per lead</div>
+              <div className="text-2xl font-bold">Low cost</div>
+              <div className="text-sm text-muted-foreground">Per lead</div>
             </div>
             <div>
-              <div className="text-2xl font-bold">47+</div>
-              <div className="text-sm text-muted-foreground">Businesses using it</div>
+              <div className="text-2xl font-bold">7-day</div>
+              <div className="text-sm text-muted-foreground">Free trial</div>
             </div>
           </div>
         </div>
@@ -413,123 +413,32 @@ const Index = () => {
         </p>
       </section>
 
-      {/* ── Success Story ───────────────────────────────────────────────── */}
+      {/* ── Early Adopter CTA ────────────────────────────────────────────── */}
       <section className="bg-muted/30 border-y border-border/40 py-20">
         <div className="container mx-auto px-4 sm:px-6">
           <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-                Real Results from Australian Businesses
+            <Card className="p-8 border-2 border-primary/20 text-center">
+              <div className="inline-flex items-center gap-2 bg-primary/10 text-primary rounded-full px-4 py-1.5 text-sm font-medium mb-6">
+                <Star className="w-4 h-4" />
+                Early Adopter Offer
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+                Be one of our first success stories
               </h2>
-              <p className="text-lg text-muted-foreground">
-                47+ Australian businesses are using ZuckerBot to get leads at $12-15 each
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6 leading-relaxed">
+                We're onboarding our first wave of businesses right now. 
+                Early users get <strong className="text-foreground">white-glove setup support</strong> — 
+                we'll personally help you launch your first campaign and optimize it for results.
               </p>
-            </div>
-            
-            <Card className="p-8 border-2 border-primary/20">
-              <div className="flex justify-center gap-1 mb-6">
-                {[...Array(5)].map((_, i) => (
-                  <Star key={i} className="w-6 h-6 fill-yellow-400 text-yellow-400" />
-                ))}
-              </div>
-              <blockquote className="text-xl sm:text-2xl font-medium leading-relaxed text-foreground text-center mb-6">
-                "Was paying a digital agency $1,800/month for Facebook ads with mixed results. 
-                Set up ZuckerBot over my lunch break. Got 8 solid enquiries in the first week 
-                at $11 per lead. Saved $1,750/month immediately."
-              </blockquote>
-              <div className="text-center">
-                <div className="font-semibold text-foreground text-lg">Marcus Chen</div>
-                <div className="text-muted-foreground">Personal Training Studio · Bondi, NSW</div>
-                <div className="text-sm text-primary mt-2">
-                  Results: 8 leads in week 1 • $11 avg cost per lead • $1,750/mo saved
-                </div>
-              </div>
+              <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
+                Claim Your Early Adopter Spot
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+              <p className="text-sm text-muted-foreground mt-4">
+                7-day free trial • Personal onboarding support • Cancel anytime
+              </p>
             </Card>
           </div>
-        </div>
-      </section>
-
-      {/* ── Pricing ─────────────────────────────────────────────────────── */}
-      <section className="border-y border-border/40 bg-muted/30 py-20">
-        <div className="container mx-auto px-4 sm:px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Simple pricing</h2>
-            <p className="text-lg text-muted-foreground">
-              No setup fees. No hidden costs. Just pick a plan.
-            </p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
-            {/* Starter */}
-            <Card className="border-2 relative">
-              <CardContent className="pt-8 pb-6 px-6 space-y-6">
-                <div>
-                  <h3 className="text-xl font-semibold">Starter</h3>
-                  <div className="mt-2">
-                    <span className="text-4xl font-bold">$49</span>
-                    <span className="text-muted-foreground">/mo</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">+ your Facebook ad spend</p>
-                </div>
-                <ul className="space-y-3">
-                  {[
-                    "1 active campaign",
-                    "AI-generated ad copy",
-                    "Lead inbox",
-                    "Email notifications",
-                    "25km targeting radius",
-                  ].map((f, i) => (
-                    <li key={i} className="flex items-center gap-2 text-sm">
-                      <Check className="w-4 h-4 text-primary shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Button className="w-full" variant="outline" onClick={handleCTA}>
-                  Start free trial
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Pro */}
-            <Card className="border-2 border-primary relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge className="bg-primary text-primary-foreground px-3">Most Popular</Badge>
-              </div>
-              <CardContent className="pt-8 pb-6 px-6 space-y-6">
-                <div>
-                  <h3 className="text-xl font-semibold">Pro</h3>
-                  <div className="mt-2">
-                    <span className="text-4xl font-bold">$99</span>
-                    <span className="text-muted-foreground">/mo</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">+ your Facebook ad spend</p>
-                </div>
-                <ul className="space-y-3">
-                  {[
-                    "3 active campaigns",
-                    "AI-generated ad copy",
-                    "Lead inbox + analytics",
-                    "Auto-SMS to leads",
-                    "50km targeting radius",
-                    "Priority support",
-                  ].map((f, i) => (
-                    <li key={i} className="flex items-center gap-2 text-sm">
-                      <Check className="w-4 h-4 text-primary shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Button className="w-full" onClick={handleCTA}>
-                  Start free trial
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
-          <p className="text-center text-sm text-muted-foreground mt-8">
-            Both plans include a 7-day free trial. Cancel anytime.
-          </p>
         </div>
       </section>
 
@@ -621,7 +530,7 @@ const Index = () => {
             Ready to stop paying agencies $2K/month?
           </h2>
           <p className="text-xl text-muted-foreground">
-            Join 47+ Australian businesses getting Facebook leads for $49/month instead of $2000/month.
+            Get Facebook leads for $49/month instead of paying agencies $2000/month.
           </p>
           <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
             Start Free Trial
@@ -661,7 +570,7 @@ const Index = () => {
               </Link>
             </div>
             <p className="text-sm text-muted-foreground">
-              © {new Date().getFullYear()} ZuckerBot. Made in Australia.
+              © {new Date().getFullYear()} ZuckerBot. Made with ❤️
             </p>
           </div>
         </div>

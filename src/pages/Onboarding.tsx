@@ -80,7 +80,37 @@ const ONLINE_BUSINESS_TYPES = new Set([
   "Professional Services",
 ]);
 
-const STATES = ["QLD", "NSW", "VIC", "SA", "WA", "TAS", "NT", "ACT"] as const;
+const AU_STATES = ["QLD", "NSW", "VIC", "SA", "WA", "TAS", "NT", "ACT"] as const;
+
+const US_STATES = [
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+] as const;
+
+const UK_REGIONS = ["England", "Scotland", "Wales", "Northern Ireland"] as const;
+
+const CA_PROVINCES = [
+  "AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT",
+] as const;
+
+const COUNTRIES = [
+  "Australia",
+  "United States",
+  "United Kingdom",
+  "Canada",
+  "Other",
+] as const;
+
+const PHONE_HINTS: Record<string, string> = {
+  Australia: "04XX XXX XXX",
+  "United States": "(555) 123-4567",
+  "United Kingdom": "07XXX XXXXXX",
+  Canada: "(555) 123-4567",
+  Other: "+X XXX XXX XXXX",
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +122,7 @@ interface BusinessForm {
   businessName: string;
   websiteUrl: string;
   phone: string;
+  country: string;
   targetType: TargetType;
   suburb: string;
   postcode: string;
@@ -114,6 +145,7 @@ const Onboarding = () => {
     businessName: "",
     websiteUrl: "",
     phone: "",
+    country: "",
     targetType: "local",
     suburb: "",
     postcode: "",
@@ -196,13 +228,14 @@ const Onboarding = () => {
   const isStep1Valid =
     effectiveTrade.length > 0 &&
     form.businessName.trim().length > 0 &&
-    form.phone.trim().length >= 8;
+    form.phone.trim().length >= 8 &&
+    form.country.length > 0;
 
   const isStep2Valid =
     form.targetType === "online" ||
     (form.targetType === "local" &&
       form.suburb.trim().length > 0 &&
-      form.postcode.trim().length >= 4 &&
+      form.postcode.trim().length >= 3 &&
       form.state.length > 0);
 
   // ── Region toggle helpers ──────────────────────────────────────────────
@@ -216,13 +249,22 @@ const Onboarding = () => {
     });
   };
 
-  const allRegionsSelected = form.targetRegions.length === STATES.length;
+  const currentRegions =
+    form.country === "United States"
+      ? [...US_STATES]
+      : form.country === "United Kingdom"
+      ? [...UK_REGIONS]
+      : form.country === "Canada"
+      ? [...CA_PROVINCES]
+      : [...AU_STATES];
+
+  const allRegionsSelected = currentRegions.length > 0 && form.targetRegions.length === currentRegions.length;
 
   const toggleAllRegions = () => {
     if (allRegionsSelected) {
       updateForm("targetRegions", []);
     } else {
-      updateForm("targetRegions", [...STATES]);
+      updateForm("targetRegions", currentRegions);
     }
   };
 
@@ -240,6 +282,7 @@ const Onboarding = () => {
         trade: effectiveTrade.toLowerCase(),
         phone: form.phone.trim(),
         website_url: form.websiteUrl.trim() || null,
+        country: form.country || "Australia",
         target_type: form.targetType,
         target_radius_km: form.targetType === "local" ? form.targetRadiusKm : null,
       };
@@ -485,6 +528,29 @@ const Onboarding = () => {
                 />
               </div>
 
+              {/* Country */}
+              <div className="space-y-2">
+                <Label>Country</Label>
+                <Select
+                  value={form.country}
+                  onValueChange={(v) => {
+                    updateForm("country", v);
+                    updateForm("state", "");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select your country…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Website URL */}
               <div className="space-y-2">
                 <Label htmlFor="websiteUrl">
@@ -495,7 +561,7 @@ const Onboarding = () => {
                 </Label>
                 <Input
                   id="websiteUrl"
-                  placeholder="https://yourbusiness.com.au"
+                  placeholder="https://yourbusiness.com"
                   value={form.websiteUrl}
                   onChange={(e) => updateForm("websiteUrl", e.target.value)}
                   type="url"
@@ -511,7 +577,7 @@ const Onboarding = () => {
                 <Label htmlFor="phone">Phone number</Label>
                 <Input
                   id="phone"
-                  placeholder="04XX XXX XXX"
+                  placeholder={PHONE_HINTS[form.country] || "Your phone number"}
                   value={form.phone}
                   onChange={(e) => updateForm("phone", e.target.value)}
                   type="tel"
@@ -560,14 +626,22 @@ const Onboarding = () => {
                 />
               </div>
 
-              {/* LOCAL: suburb, state, postcode, radius */}
+              {/* LOCAL: suburb/city, state, postcode/zip, radius */}
               {form.targetType === "local" && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="suburb">Suburb</Label>
+                    <Label htmlFor="suburb">
+                      {form.country === "United States" ? "City" : "Suburb / City"}
+                    </Label>
                     <Input
                       id="suburb"
-                      placeholder="e.g. Paddington"
+                      placeholder={
+                        form.country === "United States"
+                          ? "e.g. Austin"
+                          : form.country === "United Kingdom"
+                          ? "e.g. Manchester"
+                          : "e.g. Paddington"
+                      }
                       value={form.suburb}
                       onChange={(e) => updateForm("suburb", e.target.value)}
                       autoFocus
@@ -576,38 +650,115 @@ const Onboarding = () => {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>State</Label>
-                      <Select
-                        value={form.state}
-                        onValueChange={(v) => updateForm("state", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="State" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STATES.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label>
+                        {form.country === "United States"
+                          ? "State"
+                          : form.country === "United Kingdom"
+                          ? "Region"
+                          : form.country === "Canada"
+                          ? "Province"
+                          : "State / Province"}
+                      </Label>
+                      {form.country === "Australia" ? (
+                        <Select
+                          value={form.state}
+                          onValueChange={(v) => updateForm("state", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="State" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {AU_STATES.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : form.country === "United States" ? (
+                        <Select
+                          value={form.state}
+                          onValueChange={(v) => updateForm("state", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="State" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {US_STATES.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : form.country === "United Kingdom" ? (
+                        <Select
+                          value={form.state}
+                          onValueChange={(v) => updateForm("state", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Region" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {UK_REGIONS.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : form.country === "Canada" ? (
+                        <Select
+                          value={form.state}
+                          onValueChange={(v) => updateForm("state", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Province" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CA_PROVINCES.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          placeholder="State / Province"
+                          value={form.state}
+                          onChange={(e) => updateForm("state", e.target.value)}
+                        />
+                      )}
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="postcode">Postcode</Label>
+                      <Label htmlFor="postcode">
+                        {form.country === "United States" ? "Zip code" : "Postcode"}
+                      </Label>
                       <Input
                         id="postcode"
-                        placeholder="4000"
-                        value={form.postcode}
-                        onChange={(e) =>
-                          updateForm(
-                            "postcode",
-                            e.target.value.replace(/\D/g, "").slice(0, 4)
-                          )
+                        placeholder={
+                          form.country === "United States"
+                            ? "90210"
+                            : form.country === "United Kingdom"
+                            ? "SW1A 1AA"
+                            : form.country === "Canada"
+                            ? "K1A 0A6"
+                            : "4000"
                         }
-                        inputMode="numeric"
-                        maxLength={4}
+                        value={form.postcode}
+                        onChange={(e) => {
+                          if (form.country === "United States") {
+                            updateForm("postcode", e.target.value.replace(/\D/g, "").slice(0, 5));
+                          } else if (form.country === "United Kingdom" || form.country === "Canada") {
+                            updateForm("postcode", e.target.value.slice(0, 7));
+                          } else {
+                            updateForm("postcode", e.target.value.replace(/\D/g, "").slice(0, 4));
+                          }
+                        }}
+                        inputMode={form.country === "United Kingdom" || form.country === "Canada" ? "text" : "numeric"}
+                        maxLength={form.country === "United States" ? 5 : form.country === "United Kingdom" || form.country === "Canada" ? 7 : 4}
                       />
                     </div>
                   </div>
@@ -617,7 +768,9 @@ const Onboarding = () => {
                     <div className="flex items-center justify-between">
                       <Label>Target radius</Label>
                       <span className="text-sm font-medium text-primary">
-                        {form.targetRadiusKm} km
+                        {form.country === "United States"
+                          ? `${Math.round(form.targetRadiusKm * 0.621)} mi`
+                          : `${form.targetRadiusKm} km`}
                       </span>
                     </div>
                     <Slider
@@ -631,8 +784,8 @@ const Onboarding = () => {
                       className="w-full"
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>10 km</span>
-                      <span>100 km</span>
+                      <span>{form.country === "United States" ? "6 mi" : "10 km"}</span>
+                      <span>{form.country === "United States" ? "62 mi" : "100 km"}</span>
                     </div>
                   </div>
                 </div>
@@ -646,7 +799,7 @@ const Onboarding = () => {
                     <Label>Target regions</Label>
                   </div>
 
-                  {/* All of Australia toggle */}
+                  {/* Select all toggle */}
                   <button
                     type="button"
                     onClick={toggleAllRegions}
@@ -658,16 +811,31 @@ const Onboarding = () => {
                     )}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-medium">All of Australia</span>
+                      <span className="font-medium">
+                        {form.country === "United States"
+                          ? "All of United States"
+                          : form.country === "United Kingdom"
+                          ? "All of United Kingdom"
+                          : form.country === "Canada"
+                          ? "All of Canada"
+                          : "All regions"}
+                      </span>
                       {allRegionsSelected && (
                         <Check className="h-4 w-4 text-primary" />
                       )}
                     </div>
                   </button>
 
-                  {/* Individual state chips */}
+                  {/* Individual region chips */}
                   <div className="grid grid-cols-4 gap-2">
-                    {STATES.map((s) => {
+                    {(form.country === "United States"
+                      ? [...US_STATES]
+                      : form.country === "United Kingdom"
+                      ? [...UK_REGIONS]
+                      : form.country === "Canada"
+                      ? [...CA_PROVINCES]
+                      : [...AU_STATES]
+                    ).map((s) => {
                       const isSelected = form.targetRegions.includes(s);
                       return (
                         <button
@@ -689,7 +857,7 @@ const Onboarding = () => {
 
                   {form.targetRegions.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center">
-                      Select at least one region, or choose "All of Australia"
+                      Select at least one region
                     </p>
                   )}
                 </div>
