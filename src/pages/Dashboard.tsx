@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
+import StrategyBrief from "@/components/StrategyBrief";
 import { trackPageView } from "@/utils/analytics";
 import {
   Table,
@@ -921,6 +922,14 @@ const Dashboard = () => {
               value={avgCostPerLead !== null ? formatCurrency(avgCostPerLead) : "—"}
             />
           </div>
+
+          {/* Strategy Brief */}
+          {business && (
+            <StrategyBrief
+              businessId={business.id}
+              businessName={business.name}
+            />
+          )}
 
           {/* Active Campaigns */}
           <section className="space-y-4">
