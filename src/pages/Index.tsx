@@ -20,6 +20,7 @@ import {
   Check,
   ArrowRight,
 } from "lucide-react";
+import TryItNow from "@/components/TryItNow";
 
 // ─── Trades for the rotating hero text ──────────────────────────────────────
 
@@ -172,6 +173,11 @@ const Index = () => {
             <strong className="text-foreground">$49/mo</strong> instead of $2000/mo agencies. Cancel anytime.
           </p>
         </div>
+      </section>
+
+      {/* ── Try It Now ──────────────────────────────────────────────────── */}
+      <section className="border-t border-border/40 bg-muted/10">
+        <TryItNow />
       </section>
 
       {/* ── Social proof strip ──────────────────────────────────────────── */}
