@@ -874,7 +874,7 @@ const Dashboard = () => {
               <h1 className="text-3xl font-bold">Dashboard</h1>
               <p className="text-muted-foreground mt-1">
                 {business
-                  ? `${business.name} — ${business.trade}, ${business.suburb}`
+                  ? `${business.name}${business.suburb ? ` — ${business.suburb}` : ''}`
                   : "Welcome back!"}
               </p>
             </div>

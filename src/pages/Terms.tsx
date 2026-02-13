@@ -47,11 +47,11 @@ const Terms = () => {
           <section>
             <h2 className="text-xl font-semibold mb-3">2. Service description</h2>
             <p>
-              ZuckerBot is an AI-powered platform that helps Australian tradespeople create and
+              ZuckerBot is an AI-powered platform that helps Australian small businesses create and
               manage Facebook advertising campaigns. Our Service includes:
             </p>
             <ul className="list-disc pl-6 space-y-2 mt-3">
-              <li>AI-generated ad copy tailored to your trade and service area.</li>
+              <li>AI-generated ad copy tailored to your business type and service area.</li>
               <li>Campaign creation and management via the Meta (Facebook) Marketing API.</li>
               <li>A lead inbox to view and manage enquiries from your ads.</li>
               <li>Automated SMS notifications to leads via Twilio.</li>
@@ -60,7 +60,7 @@ const Terms = () => {
             <p className="mt-3">
               We act as a tool to help you run ads. We do not guarantee any specific results,
               lead volumes, or return on ad spend. Advertising performance depends on many factors
-              outside our control, including your trade, location, budget, and market conditions.
+              outside our control, including your business type, location, budget, and market conditions.
             </p>
           </section>
 

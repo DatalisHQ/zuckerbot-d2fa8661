@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import TryItNow from "@/components/TryItNow";
 
-// ─── Trades for the rotating hero text ──────────────────────────────────────
+// ─── Business types for the rotating hero text ─────────────────────────────
 
 const BUSINESSES = [
   "Restaurant",
@@ -34,7 +34,7 @@ const BUSINESSES = [
   "Retailer",
   "Physio",
   "Accountant",
-  "Tradie",
+  "Small Business",
 ];
 
 // ─── Component ──────────────────────────────────────────────────────────────

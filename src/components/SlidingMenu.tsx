@@ -89,7 +89,7 @@ export const SlidingMenu = () => {
             </Link>
           </SheetTitle>
           <SheetDescription className="text-left">
-            AI-powered Facebook Ads for Tradies
+            AI-powered Facebook Ads for Small Business
           </SheetDescription>
         </SheetHeader>
 

@@ -40,25 +40,24 @@ interface AdVariant {
 
 function fallbackAdVariants(business: Business): AdVariant[] {
   const { name, trade, suburb } = business;
-  const tradeLower = trade.toLowerCase();
 
   return [
     {
       id: 1,
       headline: `${suburb} Locals Love ${name}`,
-      body: `5-star ${tradeLower} right in ${suburb}. Book online or call — new customers get a special intro offer.`,
+      body: `Trusted by ${suburb} locals. Book online or call — new customers get a special intro offer.`,
       cta: "Learn More",
     },
     {
       id: 2,
-      headline: `Looking for a ${trade} in ${suburb}?`,
-      body: `${name} has openings this week in ${suburb} & surrounds. Don't wait — spots fill fast.`,
+      headline: `Looking for ${name}?`,
+      body: `${name} is now taking bookings in ${suburb} & surrounds. Don't wait — spots fill fast.`,
       cta: "Book Now",
     },
     {
       id: 3,
-      headline: `${name} — ${suburb}'s Favourite ${trade}`,
-      body: `Local ${tradeLower} delivering quality results at honest prices. See why ${suburb} keeps coming back.`,
+      headline: `${name} — ${suburb}'s Best Kept Secret`,
+      body: `Quality service at honest prices. See why customers in ${suburb} keep coming back to ${name}.`,
       cta: "Learn More",
     },
   ];
@@ -283,7 +282,7 @@ const CampaignCreator = () => {
         
         const { error } = await supabase.from("campaigns" as any).insert({
           business_id: business.id,
-          name: `${business.trade} Campaign — ${business.suburb}`,
+          name: `${business.name} Campaign — ${business.suburb || 'Online'}`,
           status: "draft",
           daily_budget_cents: dailyBudget * 100,
           radius_km: radiusKm,
@@ -558,7 +557,7 @@ const CampaignCreator = () => {
                         <div className="relative w-full h-full">
                           <img
                             src={selectedImages[0]}
-                            alt={`${business?.name} — ${business?.trade}`}
+                            alt={`${business?.name} ad creative`}
                             className="w-full h-full object-cover"
                           />
                           {selectedImages.length > 1 && (

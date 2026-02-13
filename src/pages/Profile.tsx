@@ -381,7 +381,7 @@ export default function Profile() {
                       </div>
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Trade
+                          Business Type
                         </p>
                         <p className="text-sm font-medium capitalize">
                           {business.trade}

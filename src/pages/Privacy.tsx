@@ -33,7 +33,7 @@ const Privacy = () => {
           <section>
             <p>
               ZuckerBot ("we", "us", "our") is operated by DatalisHQ. We provide an AI-powered
-              Facebook advertising platform for Australian tradespeople at{" "}
+              Facebook advertising platform for Australian small businesses at{" "}
               <a href="https://zuckerbot.ai" className="text-primary hover:underline">
                 zuckerbot.ai
               </a>
@@ -55,7 +55,7 @@ const Privacy = () => {
                 password when you sign up.
               </li>
               <li>
-                <strong>Business details</strong> — your trade type, business name, service area,
+                <strong>Business details</strong> — your business type, business name, service area,
                 and any photos or descriptions you provide for ad creation.
               </li>
               <li>
@@ -87,7 +87,7 @@ const Privacy = () => {
                 To send automated SMS messages to your leads via Twilio (e.g., confirming their
                 enquiry).
               </li>
-              <li>To generate AI-powered ad copy tailored to your trade and location.</li>
+              <li>To generate AI-powered ad copy tailored to your business type and location.</li>
               <li>To display leads in your inbox and send you notifications.</li>
               <li>To process payments and manage your subscription.</li>
               <li>To improve our platform, AI models, and ad performance.</li>
@@ -122,7 +122,7 @@ const Privacy = () => {
               </li>
               <li>
                 <strong>Anthropic</strong> — to power our AI-generated ad copy. Business details
-                and trade information may be sent to Anthropic's API for content generation.
+                and business information may be sent to Anthropic's API for content generation.
               </li>
             </ul>
             <p className="mt-3">

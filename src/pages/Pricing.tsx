@@ -84,7 +84,7 @@ export default function Pricing() {
             Simple pricing for small businesses
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Stop wasting time on ads. Let ZuckerBot fill your pipeline with quality leads — so you can get back on the tools.
+            Stop paying agencies thousands a month. ZuckerBot creates and runs your Facebook ads — from $49/mo.
           </p>
         </div>
 
