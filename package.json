@@ -49,6 +49,7 @@
     "embla-carousel-react": "^8.3.0",
     "input-otp": "^1.2.4",
     "lucide-react": "^0.462.0",
+    "mixpanel-browser": "^2.74.0",
     "next-themes": "^0.3.0",
     "playwright": "^1.54.1",
     "react": "^18.3.1",

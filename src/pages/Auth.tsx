@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Zap } from "lucide-react";
 import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
+import { mpSignUp, mpSignIn, mpError } from "@/lib/mixpanel";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -121,6 +122,16 @@ const Auth = () => {
       // Track GA4 signup event
       trackFunnelEvent.completeSignup('email');
 
+      // Track Mixpanel signup event
+      mpSignUp({
+        user_id: signUpData.user.id,
+        email: email,
+        signup_method: 'email',
+        utm_source: new URLSearchParams(window.location.search).get('utm_source') || undefined,
+        utm_medium: new URLSearchParams(window.location.search).get('utm_medium') || undefined,
+        utm_campaign: new URLSearchParams(window.location.search).get('utm_campaign') || undefined,
+      });
+
       // Send welcome email (fire-and-forget)
       supabase.functions.invoke("welcome-email", {
         body: { user_email: email, user_name: fullName || undefined },
@@ -160,6 +171,13 @@ const Auth = () => {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error("No user found after sign in");
+
+      // Track Mixpanel sign-in event
+      mpSignIn({
+        user_id: user.id,
+        login_method: 'email',
+        success: true,
+      });
 
       // Create profile if it doesn't exist
       const { data: profile } = await supabase

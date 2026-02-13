@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
 import { Loader2, Sparkles, Image as ImageIcon, ThumbsUp, Save, Rocket } from "lucide-react";
 import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
+import { mpFunnel } from "@/lib/mixpanel";
 
 // ─── Local Interfaces ──────────────────────────────────────────────────────
 
@@ -119,6 +120,7 @@ const CampaignCreator = () => {
     // Track page view
     trackFunnelEvent.viewCampaignCreator();
     trackPageView('/campaign/new', 'ZuckerBot — Create Campaign');
+    mpFunnel.viewCampaignCreator();
 
     const fetchBusiness = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -171,6 +173,7 @@ const CampaignCreator = () => {
     
     // Track ad copy generation
     trackFunnelEvent.generateAdCopy(business.trade);
+    mpFunnel.generateAdCopy({ business_type: business.trade });
     
     setIsGenerating(true);
     const aiResult = await fetchAIVariants(business.id, usp, currentOffer);
@@ -235,6 +238,7 @@ const CampaignCreator = () => {
         // Track successful campaign launch
         const campaignId = launchData?.campaign_id || 'unknown';
         trackFunnelEvent.launchCampaign(campaignId, dailyBudget);
+        mpFunnel.launchCampaign({ campaign_id: campaignId, budget: dailyBudget });
         
         // Check if this might be their first campaign
         const { data: existingCampaigns } = await supabase

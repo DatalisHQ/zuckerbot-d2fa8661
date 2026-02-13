@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
+import { mpFunnel } from "@/lib/mixpanel";
 import {
   Loader2,
   Inbox,
@@ -126,6 +127,9 @@ const LeadInbox = () => {
       setLeads((prev) =>
         prev.map((l) => (l.id === leadId ? { ...l, status: newStatus } : l))
       );
+
+      // Track lead status update in Mixpanel
+      mpFunnel.updateLeadStatus({ new_status: newStatus, lead_id: leadId });
 
       // Fire Conversion API feedback — tell Meta about lead quality
       // "won" or "contacted" = good signal, "lost" = bad signal

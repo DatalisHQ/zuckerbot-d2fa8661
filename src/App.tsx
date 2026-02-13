@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { metaTracking } from "@/lib/meta-tracking";
+import { identifyUser, resetMixpanel, mpSignIn } from "@/lib/mixpanel";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import AuthCallback from "./pages/AuthCallback";
@@ -51,12 +52,32 @@ function App() {
         setUser(session?.user ?? null);
         setIsLoading(false);
 
-        // Track auth events with Meta Pixel
+        // Track auth events with Meta Pixel + Mixpanel
         if (event === 'SIGNED_IN' && session?.user) {
           // Grant consent for authenticated users and track registration
           metaTracking.grantConsent();
           metaTracking.trackCompleteRegistration(session.user.email);
           console.log('🎯 Tracked: CompleteRegistration');
+
+          // Identify user in Mixpanel
+          identifyUser(session.user.id, {
+            email: session.user.email || undefined,
+            name: session.user.user_metadata?.full_name || undefined,
+            signup_method: session.user.app_metadata?.provider || 'email',
+            created_at: session.user.created_at,
+          });
+
+          // Track sign-in event
+          mpSignIn({
+            user_id: session.user.id,
+            login_method: session.user.app_metadata?.provider || 'email',
+            success: true,
+          });
+        }
+
+        // Reset Mixpanel on sign out
+        if (event === 'SIGNED_OUT') {
+          resetMixpanel();
         }
 
         // Handle Facebook OAuth token capture globally

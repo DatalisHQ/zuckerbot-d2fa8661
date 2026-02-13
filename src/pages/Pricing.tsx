@@ -8,6 +8,7 @@ import { Navbar } from "@/components/Navbar";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
+import { mpFunnel } from "@/lib/mixpanel";
 
 const starterFeatures = [
   "1 active campaign",
@@ -53,6 +54,7 @@ export default function Pricing() {
 
       // Track begin_checkout event
       trackFunnelEvent.beginCheckout(planInfo.plan, planInfo.value);
+      mpFunnel.startCheckout({ plan: planInfo.plan, value: planInfo.value });
 
       const { data, error } = await supabase.functions.invoke("create-checkout", {
         body: { priceId },

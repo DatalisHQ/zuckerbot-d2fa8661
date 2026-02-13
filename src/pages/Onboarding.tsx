@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
+import { mpFunnel } from "@/lib/mixpanel";
 import {
   Select,
   SelectContent,
@@ -120,6 +121,7 @@ const Onboarding = () => {
     // Track page view
     trackFunnelEvent.viewOnboarding();
     trackPageView('/onboarding', 'ZuckerBot — Business Setup');
+    mpFunnel.startOnboarding();
 
     const checkUser = async () => {
       const { user, isValid } = await validateSession();
@@ -334,6 +336,12 @@ const Onboarding = () => {
         form.suburb,
         form.businessName
       );
+      mpFunnel.completeOnboarding({
+        user_id: userId,
+        business_type: tradeName,
+        location: form.suburb,
+        business_name: form.businessName,
+      });
 
       toast({
         title: "You're all set! 🎉",
