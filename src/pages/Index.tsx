@@ -143,41 +143,35 @@ const Index = () => {
         </div>
       </nav>
 
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section className="container mx-auto px-4 sm:px-6 pt-16 sm:pt-24 pb-16">
-        <div className="max-w-4xl mx-auto text-center space-y-8">
+      {/* ── Hero + Try It Now (above the fold) ────────────────────────── */}
+      <section className="container mx-auto px-4 sm:px-6 pt-12 sm:pt-20 pb-16">
+        <div className="max-w-4xl mx-auto text-center space-y-6">
           <Badge variant="secondary" className="text-sm px-4 py-1.5">
-            🚀 The $49 agency alternative
+            🚀 The $49 AI agency alternative
           </Badge>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight">
-            Stop paying agencies $2K/month.
+            See what AI ads look like
             <br />
-            <span className="text-primary">Run your own Facebook ads in 60 seconds.</span>
+            <span className="text-primary">for YOUR business</span>
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            While other <span className="text-foreground font-medium">{BUSINESSES[businessIndex]}s</span> are still paying agencies, 
-            you could be getting Facebook leads sent straight to your phone. 
-            <strong className="text-foreground">Set up in 60 seconds.</strong>
-          </p>
-
-          <div className="flex justify-center pt-4">
-            <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
-              Start Free Trial
-              <ArrowRight className="w-5 h-5 ml-2" />
-            </Button>
-          </div>
-
-          <p className="text-sm text-muted-foreground">
-            <strong className="text-foreground">$49/mo</strong> instead of $2000/mo agencies. Cancel anytime.
+            Enter your website URL and watch our AI generate real Facebook ad creatives in seconds.
+            <strong className="text-foreground"> Free — no signup required.</strong>
           </p>
         </div>
-      </section>
 
-      {/* ── Try It Now ──────────────────────────────────────────────────── */}
-      <section className="border-t border-border/40 bg-muted/10">
-        <TryItNow />
+        {/* Inline Try It Now */}
+        <div className="max-w-4xl mx-auto mt-8">
+          <TryItNow compact />
+        </div>
+
+        <div className="max-w-4xl mx-auto text-center mt-6">
+          <p className="text-sm text-muted-foreground">
+            While other <span className="text-foreground font-medium">{BUSINESSES[businessIndex]}s</span> pay agencies $2K/month, you could be live for <strong className="text-foreground">$49/mo</strong>. Cancel anytime.
+          </p>
+        </div>
       </section>
 
       {/* ── Social proof strip ──────────────────────────────────────────── */}

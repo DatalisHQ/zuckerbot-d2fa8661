@@ -54,7 +54,7 @@ const LOADING_MESSAGES = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function TryItNow() {
+export default function TryItNow({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const [url, setUrl] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -207,23 +207,25 @@ export default function TryItNow() {
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <section className="container mx-auto px-4 sm:px-6 py-20">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary rounded-full px-4 py-1.5 text-sm font-medium mb-4">
-            <Sparkles className="w-4 h-4" />
-            Free preview — no signup required
+    <section className={compact ? "" : "container mx-auto px-4 sm:px-6 py-20"}>
+      <div className={compact ? "" : "max-w-4xl mx-auto"}>
+        {/* Header — hidden in compact mode (hero provides it) */}
+        {!compact && (
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 bg-primary/10 text-primary rounded-full px-4 py-1.5 text-sm font-medium mb-4">
+              <Sparkles className="w-4 h-4" />
+              Free preview — no signup required
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+              See what AI ads look like for{" "}
+              <span className="text-primary">YOUR</span> business
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+              Enter your website or upload a few photos. Our AI will generate
+              real Facebook ad creatives in seconds.
+            </p>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-            See what AI ads look like for{" "}
-            <span className="text-primary">YOUR</span> business
-          </h2>
-          <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            Enter your website or upload a few photos. Our AI will generate
-            real Facebook ad creatives in seconds.
-          </p>
-        </div>
+        )}
 
         {/* ── Results ────────────────────────────────────────────────────── */}
         {result ? (
