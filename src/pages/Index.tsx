@@ -151,14 +151,14 @@ const Index = () => {
           </Badge>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight">
-            See what AI ads look like
+            Your first ad campaign
             <br />
-            <span className="text-primary">for YOUR business</span>
+            <span className="text-primary">in 60 seconds. Not 60 days.</span>
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Enter your website URL and watch our AI generate real Facebook ad creatives in seconds.
-            <strong className="text-foreground"> Free — no signup required.</strong>
+            Paste your website and watch AI build your Facebook ads — strategy, copy, and creatives.
+            <strong className="text-foreground"> Free preview, no signup required.</strong>
           </p>
         </div>
 
