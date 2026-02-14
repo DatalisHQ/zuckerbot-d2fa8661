@@ -334,6 +334,22 @@ const Onboarding = () => {
         business_name: form.businessName,
       });
 
+      // Send welcome email (fire-and-forget — don't block navigation)
+      try {
+        const userEmail = (await supabase.auth.getUser()).data.user?.email;
+        if (userEmail) {
+          supabase.functions.invoke("welcome-email", {
+            body: {
+              user_id: userId,
+              user_email: userEmail,
+              user_name: form.businessName,
+            },
+          });
+        }
+      } catch {
+        // Non-critical — don't block user flow
+      }
+
       toast({
         title: "You're all set! 🎉",
         description: "Let's create your first ad campaign.",
