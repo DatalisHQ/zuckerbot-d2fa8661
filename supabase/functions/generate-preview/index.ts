@@ -124,7 +124,7 @@ async function scrapeWebsite(url: string): Promise<ScrapedBusiness> {
 
 // ─── Nano Banana Pro (Gemini 3 Pro Image) API ────────────────────────────────
 
-const GOOGLE_AI_API_KEY = "AIzaSyBMhhDH6Y66mB_pbu6rNvz7S2BoFa6S8GU";
+const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY") || "";
 
 async function generateAdImages(
   businessName: string,
