@@ -245,28 +245,13 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
               ))}
             </div>
 
-            {/* CTA — Primary conversion point */}
+            {/* Email capture + CTA */}
             <div className="text-center space-y-6 pt-8">
-              <div className="bg-primary/5 border-2 border-primary/20 rounded-2xl p-8 space-y-4">
-                <h3 className="text-2xl font-bold">
-                  Ready to launch these ads for real?
-                </h3>
-                <p className="text-lg text-muted-foreground max-w-md mx-auto">
-                  Start your <strong className="text-foreground">7-day free trial</strong> and 
-                  get these ads live on Facebook in 60 seconds. No credit card required to start.
-                </p>
-                <Button
-                  size="lg"
-                  className="text-lg px-10 py-7 shadow-lg hover:shadow-xl transition-shadow"
-                  onClick={() => navigate("/auth")}
-                >
-                  Start Free Trial — Launch These Ads
-                  <ArrowRight className="w-5 h-5 ml-2" />
-                </Button>
-                <p className="text-sm text-muted-foreground">
-                  $49/mo after trial • Cancel anytime • No lock-in contracts
-                </p>
-              </div>
+              <EmailCapture 
+                businessName={result.business_name} 
+                url={url}
+                onSignup={() => navigate("/auth")} 
+              />
               <div>
                 <Button variant="ghost" onClick={reset}>
                   Try another business
@@ -440,6 +425,143 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
         )}
       </div>
     </section>
+  );
+}
+
+// ─── Email Capture Component ─────────────────────────────────────────────────
+
+const BRIEF_FUNCTION_URL =
+  "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/send-preview-brief";
+
+function EmailCapture({
+  businessName,
+  url,
+  onSignup,
+}: {
+  businessName: string;
+  url: string;
+  onSignup: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+
+  const handleSendBrief = async () => {
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes("@")) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+
+    setSending(true);
+    setEmailError(null);
+
+    try {
+      const response = await fetch(BRIEF_FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed, url, business_name: businessName }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        setEmailError(data.error || "Failed to send. Please try again.");
+        return;
+      }
+
+      setSent(true);
+    } catch {
+      setEmailError("Network error. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <div className="bg-green-50 dark:bg-green-950/30 border-2 border-green-200 dark:border-green-800 rounded-2xl p-8 space-y-4">
+        <div className="text-4xl">📬</div>
+        <h3 className="text-2xl font-bold text-green-800 dark:text-green-200">
+          Check your inbox!
+        </h3>
+        <p className="text-lg text-green-700 dark:text-green-300 max-w-md mx-auto">
+          We're generating a full marketing strategy brief for{" "}
+          <strong>{businessName}</strong> and sending it to{" "}
+          <strong>{email}</strong>.
+        </p>
+        <div className="pt-4">
+          <p className="text-sm text-muted-foreground mb-3">
+            Want to launch these ads right now?
+          </p>
+          <Button
+            size="lg"
+            className="text-lg px-10 py-7 shadow-lg hover:shadow-xl transition-shadow"
+            onClick={onSignup}
+          >
+            Start Free Trial — Go Live in 60 Seconds
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+          <p className="text-sm text-muted-foreground mt-2">
+            $49/mo after trial • Cancel anytime
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-primary/5 border-2 border-primary/20 rounded-2xl p-8 space-y-5">
+      <h3 className="text-2xl font-bold">
+        Want the full marketing strategy?
+      </h3>
+      <p className="text-lg text-muted-foreground max-w-md mx-auto">
+        We'll generate a detailed strategy brief for{" "}
+        <strong className="text-foreground">{businessName}</strong> with
+        audience analysis, campaign structure, budget recommendations, and
+        ROI projections. Free.
+      </p>
+      <div className="flex gap-3 max-w-md mx-auto">
+        <Input
+          type="email"
+          placeholder="you@yourbusiness.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSendBrief()}
+          disabled={sending}
+          className="text-base h-12"
+        />
+        <Button
+          size="lg"
+          onClick={handleSendBrief}
+          disabled={sending || !email.trim()}
+          className="shrink-0 h-12 px-6"
+        >
+          {sending ? (
+            <span className="flex items-center gap-2">
+              <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />
+            </span>
+          ) : (
+            "Send Me the Brief"
+          )}
+        </Button>
+      </div>
+      {emailError && (
+        <p className="text-sm text-destructive">{emailError}</p>
+      )}
+      <div className="pt-2">
+        <p className="text-xs text-muted-foreground">
+          Or{" "}
+          <button
+            className="text-primary underline hover:no-underline cursor-pointer"
+            onClick={onSignup}
+          >
+            skip straight to your free trial
+          </button>{" "}
+          and launch these ads now. $49/mo after trial.
+        </p>
+      </div>
+    </div>
   );
 }
 
