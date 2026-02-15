@@ -17,6 +17,7 @@ import {
   MessageCircle,
   Share2,
   ImageIcon,
+  Lock,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -229,36 +230,12 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
 
         {/* ── Results ────────────────────────────────────────────────────── */}
         {result ? (
-          <div className="space-y-8">
-            {/* Business info */}
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">
-                Showing AI-generated ads for
-              </p>
-              <h3 className="text-2xl font-bold">{result.business_name}</h3>
-            </div>
-
-            {/* Ad preview cards */}
-            <div className="grid sm:grid-cols-2 gap-6">
-              {result.ads.map((ad, i) => (
-                <FacebookAdCard key={i} ad={ad} businessName={result.business_name} />
-              ))}
-            </div>
-
-            {/* Email capture + CTA */}
-            <div className="text-center space-y-6 pt-8">
-              <EmailCapture 
-                businessName={result.business_name} 
-                url={url}
-                onSignup={() => navigate("/auth")} 
-              />
-              <div>
-                <Button variant="ghost" onClick={reset}>
-                  Try another business
-                </Button>
-              </div>
-            </div>
-          </div>
+          <ResultsWithGate
+            result={result}
+            url={url}
+            onSignup={() => navigate("/auth")}
+            onReset={reset}
+          />
         ) : (
           /* ── Input form ──────────────────────────────────────────────── */
           <Card className="border-2">
@@ -428,6 +405,104 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
   );
 }
 
+// ─── Results with Blur Gate ───────────────────────────────────────────────────
+
+function ResultsWithGate({
+  result,
+  url,
+  onSignup,
+  onReset,
+}: {
+  result: PreviewResult;
+  url: string;
+  onSignup: () => void;
+  onReset: () => void;
+}) {
+  const [unlocked, setUnlocked] = useState(false);
+  const firstAd = result.ads[0];
+  const restAds = result.ads.slice(1);
+
+  return (
+    <div className="space-y-8">
+      {/* Business info */}
+      <div className="text-center">
+        <p className="text-sm text-muted-foreground">
+          Showing AI-generated ads for
+        </p>
+        <h3 className="text-2xl font-bold">{result.business_name}</h3>
+      </div>
+
+      {/* First ad — always visible */}
+      <div className="grid sm:grid-cols-2 gap-6">
+        {firstAd && (
+          <FacebookAdCard ad={firstAd} businessName={result.business_name} />
+        )}
+
+        {/* Second ad — blurred or visible */}
+        {restAds[0] && (
+          unlocked ? (
+            <FacebookAdCard ad={restAds[0]} businessName={result.business_name} />
+          ) : (
+            <div className="relative">
+              <div className="blur-[8px] pointer-events-none select-none">
+                <FacebookAdCard ad={restAds[0]} businessName={result.business_name} />
+              </div>
+              {/* Overlay */}
+              <div className="absolute inset-0 flex items-center justify-center bg-background/40 backdrop-blur-[2px] rounded-lg">
+                <div className="text-center space-y-2 px-4">
+                  <Lock className="w-8 h-8 mx-auto text-primary" />
+                  <p className="font-semibold text-lg">1 more ad creative</p>
+                  <p className="text-sm text-muted-foreground">
+                    Enter your email below to unlock
+                  </p>
+                </div>
+              </div>
+            </div>
+          )
+        )}
+      </div>
+
+      {/* Email capture — between ads and CTA */}
+      {!unlocked ? (
+        <EmailCapture
+          businessName={result.business_name}
+          url={url}
+          onSignup={onSignup}
+          onUnlock={() => setUnlocked(true)}
+        />
+      ) : (
+        <div className="text-center space-y-4 pt-4">
+          <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-2xl p-6">
+            <p className="text-lg font-semibold text-green-800 dark:text-green-200">
+              📬 Check your inbox — a full strategy brief is on the way
+            </p>
+            <p className="text-sm text-green-600 dark:text-green-400 mt-2">
+              Includes audience personas, campaign structure, budget recs & ROI projections.
+            </p>
+          </div>
+          <Button
+            size="lg"
+            className="text-lg px-10 py-7 shadow-lg hover:shadow-xl transition-shadow"
+            onClick={onSignup}
+          >
+            Start Free Trial — Go Live in 60 Seconds
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            $49/mo after trial · Cancel anytime
+          </p>
+        </div>
+      )}
+
+      <div className="text-center">
+        <Button variant="ghost" onClick={onReset}>
+          Try another business
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Email Capture Component ─────────────────────────────────────────────────
 
 const BRIEF_FUNCTION_URL =
@@ -437,10 +512,12 @@ function EmailCapture({
   businessName,
   url,
   onSignup,
+  onUnlock,
 }: {
   businessName: string;
   url: string;
   onSignup: () => void;
+  onUnlock?: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
@@ -471,6 +548,7 @@ function EmailCapture({
       }
 
       setSent(true);
+      onUnlock?.();
     } catch {
       setEmailError("Network error. Please try again.");
     } finally {
@@ -478,48 +556,15 @@ function EmailCapture({
     }
   };
 
-  if (sent) {
-    return (
-      <div className="bg-green-50 dark:bg-green-950/30 border-2 border-green-200 dark:border-green-800 rounded-2xl p-8 space-y-4">
-        <div className="text-4xl">📬</div>
-        <h3 className="text-2xl font-bold text-green-800 dark:text-green-200">
-          Check your inbox!
-        </h3>
-        <p className="text-lg text-green-700 dark:text-green-300 max-w-md mx-auto">
-          We're generating a full marketing strategy brief for{" "}
-          <strong>{businessName}</strong> and sending it to{" "}
-          <strong>{email}</strong>.
-        </p>
-        <div className="pt-4">
-          <p className="text-sm text-muted-foreground mb-3">
-            Want to launch these ads right now?
-          </p>
-          <Button
-            size="lg"
-            className="text-lg px-10 py-7 shadow-lg hover:shadow-xl transition-shadow"
-            onClick={onSignup}
-          >
-            Start Free Trial — Go Live in 60 Seconds
-            <ArrowRight className="w-5 h-5 ml-2" />
-          </Button>
-          <p className="text-sm text-muted-foreground mt-2">
-            $49/mo after trial • Cancel anytime
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="bg-primary/5 border-2 border-primary/20 rounded-2xl p-8 space-y-5">
       <h3 className="text-2xl font-bold">
-        Want the full marketing strategy?
+        Unlock all your ads + get a free strategy brief
       </h3>
       <p className="text-lg text-muted-foreground max-w-md mx-auto">
-        We'll generate a detailed strategy brief for{" "}
-        <strong className="text-foreground">{businessName}</strong> with
-        audience analysis, campaign structure, budget recommendations, and
-        ROI projections. Free.
+        See your second ad creative and get a detailed marketing strategy for{" "}
+        <strong className="text-foreground">{businessName}</strong> —
+        audience personas, campaign structure, budget recs and ROI projections. Free.
       </p>
       <div className="flex gap-3 max-w-md mx-auto">
         <Input
@@ -542,7 +587,7 @@ function EmailCapture({
               <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />
             </span>
           ) : (
-            "Send Me the Brief"
+            "Unlock & Send Brief"
           )}
         </Button>
       </div>
