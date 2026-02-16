@@ -357,10 +357,47 @@ serve(async (req: Request) => {
     // ── Generate images and copy in parallel ──────────────────────────────
     console.log("[generate-preview] Generating images and copy in parallel...");
 
-    const [adImages, adCopies] = await Promise.all([
+    let adImages: string[] = [];
+    let adCopies: AdCopy[] = [];
+
+    const [imageResult, copyResult] = await Promise.allSettled([
       generateAdImages(businessName, description, adCount),
       generateAdCopy(businessName, description, adCount),
     ]);
+
+    if (imageResult.status === "fulfilled") {
+      adImages = imageResult.value;
+    } else {
+      console.error("[generate-preview] Image generation failed:", imageResult.reason);
+    }
+
+    if (copyResult.status === "fulfilled") {
+      adCopies = copyResult.value;
+    } else {
+      console.error("[generate-preview] Copy generation failed:", copyResult.reason);
+      // Fallback copy
+      adCopies = Array.from({ length: adCount }, (_, i) => ({
+        headline: i === 0 ? `Discover ${businessName}` : `${businessName} — Try Us Today`,
+        copy: i === 0
+          ? `Find out why locals love ${businessName}. Visit us today and see the difference.`
+          : `Ready for something great? ${businessName} is here for you. Get in touch now.`,
+      }));
+    }
+
+    // If no images generated, use a placeholder gradient
+    if (adImages.length === 0) {
+      console.warn("[generate-preview] No images generated, using placeholder");
+      // Return error suggesting image gen is temporarily down
+      return new Response(
+        JSON.stringify({
+          error: "Image generation is temporarily unavailable. Please try again in a few minutes.",
+        }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
 
     // ── Combine results ───────────────────────────────────────────────────
     const ads = adImages.map((image_base64: string, i: number) => ({
