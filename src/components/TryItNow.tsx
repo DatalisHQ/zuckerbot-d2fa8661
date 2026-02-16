@@ -17,7 +17,6 @@ import {
   MessageCircle,
   Share2,
   ImageIcon,
-  Lock,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -230,12 +229,51 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
 
         {/* ── Results ────────────────────────────────────────────────────── */}
         {result ? (
-          <ResultsWithGate
-            result={result}
-            url={url}
-            onSignup={() => navigate("/auth")}
-            onReset={reset}
-          />
+          <div className="space-y-8">
+            {/* Business info */}
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">
+                Showing AI-generated ads for
+              </p>
+              <h3 className="text-2xl font-bold">{result.business_name}</h3>
+            </div>
+
+            {/* Ad preview cards - show all freely */}
+            <div className="grid sm:grid-cols-2 gap-6">
+              {result.ads.map((ad, i) => (
+                <FacebookAdCard key={i} ad={ad} businessName={result.business_name} />
+              ))}
+            </div>
+
+            {/* Direct signup CTA */}
+            <div className="text-center space-y-6 pt-8">
+              <div className="bg-primary/5 border-2 border-primary/20 rounded-2xl p-8 space-y-6">
+                <h3 className="text-2xl font-bold">
+                  Ready to launch these exact ads?
+                </h3>
+                <p className="text-lg text-muted-foreground max-w-md mx-auto">
+                  Get your Facebook ad campaign live in 60 seconds. 7-day free trial, then $49/month.
+                </p>
+                <Button
+                  size="lg"
+                  className="text-lg px-12 py-8 shadow-lg hover:shadow-xl transition-shadow"
+                  onClick={() => navigate("/auth")}
+                >
+                  Start Free Trial — Launch Now
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  No setup fees • Cancel anytime • Live in 60 seconds
+                </p>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <Button variant="ghost" onClick={reset}>
+                Try another business
+              </Button>
+            </div>
+          </div>
         ) : (
           /* ── Input form ──────────────────────────────────────────────── */
           <Card className="border-2">
@@ -402,211 +440,6 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
         )}
       </div>
     </section>
-  );
-}
-
-// ─── Results with Blur Gate ───────────────────────────────────────────────────
-
-function ResultsWithGate({
-  result,
-  url,
-  onSignup,
-  onReset,
-}: {
-  result: PreviewResult;
-  url: string;
-  onSignup: () => void;
-  onReset: () => void;
-}) {
-  const [unlocked, setUnlocked] = useState(false);
-  const firstAd = result.ads[0];
-  const restAds = result.ads.slice(1);
-
-  return (
-    <div className="space-y-8">
-      {/* Business info */}
-      <div className="text-center">
-        <p className="text-sm text-muted-foreground">
-          Showing AI-generated ads for
-        </p>
-        <h3 className="text-2xl font-bold">{result.business_name}</h3>
-      </div>
-
-      {/* First ad — always visible */}
-      <div className="grid sm:grid-cols-2 gap-6">
-        {firstAd && (
-          <FacebookAdCard ad={firstAd} businessName={result.business_name} />
-        )}
-
-        {/* Second ad — blurred or visible */}
-        {restAds[0] && (
-          unlocked ? (
-            <FacebookAdCard ad={restAds[0]} businessName={result.business_name} />
-          ) : (
-            <div className="relative">
-              <div className="blur-[8px] pointer-events-none select-none">
-                <FacebookAdCard ad={restAds[0]} businessName={result.business_name} />
-              </div>
-              {/* Overlay */}
-              <div className="absolute inset-0 flex items-center justify-center bg-background/40 backdrop-blur-[2px] rounded-lg">
-                <div className="text-center space-y-2 px-4">
-                  <Lock className="w-8 h-8 mx-auto text-primary" />
-                  <p className="font-semibold text-lg">1 more ad creative</p>
-                  <p className="text-sm text-muted-foreground">
-                    Enter your email below to unlock
-                  </p>
-                </div>
-              </div>
-            </div>
-          )
-        )}
-      </div>
-
-      {/* Email capture — between ads and CTA */}
-      {!unlocked ? (
-        <EmailCapture
-          businessName={result.business_name}
-          url={url}
-          onSignup={onSignup}
-          onUnlock={() => setUnlocked(true)}
-        />
-      ) : (
-        <div className="text-center space-y-4 pt-4">
-          <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-2xl p-6">
-            <p className="text-lg font-semibold text-green-800 dark:text-green-200">
-              📬 Check your inbox — a full strategy brief is on the way
-            </p>
-            <p className="text-sm text-green-600 dark:text-green-400 mt-2">
-              Includes audience personas, campaign structure, budget recs & ROI projections.
-            </p>
-          </div>
-          <Button
-            size="lg"
-            className="text-lg px-10 py-7 shadow-lg hover:shadow-xl transition-shadow"
-            onClick={onSignup}
-          >
-            Start Free Trial — Go Live in 60 Seconds
-            <ArrowRight className="w-5 h-5 ml-2" />
-          </Button>
-          <p className="text-sm text-muted-foreground">
-            $49/mo after trial · Cancel anytime
-          </p>
-        </div>
-      )}
-
-      <div className="text-center">
-        <Button variant="ghost" onClick={onReset}>
-          Try another business
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Email Capture Component ─────────────────────────────────────────────────
-
-const BRIEF_FUNCTION_URL =
-  "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/send-preview-brief";
-
-function EmailCapture({
-  businessName,
-  url,
-  onSignup,
-  onUnlock,
-}: {
-  businessName: string;
-  url: string;
-  onSignup: () => void;
-  onUnlock?: () => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [emailError, setEmailError] = useState<string | null>(null);
-
-  const handleSendBrief = async () => {
-    const trimmed = email.trim();
-    if (!trimmed || !trimmed.includes("@")) {
-      setEmailError("Please enter a valid email address.");
-      return;
-    }
-
-    setSending(true);
-    setEmailError(null);
-
-    try {
-      const response = await fetch(BRIEF_FUNCTION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed, url, business_name: businessName }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        setEmailError(data.error || "Failed to send. Please try again.");
-        return;
-      }
-
-      setSent(true);
-      onUnlock?.();
-    } catch {
-      setEmailError("Network error. Please try again.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <div className="bg-primary/5 border-2 border-primary/20 rounded-2xl p-8 space-y-5">
-      <h3 className="text-2xl font-bold">
-        Unlock all your ads + get a free strategy brief
-      </h3>
-      <p className="text-lg text-muted-foreground max-w-md mx-auto">
-        See your second ad creative and get a detailed marketing strategy for{" "}
-        <strong className="text-foreground">{businessName}</strong> —
-        audience personas, campaign structure, budget recs and ROI projections. Free.
-      </p>
-      <div className="flex gap-3 max-w-md mx-auto">
-        <Input
-          type="email"
-          placeholder="you@yourbusiness.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSendBrief()}
-          disabled={sending}
-          className="text-base h-12"
-        />
-        <Button
-          size="lg"
-          onClick={handleSendBrief}
-          disabled={sending || !email.trim()}
-          className="shrink-0 h-12 px-6"
-        >
-          {sending ? (
-            <span className="flex items-center gap-2">
-              <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />
-            </span>
-          ) : (
-            "Unlock & Send Brief"
-          )}
-        </Button>
-      </div>
-      {emailError && (
-        <p className="text-sm text-destructive">{emailError}</p>
-      )}
-      <div className="pt-2">
-        <p className="text-xs text-muted-foreground">
-          Or{" "}
-          <button
-            className="text-primary underline hover:no-underline cursor-pointer"
-            onClick={onSignup}
-          >
-            skip straight to your free trial
-          </button>{" "}
-          and launch these ads now. $49/mo after trial.
-        </p>
-      </div>
-    </div>
   );
 }
 
