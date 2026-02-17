@@ -6,6 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { EnhancedProgress } from "@/components/EnhancedProgress";
 import {
   Globe,
   Upload,
@@ -17,6 +19,7 @@ import {
   MessageCircle,
   Share2,
   ImageIcon,
+  Zap,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -43,6 +46,9 @@ interface UploadedFile {
 
 const FUNCTION_URL =
   "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/generate-preview";
+  
+const ENHANCED_FUNCTION_URL =
+  "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/generate-preview-v2";
 
 const LOADING_MESSAGES = [
   "AI is analyzing your business...",
@@ -63,6 +69,9 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
   const [result, setResult] = useState<PreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scrapeError, setScrapeError] = useState(false);
+  const [useEnhanced, setUseEnhanced] = useState(true); // Default to enhanced system
+  const [showProgress, setShowProgress] = useState(false);
+  const [businessName, setBusinessName] = useState<string>("");
 
   // Cycle loading messages
   const startLoadingMessages = () => {
@@ -82,10 +91,19 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
     setError(null);
     setResult(null);
     setScrapeError(false);
-    const msgInterval = startLoadingMessages();
+    setBusinessName("");
+    
+    let msgInterval: NodeJS.Timeout | undefined;
+    
+    if (useEnhanced) {
+      setShowProgress(true);
+    } else {
+      msgInterval = startLoadingMessages();
+    }
 
     try {
-      const response = await fetch(FUNCTION_URL, {
+      const apiUrl = useEnhanced ? ENHANCED_FUNCTION_URL : FUNCTION_URL;
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: url.trim() }),
@@ -103,12 +121,20 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
         return;
       }
 
+      // Handle enhanced response format
+      if (useEnhanced && data.brand_analysis) {
+        setBusinessName(data.brand_analysis.business_type || data.business_name || "");
+      }
+
       setResult(data);
     } catch (err) {
       setError("Network error. Please check your connection and try again.");
     } finally {
-      clearInterval(msgInterval);
+      if (msgInterval) {
+        clearInterval(msgInterval);
+      }
       setIsLoading(false);
+      setShowProgress(false);
     }
   };
 
@@ -290,6 +316,34 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
                   </TabsTrigger>
                 </TabsList>
 
+                {/* Enhanced toggle */}
+                <div className="flex items-center justify-between mb-4 p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-3">
+                    <Zap className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <div className="font-medium text-sm">Enhanced AI System</div>
+                      <div className="text-xs text-muted-foreground">Brand-aware analysis + custom visuals</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={useEnhanced ? "default" : "secondary"} className="text-xs">
+                      {useEnhanced ? "Enhanced" : "Standard"}
+                    </Badge>
+                    <button
+                      onClick={() => setUseEnhanced(!useEnhanced)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                        useEnhanced ? 'bg-blue-600' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          useEnhanced ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
                 {/* URL tab */}
                 <TabsContent value="url" className="space-y-4">
                   <div className="flex gap-3">
@@ -311,12 +365,12 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
                       {isLoading ? (
                         <span className="flex items-center gap-2">
                           <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />
-                          Generating...
+                          {useEnhanced ? "Analyzing..." : "Generating..."}
                         </span>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4 mr-2" />
-                          Generate My Ads
+                          {useEnhanced ? "Create Smart Ads" : "Generate My Ads"}
                         </>
                       )}
                     </Button>
@@ -439,6 +493,12 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
           </Card>
         )}
       </div>
+      
+      {/* Enhanced Progress Overlay */}
+      <EnhancedProgress 
+        isVisible={showProgress && useEnhanced} 
+        businessName={businessName} 
+      />
     </section>
   );
 }
