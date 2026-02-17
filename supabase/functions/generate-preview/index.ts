@@ -133,14 +133,76 @@ async function generateAdImages(
 ): Promise<string[]> {
   const images: string[] = [];
 
-  // Nano Banana Pro generates one image per call, so we run in parallel
-  const prompts = [];
-  for (let i = 0; i < count; i++) {
-    const angle = i === 0 
-      ? "hero product/service shot, aspirational, warm lighting" 
-      : "lifestyle scene showing happy customer, candid feel, natural lighting";
-    prompts.push(
-      `Professional Facebook ad creative for: ${businessName}. ${description}. ${angle}. Photorealistic, modern, eye-catching, clean composition. Square format. No text or words in the image.`
+  // Industry-specific compelling visual prompts
+  const businessType = inferBusinessType(businessName, description);
+  const prompts = getIndustryPrompts(businessName, businessType, count);
+
+  function inferBusinessType(name: string, desc: string): string {
+    const combined = `${name} ${desc}`.toLowerCase();
+    if (combined.includes('restaurant') || combined.includes('food') || combined.includes('kitchen') || combined.includes('dining')) return 'restaurant';
+    if (combined.includes('gym') || combined.includes('fitness') || combined.includes('workout') || combined.includes('training')) return 'fitness';
+    if (combined.includes('roof') || combined.includes('construction') || combined.includes('repair') || combined.includes('contractor')) return 'roofing';
+    if (combined.includes('salon') || combined.includes('hair') || combined.includes('beauty') || combined.includes('spa')) return 'beauty';
+    if (combined.includes('garage') || combined.includes('auto') || combined.includes('mechanic') || combined.includes('car')) return 'automotive';
+    if (combined.includes('clean') || combined.includes('maid') || combined.includes('housekeeping')) return 'cleaning';
+    if (combined.includes('dental') || combined.includes('dentist') || combined.includes('teeth')) return 'dental';
+    if (combined.includes('law') || combined.includes('attorney') || combined.includes('legal')) return 'legal';
+    if (combined.includes('real estate') || combined.includes('realtor') || combined.includes('property')) return 'realestate';
+    if (combined.includes('plumb') || combined.includes('electric') || combined.includes('hvac')) return 'trades';
+    return 'general';
+  }
+
+  function getIndustryPrompts(name: string, type: string, count: number): string[] {
+    const prompts: string[] = [];
+    
+    switch (type) {
+      case 'restaurant':
+        prompts.push(
+          `Mouth-watering signature dish from ${name}, steam rising, professional food photography, warm restaurant ambiance in background, golden hour lighting, makes viewer instantly hungry`,
+          `Happy diverse family laughing while enjoying a meal at ${name}, cozy restaurant interior, warm lighting, authentic candid moment showing pure joy and satisfaction`,
+          `Chef's hands preparing fresh ingredients at ${name}, close-up action shot, professional kitchen background, steam and motion, conveys quality and freshness`
+        );
+        break;
+        
+      case 'fitness':
+        prompts.push(
+          `Dramatic before/after transformation collage, fit person celebrating victory pose in modern gym, inspirational lighting, shows clear results and achievement`,
+          `High-energy group fitness class at ${name}, diverse people sweating and smiling, modern equipment, dynamic action shot, motivational and inclusive atmosphere`,
+          `Personal trainer spotting client during intense workout, focused determination, professional gym setting, shows personalized attention and results`
+        );
+        break;
+        
+      case 'roofing':
+        prompts.push(
+          `Professional roofing crew installing pristine new roof, beautiful suburban home, bright sunny day, shows craftsmanship and home protection value`,
+          `Dramatic before/after split image: damaged weathered roof vs beautiful new installation, same house, shows transformation and peace of mind`,
+          `Family standing proudly in front of their home with new roof from ${name}, sunset lighting, conveys security and pride in home investment`
+        );
+        break;
+        
+      case 'beauty':
+        prompts.push(
+          `Stunning hair transformation before/after, same person looking confident and glamorous, professional salon setting, dramatic improvement showcase`,
+          `Relaxed client getting pampered at ${name}, serene spa atmosphere, soft lighting, conveys luxury self-care experience and rejuvenation`,
+          `Close-up of perfectly styled hair/makeup, flawless technique, professional quality, makes viewer want that same polished look`
+        );
+        break;
+        
+      default:
+        prompts.push(
+          `Professional team from ${name} providing excellent service, happy satisfied customer, bright modern setting, conveys trust and quality results`,
+          `Before/after transformation showcasing ${name}'s work quality, dramatic improvement, professional execution, shows clear value delivered`,
+          `Busy successful business operation at ${name}, multiple satisfied customers, thriving atmosphere, conveys popularity and reliability`
+        );
+    }
+    
+    // Ensure we have enough prompts
+    while (prompts.length < count) {
+      prompts.push(prompts[0]);
+    }
+    
+    return prompts.slice(0, count).map(prompt => 
+      `${prompt}. Ultra-high quality photography, professional commercial ad style, square format 1080x1080, no text or logos in image, photorealistic, award-winning composition`
     );
   }
 
@@ -226,11 +288,11 @@ async function generateAdCopy(
       model: "claude-sonnet-4-20250514",
       max_tokens: 512,
       system:
-        "You are a Facebook ad copywriter. Write short, punchy ad copy for local businesses. Respond ONLY with valid JSON — no markdown fences, no explanation.",
+        "You are a direct-response Facebook ad copywriter who creates instantly compelling ads that make people take action. Your ads convert at 3-5x industry average. Respond ONLY with valid JSON — no markdown fences, no explanation.",
       messages: [
         {
           role: "user",
-          content: `Write ${count} Facebook ad variants for this business:\n\nBusiness: ${businessName}\nDescription: ${description}\n\nReturn JSON:\n{\n  "ads": [\n    { "headline": "string (max 40 chars)", "copy": "string (max 125 chars, the primary text above the image)" }\n  ]\n}\n\nRules:\n- Headlines ≤40 chars, copy ≤125 chars\n- Make it feel real and local, not corporate\n- Each variant should use a different angle (trust, urgency, value)\n- Include a clear benefit or call to action in the copy`,
+          content: `Write ${count} high-converting Facebook ad variants for this business:\n\nBusiness: ${businessName}\nDescription: ${description}\n\nReturn JSON:\n{\n  "ads": [\n    { "headline": "string (max 40 chars)", "copy": "string (max 125 chars, the primary text above the image)" }\n  ]\n}\n\nRules:\n- Headlines ≤40 chars, copy ≤125 chars\n- Use proven direct-response psychology: scarcity, social proof, specific benefits, risk reversal\n- Include specific numbers/percentages when relevant\n- Create immediate urgency and desire\n- Each ad should use different psychological triggers:\n  • Social proof ("Join 847 locals who...")\n  • Urgency ("Only 3 spots left this week")\n  • Specific benefits ("Save $2,340/year vs competitors")\n  • Risk reversal ("30-day guarantee")\n  • Authority ("Award-winning since 1998")\n- Make the copy conversational and local, not corporate\n- End with a strong, specific call to action`,
         },
       ],
     }),
@@ -413,7 +475,31 @@ serve(async (req: Request) => {
       businessName
     );
 
-    // Log successful preview
+    // Save images to Supabase Storage for auditing
+    const savedImageUrls: string[] = [];
+    for (let i = 0; i < adImages.length; i++) {
+      try {
+        const fileName = `preview-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}.png`;
+        const imageBuffer = Uint8Array.from(atob(adImages[i]), c => c.charCodeAt(0));
+        
+        const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+          .from("ad-previews")
+          .upload(fileName, imageBuffer, {
+            contentType: "image/png"
+          });
+
+        if (!uploadError && uploadData) {
+          const { data: publicUrlData } = supabaseAdmin.storage
+            .from("ad-previews")
+            .getPublicUrl(fileName);
+          savedImageUrls.push(publicUrlData.publicUrl);
+        }
+      } catch (storageError) {
+        console.warn(`Failed to save image ${i} to storage:`, storageError);
+      }
+    }
+
+    // Log successful preview with saved images and copy
     await supabaseAdmin.from("preview_logs").insert({
       url: url || null,
       has_images: !!images && images.length > 0,
@@ -422,6 +508,8 @@ serve(async (req: Request) => {
       ip_address: ip,
       user_agent: req.headers.get("user-agent") || null,
       success: true,
+      saved_image_urls: savedImageUrls,
+      generated_ads: ads, // Save complete ad data for auditing
     }).then(({ error: logError }) => {
       if (logError) console.error("[generate-preview] Log insert error:", logError);
     });
