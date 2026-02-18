@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
+import { CompetitorInsights } from "@/components/CompetitorInsights";
 import {
   Zap,
   Download,
@@ -507,6 +508,16 @@ export default function BriefView() {
         {plan?.campaigns && plan.campaigns.length > 0 && (
           <ROICalculator plan={plan} />
         )}
+
+        {/* Competitor Intelligence — powered by TinyFish */}
+        <div className="my-8">
+          <CompetitorInsights
+            industry={brief.business_trade}
+            location={brief.business_location}
+            country="US"
+            businessName={brief.business_name}
+          />
+        </div>
 
         {/* Full brief markdown */}
         <div
