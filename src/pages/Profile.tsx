@@ -66,7 +66,15 @@ export default function Profile() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [editMode, setEditMode] = useState(false);
-  const [formData, setFormData] = useState({ full_name: "", phone: "" });
+  const [formData, setFormData] = useState({
+    full_name: "",
+    phone: "",
+    business_name: "",
+    trade: "",
+    suburb: "",
+    postcode: "",
+    state: "",
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -117,10 +125,10 @@ export default function Profile() {
 
       if (profileData) {
         setProfile(profileData as unknown as ProfileData);
-        setFormData({
+        setFormData((prev) => ({
+          ...prev,
           full_name: profileData.full_name || "",
-          phone: "",
-        });
+        }));
       }
 
       // Fetch business
@@ -133,7 +141,15 @@ export default function Profile() {
       if (bizData) {
         const biz = bizData as unknown as Business;
         setBusiness(biz);
-        setFormData((prev) => ({ ...prev, phone: biz.phone || "" }));
+        setFormData((prev) => ({
+          ...prev,
+          phone: biz.phone || "",
+          business_name: biz.name || "",
+          trade: biz.trade || "",
+          suburb: biz.suburb || "",
+          postcode: biz.postcode || "",
+          state: biz.state || "",
+        }));
       }
     } catch (error: any) {
       toast({
@@ -164,15 +180,34 @@ export default function Profile() {
 
       if (profileError) throw profileError;
 
-      // Update business phone if business exists
+      // Update business details if business exists
       if (business) {
+        const bizUpdate: Record<string, string> = { phone: formData.phone };
+        if (formData.business_name.trim()) bizUpdate.name = formData.business_name.trim();
+        if (formData.trade.trim()) bizUpdate.trade = formData.trade.trim();
+        if (formData.suburb.trim()) bizUpdate.suburb = formData.suburb.trim();
+        if (formData.postcode.trim()) bizUpdate.postcode = formData.postcode.trim();
+        if (formData.state.trim()) bizUpdate.state = formData.state.trim();
+
         const { error: bizError } = await supabase
           .from("businesses" as any)
-          .update({ phone: formData.phone } as any)
+          .update(bizUpdate as any)
           .eq("user_id", user.id);
 
         if (bizError) throw bizError;
-        setBusiness((prev) => (prev ? { ...prev, phone: formData.phone } : null));
+        setBusiness((prev) =>
+          prev
+            ? {
+                ...prev,
+                phone: formData.phone,
+                name: formData.business_name.trim() || prev.name,
+                trade: formData.trade.trim() || prev.trade,
+                suburb: formData.suburb.trim() || prev.suburb,
+                postcode: formData.postcode.trim() || prev.postcode,
+                state: formData.state.trim() || prev.state,
+              }
+            : null
+        );
       }
 
       setProfile((prev) =>
@@ -348,6 +383,11 @@ export default function Profile() {
                           setFormData({
                             full_name: profile?.full_name || "",
                             phone: business?.phone || "",
+                            business_name: business?.name || "",
+                            trade: business?.trade || "",
+                            suburb: business?.suburb || "",
+                            postcode: business?.postcode || "",
+                            state: business?.state || "",
                           });
                         }}
                       >
@@ -368,38 +408,117 @@ export default function Profile() {
                       Business
                     </CardTitle>
                     <CardDescription>
-                      Details from your onboarding setup
+                      {editMode ? "Edit your business details below" : "Your business details — click Edit to update"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                           Business Name
-                        </p>
-                        <p className="text-sm font-medium">{business.name}</p>
+                        </Label>
+                        {editMode ? (
+                          <Input
+                            value={formData.business_name}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                business_name: e.target.value,
+                              }))
+                            }
+                            placeholder="Your business name"
+                          />
+                        ) : (
+                          <p className="text-sm font-medium">{business.name}</p>
+                        )}
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                           Business Type
-                        </p>
-                        <p className="text-sm font-medium capitalize">
-                          {business.trade}
-                        </p>
+                        </Label>
+                        {editMode ? (
+                          <Input
+                            value={formData.trade}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                trade: e.target.value,
+                              }))
+                            }
+                            placeholder="e.g. Restaurant, Gym, Salon"
+                          />
+                        ) : (
+                          <p className="text-sm font-medium capitalize">
+                            {business.trade}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Location
-                        </p>
-                        <p className="text-sm font-medium flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          {business.suburb}, {business.state} {business.postcode}
-                        </p>
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Suburb
+                        </Label>
+                        {editMode ? (
+                          <Input
+                            value={formData.suburb}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                suburb: e.target.value,
+                              }))
+                            }
+                            placeholder="Suburb"
+                          />
+                        ) : (
+                          <p className="text-sm font-medium flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {business.suburb}
+                          </p>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                            State
+                          </Label>
+                          {editMode ? (
+                            <Input
+                              value={formData.state}
+                              onChange={(e) =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  state: e.target.value,
+                                }))
+                              }
+                              placeholder="QLD"
+                            />
+                          ) : (
+                            <p className="text-sm font-medium">{business.state}</p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                            Postcode
+                          </Label>
+                          {editMode ? (
+                            <Input
+                              value={formData.postcode}
+                              onChange={(e) =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  postcode: e.target.value,
+                                }))
+                              }
+                              placeholder="4000"
+                            />
+                          ) : (
+                            <p className="text-sm font-medium">{business.postcode}</p>
+                          )}
+                        </div>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                           Phone
-                        </p>
+                        </Label>
                         {editMode ? (
                           <Input
                             value={formData.phone}
