@@ -968,18 +968,18 @@ const Dashboard = () => {
             />
           )}
 
-          {/* ─── AI Agency Section ─────────────────────────────────────── */}
+          {/* ─── Campaign Workspace Section ─────────────────────────────── */}
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <Zap className="h-5 w-5 text-primary" />
-                AI Agency
+                Campaign Workspace
               </h2>
               <Link
-                to="/agent-console"
+                to="/workspace"
                 className="text-sm text-primary hover:underline flex items-center gap-1"
               >
-                Open Console
+                Open Workspace
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
@@ -998,9 +998,9 @@ const Dashboard = () => {
                       Let our AI agents analyze your competitors, generate ad creatives, and plan your campaigns.
                     </p>
                   </div>
-                  <Button onClick={() => navigate("/agent-console")}>
+                  <Button onClick={() => navigate("/workspace")}>
                     <Zap className="h-4 w-4 mr-2" />
-                    Deploy Your AI Agency
+                    Start New Campaign
                   </Button>
                 </CardContent>
               </Card>
@@ -1139,10 +1139,10 @@ const Dashboard = () => {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => navigate(`/agent-console`)}
+                                onClick={() => navigate(`/workspace`)}
                               >
                                 <Zap className="h-3.5 w-3.5 mr-1.5" />
-                                Open in Console
+                                Open in Workspace
                               </Button>
                             </div>
                           </div>

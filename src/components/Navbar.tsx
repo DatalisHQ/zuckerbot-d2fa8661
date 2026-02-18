@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useEnhancedAuth } from "@/utils/auth";
 
 const NAV_LINKS = [
-  { href: "/agent-console", label: "AI Agency", icon: Zap },
+  { href: "/workspace", label: "Workspace", icon: Zap },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/campaign/new", label: "New Campaign", icon: Megaphone },
   { href: "/leads", label: "Leads", icon: Users },
