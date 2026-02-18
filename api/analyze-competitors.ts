@@ -14,7 +14,7 @@ export default async function handler(req: any, res: any) {
     const { industry, location, country } = req.body;
     if (!industry || !location) return res.status(400).json({ error: "industry and location required" });
 
-    const searchQuery = encodeURIComponent(`${industry} ${location}`);
+    const searchQuery = encodeURIComponent(industry);
     const countryCode = country === "AU" ? "AU" : "US";
     const adLibraryUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${searchQuery}`;
 
@@ -27,7 +27,7 @@ export default async function handler(req: any, res: any) {
     res.write(`data: ${JSON.stringify({ type: "PROGRESS", message: "Navigating to Facebook Ad Library..." })}\n\n`);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 55000);
+    const timeout = setTimeout(() => controller.abort(), 58000);
 
     const response = await fetch("https://agent.tinyfish.ai/v1/automation/run-sse", {
       method: "POST",
@@ -37,7 +37,7 @@ export default async function handler(req: any, res: any) {
       },
       body: JSON.stringify({
         url: adLibraryUrl,
-        goal: `Extract the first 5 active ads shown. For each return JSON: {"data": [{"page_name": str, "ad_body_text": str, "started_running_date": str, "platforms": str}]}. Dismiss any popups.`,
+        goal: `Extract the first 3 active ads. Return JSON: {"data": [{"page_name": str, "ad_body_text": str, "started_running_date": str, "platforms": str}]}. Dismiss any popups quickly.`,
         browser_profile: "stealth",
         proxy_config: { enabled: true, country_code: countryCode },
       }),
