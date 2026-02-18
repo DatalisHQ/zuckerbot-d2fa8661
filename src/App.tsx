@@ -23,6 +23,7 @@ import BriefView from "./pages/BriefView";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import AdAudit from "./pages/AdAudit";
+import AgentConsole from "./pages/AgentConsole";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -169,6 +170,7 @@ function App() {
               <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />
+              <Route path="/agent-console" element={<AgentConsole />} />
               <Route path="/brief/:briefId" element={<BriefView />} />
               <Route path="/admin/audit" element={user ? <AdAudit /> : <Navigate to="/auth" />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
