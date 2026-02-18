@@ -18,55 +18,72 @@ interface CompetitorAd {
   platforms: string;
 }
 
-interface TinyFishEvent {
-  type: string;
-  status?: string;
-  resultJson?: { data: CompetitorAd[] };
-  purpose?: string;
-  runId?: string;
-  streamingUrl?: string;
-}
-
 async function scrapeCompetitorAds(industry: string, location: string, country: string): Promise<CompetitorAd[]> {
   const searchQuery = encodeURIComponent(`${industry} ${location}`);
   const countryCode = country === "AU" ? "AU" : "US";
   const adLibraryUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${searchQuery}`;
 
-  const response = await fetch(TINYFISH_API_URL, {
-    method: "POST",
-    headers: {
-      "X-API-Key": TINYFISH_API_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      url: adLibraryUrl,
-      goal: `Extract the first 5 active ads shown on this Facebook Ad Library page. For each ad return a JSON array called "data": [{"page_name": str, "ad_body_text": str (the full ad copy), "started_running_date": str, "platforms": str}]. If a cookie or login popup appears, dismiss it and continue.`,
-      browser_profile: "stealth",
-      proxy_config: { enabled: true, country_code: countryCode },
-    }),
-  });
+  // Use AbortController for timeout
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 50000); // 50s timeout
 
-  if (!response.ok) {
-    throw new Error(`TinyFish API error: ${response.status} ${response.statusText}`);
-  }
+  try {
+    const response = await fetch(TINYFISH_API_URL, {
+      method: "POST",
+      headers: {
+        "X-API-Key": TINYFISH_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url: adLibraryUrl,
+        goal: `Extract the first 5 active ads shown. For each return JSON: {"data": [{"page_name": str, "ad_body_text": str, "started_running_date": str, "platforms": str}]}. Dismiss any popups.`,
+        browser_profile: "stealth",
+        proxy_config: { enabled: true, country_code: countryCode },
+      }),
+      signal: controller.signal,
+    });
 
-  // Parse SSE stream
-  const text = await response.text();
-  const lines = text.split("\n");
-  
-  for (const line of lines) {
-    if (!line.startsWith("data: ")) continue;
-    try {
-      const event: TinyFishEvent = JSON.parse(line.slice(6));
-      if (event.type === "COMPLETE" && event.status === "COMPLETED" && event.resultJson?.data) {
-        return event.resultJson.data;
-      }
-    } catch {
-      // Skip unparseable lines
+    if (!response.ok) {
+      throw new Error(`TinyFish API error: ${response.status}`);
     }
-  }
 
-  return [];
+    // Read SSE stream
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.type === "COMPLETE" && event.status === "COMPLETED") {
+            clearTimeout(timeout);
+            try { reader.cancel(); } catch {}
+            // Extract ads array from various possible response shapes
+            const rj = event.resultJson || {};
+            if (Array.isArray(rj)) return rj;
+            if (Array.isArray(rj.data)) return rj.data;
+            if (Array.isArray(rj.ads)) return rj.ads;
+            for (const val of Object.values(rj)) {
+              if (Array.isArray(val)) return val as CompetitorAd[];
+            }
+            return [];
+          }
+        } catch {}
+      }
+    }
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 serve(async (req) => {
@@ -93,38 +110,34 @@ serve(async (req) => {
 
     console.log(`Analyzing competitors for: ${industry} in ${location}, ${country}`);
 
-    // Scrape competitor ads from Facebook Ad Library
     const competitorAds = await scrapeCompetitorAds(industry, location, country || "US");
 
     console.log(`Found ${competitorAds.length} competitor ads`);
 
-    // Store results if we have a businessId
     if (businessId) {
-      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      await supabase.from("competitor_analyses").insert({
-        business_id: businessId,
-        industry,
-        location,
-        country: country || "US",
-        competitor_ads: competitorAds,
-        ad_count: competitorAds.length,
-      });
+      try {
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        await supabase.from("competitor_analyses").insert({
+          business_id: businessId,
+          industry,
+          location,
+          country: country || "US",
+          competitor_ads: competitorAds,
+          ad_count: competitorAds.length,
+        });
+      } catch (e) {
+        console.error("Failed to store results:", e);
+      }
     }
 
-    // Generate insights from the competitor data
     const insights = generateInsights(competitorAds, industry);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        competitor_ads: competitorAds,
-        insights,
-        ad_count: competitorAds.length,
-      }),
+      JSON.stringify({ success: true, competitor_ads: competitorAds, insights, ad_count: competitorAds.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    console.error("Error analyzing competitors:", error);
+    console.error("Error:", error);
     return new Response(
       JSON.stringify({ error: error.message || "Failed to analyze competitors" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -133,27 +146,22 @@ serve(async (req) => {
 });
 
 function generateInsights(ads: CompetitorAd[], industry: string): Record<string, string> {
-  if (ads.length === 0) {
-    return { summary: "No active competitor ads found in this market." };
-  }
+  if (!ads.length) return { summary: "No active competitor ads found in this market." };
 
-  const avgTextLength = Math.round(ads.reduce((sum, ad) => sum + ad.ad_body_text.length, 0) / ads.length);
-  const multiPlatform = ads.filter(ad => ad.platforms.includes(",")).length;
-  const longRunning = ads.filter(ad => {
-    try {
-      const date = new Date(ad.started_running_date);
-      const daysRunning = (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
-      return daysRunning > 90;
-    } catch { return false; }
+  const avgLen = Math.round(ads.reduce((s, a) => s + (a.ad_body_text?.length || 0), 0) / ads.length);
+  const multi = ads.filter(a => a.platforms?.includes(",")).length;
+  const longRun = ads.filter(a => {
+    try { return (Date.now() - new Date(a.started_running_date).getTime()) / 86400000 > 90; }
+    catch { return false; }
   }).length;
 
   return {
     summary: `Found ${ads.length} active competitor ads in ${industry}.`,
-    avg_copy_length: `${avgTextLength} characters average ad copy length`,
-    multi_platform: `${multiPlatform}/${ads.length} ads run across multiple platforms`,
-    long_running: `${longRunning}/${ads.length} ads running 90+ days (proven performers)`,
-    opportunity: longRunning > ads.length / 2
-      ? "Competitors rely on long-running evergreen ads. Fresh, targeted creative could stand out."
-      : "Competitors are actively refreshing creative. You'll need strong differentiation to compete.",
+    avg_copy_length: `${avgLen} chars avg copy length`,
+    multi_platform: `${multi}/${ads.length} ads on multiple platforms`,
+    long_running: `${longRun}/${ads.length} ads running 90+ days`,
+    opportunity: longRun > ads.length / 2
+      ? "Competitors rely on evergreen ads. Fresh creative could stand out."
+      : "Active market. Strong differentiation needed.",
   };
 }

@@ -3,8 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, Search, TrendingUp, Eye, Calendar, Zap } from "lucide-react";
 
-const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL || "https://bqqmkiocynvlaianwisd.supabase.co"}/functions/v1/analyze-competitors`;
-
 interface CompetitorAd {
   page_name: string;
   ad_body_text: string;
@@ -31,56 +29,80 @@ export function CompetitorInsights({ industry, location, country, businessId, bu
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState("");
+  const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
 
   const analyzeCompetitors = async () => {
     if (!industry || !location) return;
-    
+
     setLoading(true);
     setError(null);
-    setCurrentStep("Navigating to Facebook Ad Library...");
+    setData(null);
+    setStreamingUrl(null);
+    setCurrentStep("Connecting to AI agent...");
 
     try {
-      // Simulate progress updates since we can't stream SSE from the client easily
-      const progressSteps = [
-        { text: "Navigating to Facebook Ad Library...", delay: 3000 },
-        { text: "Searching for competitor ads...", delay: 5000 },
-        { text: "Extracting ad creatives and copy...", delay: 8000 },
-        { text: "Analyzing competitor strategies...", delay: 3000 },
-      ];
-
-      // Start progress simulation
-      let stepIndex = 0;
-      const progressInterval = setInterval(() => {
-        stepIndex++;
-        if (stepIndex < progressSteps.length) {
-          setCurrentStep(progressSteps[stepIndex].text);
-        }
-      }, progressSteps[stepIndex]?.delay || 5000);
-
-      const response = await fetch(FUNCTION_URL, {
+      const response = await fetch("/api/analyze-competitors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId, industry, location, country: country || "US", businessName }),
+        body: JSON.stringify({ businessId, industry, location, country: country || "US" }),
       });
 
-      clearInterval(progressInterval);
-
-      if (!response.ok) {
-        throw new Error("Failed to analyze competitors");
+      if (!response.ok || !response.body) {
+        throw new Error("Failed to connect");
       }
 
-      const result = await response.json();
-      setData(result);
-      setCurrentStep("");
+      // Read SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === "PROGRESS") {
+              setCurrentStep(event.message);
+            }
+
+            if (event.type === "STREAMING_URL") {
+              setStreamingUrl(event.url);
+            }
+
+            if (event.type === "COMPLETE") {
+              setData({
+                competitor_ads: event.competitor_ads || [],
+                insights: event.insights || {},
+                ad_count: event.ad_count || 0,
+              });
+            }
+
+            if (event.type === "ERROR") {
+              throw new Error(event.message);
+            }
+          } catch (e: any) {
+            if (e.message && e.message !== "Unexpected end of JSON input") {
+              throw e;
+            }
+          }
+        }
+      }
     } catch (err: any) {
       setError(err.message || "Something went wrong");
-      setCurrentStep("");
     } finally {
       setLoading(false);
+      setCurrentStep("");
     }
   };
 
-  // Don't render if no industry/location available
   if (!industry || !location) return null;
 
   return (
@@ -98,8 +120,8 @@ export function CompetitorInsights({ industry, location, country, businessId, bu
         {!data && !loading && (
           <div className="text-center py-4">
             <p className="text-muted-foreground mb-4">
-              Discover what your competitors are running on Facebook right now.
-              Our AI agent navigates the Facebook Ad Library in real-time to find and analyze active ads in your market.
+              Our AI agent navigates Facebook Ad Library in real-time to find and analyze
+              your competitors' active ads.
             </p>
             <Button onClick={analyzeCompetitors} className="gap-2">
               <Zap className="w-4 h-4" />
@@ -112,8 +134,18 @@ export function CompetitorInsights({ industry, location, country, businessId, bu
           <div className="flex flex-col items-center gap-3 py-8">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
             <p className="text-sm font-medium text-blue-700">{currentStep}</p>
+            {streamingUrl && (
+              <a
+                href={streamingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-500 underline hover:text-blue-700"
+              >
+                🔴 Watch agent live →
+              </a>
+            )}
             <p className="text-xs text-muted-foreground">
-              AI agent is browsing Facebook Ad Library in real-time...
+              AI agent is browsing Facebook Ad Library...
             </p>
           </div>
         )}
@@ -164,7 +196,7 @@ export function CompetitorInsights({ industry, location, country, businessId, bu
                     </div>
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed mb-2">
-                    {ad.ad_body_text.length > 200
+                    {ad.ad_body_text?.length > 200
                       ? ad.ad_body_text.slice(0, 200) + "..."
                       : ad.ad_body_text}
                   </p>
@@ -175,7 +207,7 @@ export function CompetitorInsights({ industry, location, country, businessId, bu
               ))}
             </div>
 
-            {/* Refresh button */}
+            {/* Refresh */}
             <div className="text-center pt-2">
               <Button variant="outline" size="sm" onClick={analyzeCompetitors} className="gap-2">
                 <Search className="w-3 h-3" />
