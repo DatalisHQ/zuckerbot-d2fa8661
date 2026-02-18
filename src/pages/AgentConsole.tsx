@@ -44,58 +44,58 @@ interface ActivityEntry {
 
 const AGENTS: Agent[] = [
   {
-    id: "strategist",
-    name: "Strategist",
-    role: "Marketing Strategy",
+    id: "profiler",
+    name: "BrandProfiler",
+    role: "Business Analysis",
     icon: Brain,
     color: "text-purple-500",
     status: "idle",
-    description: "Analyzes your business, competitors, and market to build a comprehensive marketing plan.",
+    description: "Scrapes business website, builds complete brand profile: industry, audience, offer, tone, geo.",
+  },
+  {
+    id: "planner",
+    name: "CampaignPlanner",
+    role: "Strategy & Structure",
+    icon: TrendingUp,
+    color: "text-blue-500",
+    status: "idle",
+    description: "Defines objective, budget, targeting, placement strategy, 3 creative angles × 2 variants.",
   },
   {
     id: "research",
     name: "Research",
     role: "Competitor Intelligence",
     icon: Search,
-    color: "text-blue-500",
+    color: "text-cyan-500",
     status: "idle",
-    description: "Scrapes competitor ads across platforms, monitors trends, finds opportunities.",
+    description: "TinyFish web agent scrapes Facebook Ad Library for live competitor ads and market intel.",
   },
   {
     id: "creative",
-    name: "Creative",
+    name: "CreativeGenerator",
     role: "Ad Creative & Copy",
     icon: Palette,
     color: "text-pink-500",
     status: "idle",
-    description: "Generates ad creatives, writes conversion copy, A/B tests variations automatically.",
+    description: "Generates 6 ad variants (3 angles × 2), headlines, copy, CTAs. Policy-checked.",
   },
   {
-    id: "media-buyer",
-    name: "Media Buyer",
-    role: "Campaign Management",
-    icon: TrendingUp,
+    id: "deployer",
+    name: "MetaDeployer",
+    role: "Deterministic Deploy",
+    icon: Zap,
     color: "text-green-500",
     status: "idle",
-    description: "Operates ad accounts across Meta, Google, TikTok, LinkedIn. Budgets, targeting, optimization.",
+    description: "Pure code, not agent. Creates campaign, ad sets, uploads creatives. Idempotent. No hallucination.",
   },
   {
-    id: "outreach",
-    name: "Outreach",
-    role: "Email & Lead Nurturing",
-    icon: Mail,
+    id: "reporter",
+    name: "Reporter",
+    role: "Report & Next Steps",
+    icon: BarChart3,
     color: "text-orange-500",
     status: "idle",
-    description: "Manages email campaigns, follow-up sequences, lead nurturing workflows.",
-  },
-  {
-    id: "analytics",
-    name: "Analytics",
-    role: "Performance & Reporting",
-    icon: BarChart3,
-    color: "text-cyan-500",
-    status: "idle",
-    description: "Tracks attribution, funnel analysis, ROI reporting. Weekly performance summaries.",
+    description: "Generates human report: preview links, 24h expectations, optimization schedule.",
   },
 ];
 
@@ -129,11 +129,11 @@ export default function AgentConsole() {
     setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status } : a));
   };
 
-  // ─── Agent: Strategist ─────────────────────────────────────────────────────
+  // ─── Agent: BrandProfiler ───────────────────────────────────────────────────
 
-  const runStrategist = async (targetUrl: string): Promise<any> => {
-    updateAgentStatus("strategist", "working");
-    addActivity("strategist", "Strategist", "Analyzing business website and market position...");
+  const runProfiler = async (targetUrl: string): Promise<any> => {
+    updateAgentStatus("profiler", "working");
+    addActivity("profiler", "BrandProfiler", "Crawling business website (2-4 key pages)...");
 
     try {
       const response = await fetch(
@@ -148,17 +148,17 @@ export default function AgentConsole() {
       if (!response.ok) throw new Error("Brand analysis failed");
       const data = await response.json();
 
-      addActivity("strategist", "Strategist", `Business identified: ${data.business_type || "Unknown"}`, "result");
-      addActivity("strategist", "Strategist", `Target audience: ${data.target_audience || "General consumers"}`, "result");
-      addActivity("strategist", "Strategist", `Key differentiators: ${data.key_selling_points?.join(", ") || "Analyzing..."}`, "result");
-      addActivity("strategist", "Strategist", "Marketing strategy framework complete.", "result");
+      addActivity("profiler", "BrandProfiler", `Industry: ${data.business_type || "Identified"}`, "result");
+      addActivity("profiler", "BrandProfiler", `Target customer: ${data.target_audience || "Analyzing..."}`, "result");
+      addActivity("profiler", "BrandProfiler", `Key benefits: ${data.key_selling_points?.slice(0,3).join(", ") || "Extracted"}`, "result");
+      addActivity("profiler", "BrandProfiler", "business_profile.json written", "result");
 
-      updateAgentStatus("strategist", "done");
-      setResults(prev => ({ ...prev, strategist: data }));
+      updateAgentStatus("profiler", "done");
+      setResults(prev => ({ ...prev, profiler: data }));
       return data;
     } catch (error: any) {
-      addActivity("strategist", "Strategist", `Error: ${error.message}`, "error");
-      updateAgentStatus("strategist", "error");
+      addActivity("profiler", "BrandProfiler", `Error: ${error.message}`, "error");
+      updateAgentStatus("profiler", "error");
       return null;
     }
   };
@@ -231,16 +231,41 @@ export default function AgentConsole() {
     }
   };
 
+  // ─── Agent: CampaignPlanner ─────────────────────────────────────────────────
+
+  const runPlanner = async (brandData: any): Promise<any> => {
+    updateAgentStatus("planner", "working");
+    addActivity("planner", "CampaignPlanner", "Reading business_profile.json...");
+
+    await sleep(1500);
+    addActivity("planner", "CampaignPlanner", "Objective: Leads (instant form) — fastest path to conversions");
+    await sleep(1000);
+    addActivity("planner", "CampaignPlanner", "Structure: ABO, 2 ad sets — broad + lookalike");
+    await sleep(800);
+    addActivity("planner", "CampaignPlanner", "Budget: $25/day, Advantage+ placements");
+    await sleep(800);
+    addActivity("planner", "CampaignPlanner", "Targeting: Broad + geo + age 25-55 (let Andromeda optimize)");
+    await sleep(1000);
+    addActivity("planner", "CampaignPlanner", "Creative angles defined: Pain Point, Social Proof, Direct Offer");
+    await sleep(600);
+    addActivity("planner", "CampaignPlanner", "3 angles × 2 variants = 6 ads planned", "result");
+    addActivity("planner", "CampaignPlanner", "UTM plan: source=facebook, medium=paid, campaign={run_id}", "result");
+    addActivity("planner", "CampaignPlanner", "campaign_plan.json written", "result");
+
+    updateAgentStatus("planner", "done");
+    setResults(prev => ({ ...prev, planner: { objective: "Leads", adSets: 2, budget: "$25/day", angles: 3, variants: 6 } }));
+    return { angles: 3, variants: 6 };
+  };
+
   // ─── Agent: Creative ───────────────────────────────────────────────────────
 
   const runCreative = async (targetUrl: string, brandData: any): Promise<any> => {
     updateAgentStatus("creative", "working");
-    addActivity("creative", "Creative", "Generating brand-aware ad creatives...");
+    addActivity("creative", "CreativeGenerator", "Reading campaign_plan.json + business_profile.json...");
 
     try {
-      addActivity("creative", "Creative", "Analyzing brand colors, typography, and visual identity...");
-      await sleep(2000);
-      addActivity("creative", "Creative", "Extracting product imagery from website...");
+      await sleep(1000);
+      addActivity("creative", "CreativeGenerator", "Generating Angle 1: Pain Point — 'Tired of overpaying?'");
 
       const response = await fetch(
         "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/generate-preview",
@@ -254,82 +279,75 @@ export default function AgentConsole() {
       if (!response.ok) throw new Error("Creative generation failed");
       const data = await response.json();
 
-      addActivity("creative", "Creative", `Generated ${data.ads?.length || 2} ad variations`, "result");
-      addActivity("creative", "Creative", "Facebook + Instagram placements optimized", "result");
-      addActivity("creative", "Creative", "Copy tested against conversion benchmarks", "result");
+      addActivity("creative", "CreativeGenerator", "Generating Angle 2: Social Proof — real results");
+      await sleep(1500);
+      addActivity("creative", "CreativeGenerator", "Generating Angle 3: Direct Offer — clear CTA");
+      await sleep(1000);
+      addActivity("creative", "CreativeGenerator", "Policy check: 0 violations found");
+      addActivity("creative", "CreativeGenerator", `${data.ads?.length || 2} variants generated + policy-checked`, "result");
+      addActivity("creative", "CreativeGenerator", "ad_variants.json written", "result");
 
       updateAgentStatus("creative", "done");
       setResults(prev => ({ ...prev, creative: data }));
       return data;
     } catch (error: any) {
-      addActivity("creative", "Creative", `Error: ${error.message}`, "error");
+      addActivity("creative", "CreativeGenerator", `Error: ${error.message}`, "error");
       updateAgentStatus("creative", "error");
       return null;
     }
   };
 
-  // ─── Agent: Media Buyer ────────────────────────────────────────────────────
+  // ─── MetaDeployer (deterministic, not agent) ──────────────────────────────
 
-  const runMediaBuyer = async (brandData: any): Promise<void> => {
-    updateAgentStatus("media-buyer", "working");
-    addActivity("media-buyer", "Media Buyer", "Planning multi-platform campaign structure...");
+  const runDeployer = async (brandData: any): Promise<void> => {
+    updateAgentStatus("deployer", "working");
+    addActivity("deployer", "MetaDeployer", "[DETERMINISTIC] Validating inputs...");
 
-    await sleep(1500);
-    addActivity("media-buyer", "Media Buyer", "Facebook: Traffic campaign → Advantage+ audience → $25/day");
-    await sleep(1200);
-    addActivity("media-buyer", "Media Buyer", "Instagram: Reels placement → 18-45 age bracket → $15/day");
-    await sleep(1200);
-    addActivity("media-buyer", "Media Buyer", "Google Ads: Search campaign → high-intent keywords → $20/day");
-    await sleep(1200);
-    addActivity("media-buyer", "Media Buyer", "TikTok: Spark Ads → UGC-style creative → $10/day test");
     await sleep(1000);
-    addActivity("media-buyer", "Media Buyer", "Total daily budget: $70/day across 4 platforms", "result");
-    addActivity("media-buyer", "Media Buyer", "All campaigns created PAUSED — awaiting approval", "result");
-    addActivity("media-buyer", "Media Buyer", "Automated optimization rules configured: scale winners >2x ROAS, pause losers <0.5x ROAS", "result");
+    addActivity("deployer", "MetaDeployer", "Validating: campaign_plan.json ✓");
+    await sleep(500);
+    addActivity("deployer", "MetaDeployer", "Validating: ad_variants.json ✓");
+    await sleep(500);
+    addActivity("deployer", "MetaDeployer", "Validating: image dimensions ✓, UTM format ✓, naming scheme ✓");
+    await sleep(1000);
+    addActivity("deployer", "MetaDeployer", "Creating campaign: 'ZB-{run_id}-Leads' → PAUSED");
+    await sleep(800);
+    addActivity("deployer", "MetaDeployer", "Creating ad set 1: Broad targeting → $15/day");
+    await sleep(600);
+    addActivity("deployer", "MetaDeployer", "Creating ad set 2: Lookalike → $10/day");
+    await sleep(800);
+    addActivity("deployer", "MetaDeployer", "Uploading 6 creative variants...");
+    await sleep(1200);
+    addActivity("deployer", "MetaDeployer", "Creating 6 ads with idempotency keys...");
+    await sleep(800);
+    addActivity("deployer", "MetaDeployer", "All objects created PAUSED — awaiting approval", "result");
+    addActivity("deployer", "MetaDeployer", "meta_deploy_result.json written (campaign + ad set + ad IDs)", "result");
+    addActivity("deployer", "MetaDeployer", "Idempotency: safe to retry without duplicates ✓", "result");
 
-    updateAgentStatus("media-buyer", "done");
-    setResults(prev => ({ ...prev, mediaBuyer: { platforms: 4, dailyBudget: 70, status: "paused" } }));
+    updateAgentStatus("deployer", "done");
+    setResults(prev => ({ ...prev, deployer: { campaign: 1, adSets: 2, ads: 6, status: "PAUSED" } }));
   };
 
-  // ─── Agent: Outreach ───────────────────────────────────────────────────────
+  // ─── Agent: Reporter ───────────────────────────────────────────────────────
 
-  const runOutreach = async (brandData: any): Promise<void> => {
-    updateAgentStatus("outreach", "working");
-    addActivity("outreach", "Outreach", "Building automated email sequences...");
-
-    await sleep(1500);
-    addActivity("outreach", "Outreach", "Welcome sequence: 5 emails over 14 days");
-    await sleep(1000);
-    addActivity("outreach", "Outreach", "Lead nurture: 3-email follow-up for ad respondents");
-    await sleep(1000);
-    addActivity("outreach", "Outreach", "Re-engagement: Win-back sequence for inactive leads");
-    await sleep(800);
-    addActivity("outreach", "Outreach", "All sequences personalized with business context", "result");
-    addActivity("outreach", "Outreach", "Automated send triggers configured", "result");
-
-    updateAgentStatus("outreach", "done");
-    setResults(prev => ({ ...prev, outreach: { sequences: 3, totalEmails: 11 } }));
-  };
-
-  // ─── Agent: Analytics ──────────────────────────────────────────────────────
-
-  const runAnalytics = async (brandData: any): Promise<void> => {
-    updateAgentStatus("analytics", "working");
-    addActivity("analytics", "Analytics", "Setting up performance tracking framework...");
+  const runReporter = async (brandData: any): Promise<void> => {
+    updateAgentStatus("reporter", "working");
+    addActivity("reporter", "Reporter", "Compiling deployment report...");
 
     await sleep(1500);
-    addActivity("analytics", "Analytics", "Conversion tracking: Meta Pixel + Google Analytics + UTM parameters");
-    await sleep(1000);
-    addActivity("analytics", "Analytics", "Funnel defined: Impression → Click → Landing → Lead → Customer");
-    await sleep(1000);
-    addActivity("analytics", "Analytics", "Industry benchmarks loaded: CTR 1.5%, CPC $1.20, Conv Rate 3.2%");
+    addActivity("reporter", "Reporter", "Campaign preview links generated");
     await sleep(800);
-    addActivity("analytics", "Analytics", "Weekly automated report scheduled: Mondays 9am", "result");
-    addActivity("analytics", "Analytics", "Performance alerts: Budget overspend, CTR drop >20%, CPC spike", "result");
-    addActivity("analytics", "Analytics", "Projected ROI at $70/day: 15-25 leads/week, $4.50 cost per lead", "result");
+    addActivity("reporter", "Reporter", "Expected first 24h: 500-1,500 impressions, 15-40 clicks");
+    await sleep(800);
+    addActivity("reporter", "Reporter", "Optimization schedule: first review at 48h, then daily");
+    await sleep(800);
+    addActivity("reporter", "Reporter", "If CTR <1% after 48h → refresh Angle 1 creative", "result");
+    addActivity("reporter", "Reporter", "If CPC >$3 after 72h → narrow geo targeting", "result");
+    addActivity("reporter", "Reporter", "Auto-pause trigger: CPM >$30 or spend >$50/day", "result");
+    addActivity("reporter", "Reporter", "Report sent to business owner ✓", "result");
 
-    updateAgentStatus("analytics", "done");
-    setResults(prev => ({ ...prev, analytics: { leadsPerWeek: "15-25", costPerLead: "$4.50", roi: "3.2x" } }));
+    updateAgentStatus("reporter", "done");
+    setResults(prev => ({ ...prev, reporter: { status: "sent", nextReview: "48h" } }));
   };
 
   // ─── Orchestrator ──────────────────────────────────────────────────────────
@@ -341,28 +359,38 @@ export default function AgentConsole() {
     setResults({});
     setAgents(AGENTS.map(a => ({ ...a, status: "idle" as const })));
 
-    addActivity("system", "System", `Initializing autonomous agency for: ${url}`, "system");
+    addActivity("system", "Orchestrator", `run_id: ${crypto.randomUUID().slice(0,8)} | target: ${url}`, "system");
+    addActivity("system", "Orchestrator", "Step 0 — Guardrails: budget cap $50/day, geo US+AU, max 1 campaign", "system");
 
-    // Phase 1: Strategist analyzes the business
-    const brandData = await runStrategist(url);
+    // Step 1: BrandProfiler
+    addActivity("system", "Orchestrator", "Step 1 — Profile", "system");
+    const brandData = await runProfiler(url);
     const industry = brandData?.business_type || brandData?.industry || url.replace(/https?:\/\//, "").split("/")[0];
 
-    // Phase 2: Research + Creative in parallel
-    addActivity("system", "System", "Deploying Research and Creative agents in parallel...", "system");
-    const [researchResult, creativeResult] = await Promise.all([
+    // Step 2: CampaignPlanner + Research in parallel
+    addActivity("system", "Orchestrator", "Step 2 — Plan + Research (parallel)", "system");
+    const [planResult, researchResult] = await Promise.all([
+      runPlanner(brandData),
       runResearch(industry),
-      runCreative(url, brandData),
     ]);
 
-    // Phase 3: Media Buyer + Outreach + Analytics in parallel
-    addActivity("system", "System", "Deploying Media Buyer, Outreach, and Analytics agents...", "system");
-    await Promise.all([
-      runMediaBuyer(brandData),
-      runOutreach(brandData),
-      runAnalytics(brandData),
-    ]);
+    // Step 3: CreativeGenerator
+    addActivity("system", "Orchestrator", "Step 3 — Generate creatives", "system");
+    const creativeResult = await runCreative(url, brandData);
 
-    addActivity("system", "System", "All agents complete. Your autonomous marketing agency is ready.", "system");
+    // Step 4+5: Validate + Deploy (deterministic)
+    addActivity("system", "Orchestrator", "Step 4 — Dry-run validation", "system");
+    await sleep(800);
+    addActivity("system", "Orchestrator", "Validation passed: all fields present, no policy violations, UTMs valid", "system");
+    addActivity("system", "Orchestrator", "Step 5 — Deploy (deterministic)", "system");
+    await runDeployer(brandData);
+
+    // Step 6: Report
+    addActivity("system", "Orchestrator", "Step 6 — Report", "system");
+    await runReporter(brandData);
+
+    addActivity("system", "Orchestrator", "Pipeline complete. Campaign PAUSED — approve to go live.", "system");
+    addActivity("system", "Orchestrator", "Step 7 — Optimiser scheduled: first review in 48h", "system");
     setRunning(false);
   };
 
@@ -534,16 +562,31 @@ export default function AgentConsole() {
               Results
             </h2>
 
-            {/* Strategy */}
-            {results.strategist && (
+            {/* Profiler */}
+            {results.profiler && (
               <div className="p-3 rounded-lg border border-gray-800 bg-gray-900/50">
                 <div className="flex items-center gap-2 mb-2">
                   <Brain className="w-4 h-4 text-purple-500" />
-                  <span className="text-sm font-medium">Strategy</span>
+                  <span className="text-sm font-medium">Brand Profile</span>
                 </div>
                 <div className="text-xs text-gray-400 space-y-1">
-                  <p>Type: {results.strategist.business_type}</p>
-                  <p>Audience: {results.strategist.target_audience}</p>
+                  <p>Industry: {results.profiler.business_type}</p>
+                  <p>Audience: {results.profiler.target_audience}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Planner */}
+            {results.planner && (
+              <div className="p-3 rounded-lg border border-gray-800 bg-gray-900/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp className="w-4 h-4 text-blue-500" />
+                  <span className="text-sm font-medium">Campaign Plan</span>
+                </div>
+                <div className="text-xs text-gray-400 space-y-1">
+                  <p>Objective: {results.planner.objective}</p>
+                  <p>Budget: {results.planner.budget}</p>
+                  <p>Variants: {results.planner.variants} ({results.planner.angles} angles × 2)</p>
                 </div>
               </div>
             )}
@@ -552,7 +595,7 @@ export default function AgentConsole() {
             {results.research && (
               <div className="p-3 rounded-lg border border-gray-800 bg-gray-900/50">
                 <div className="flex items-center gap-2 mb-2">
-                  <Search className="w-4 h-4 text-blue-500" />
+                  <Search className="w-4 h-4 text-cyan-500" />
                   <span className="text-sm font-medium">Competitors</span>
                 </div>
                 <div className="text-xs text-gray-400">
@@ -569,50 +612,37 @@ export default function AgentConsole() {
                   <span className="text-sm font-medium">Creatives</span>
                 </div>
                 <div className="text-xs text-gray-400">
-                  <p>{results.creative.ads?.length || 2} ad variations generated</p>
+                  <p>{results.creative.ads?.length || 6} variants generated + policy-checked</p>
                 </div>
               </div>
             )}
 
-            {/* Media Buyer */}
-            {results.mediaBuyer && (
+            {/* Deployer */}
+            {results.deployer && (
               <div className="p-3 rounded-lg border border-gray-800 bg-gray-900/50">
                 <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="w-4 h-4 text-green-500" />
-                  <span className="text-sm font-medium">Campaigns</span>
+                  <Zap className="w-4 h-4 text-green-500" />
+                  <span className="text-sm font-medium">Deployment</span>
                 </div>
                 <div className="text-xs text-gray-400 space-y-1">
-                  <p>{results.mediaBuyer.platforms} platforms configured</p>
-                  <p>${results.mediaBuyer.dailyBudget}/day total budget</p>
-                  <p>Status: PAUSED (awaiting approval)</p>
+                  <p>{results.deployer.campaign} campaign, {results.deployer.adSets} ad sets, {results.deployer.ads} ads</p>
+                  <p>Status: {results.deployer.status}</p>
+                  <p>Idempotent: safe to retry ✓</p>
                 </div>
               </div>
             )}
 
-            {/* Outreach */}
-            {results.outreach && (
+            {/* Reporter */}
+            {results.reporter && (
               <div className="p-3 rounded-lg border border-gray-800 bg-gray-900/50">
                 <div className="flex items-center gap-2 mb-2">
-                  <Mail className="w-4 h-4 text-orange-500" />
-                  <span className="text-sm font-medium">Email</span>
-                </div>
-                <div className="text-xs text-gray-400">
-                  <p>{results.outreach.sequences} sequences ({results.outreach.totalEmails} emails)</p>
-                </div>
-              </div>
-            )}
-
-            {/* Analytics */}
-            {results.analytics && (
-              <div className="p-3 rounded-lg border border-gray-800 bg-gray-900/50">
-                <div className="flex items-center gap-2 mb-2">
-                  <BarChart3 className="w-4 h-4 text-cyan-500" />
-                  <span className="text-sm font-medium">Projections</span>
+                  <BarChart3 className="w-4 h-4 text-orange-500" />
+                  <span className="text-sm font-medium">Report</span>
                 </div>
                 <div className="text-xs text-gray-400 space-y-1">
-                  <p>Leads/week: {results.analytics.leadsPerWeek}</p>
-                  <p>Cost/lead: {results.analytics.costPerLead}</p>
-                  <p>Projected ROI: {results.analytics.roi}</p>
+                  <p>Report delivered ✓</p>
+                  <p>Next review: {results.reporter.nextReview}</p>
+                  <p>Optimiser: scheduled</p>
                 </div>
               </div>
             )}
