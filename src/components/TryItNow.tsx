@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { EnhancedProgress } from "@/components/EnhancedProgress";
+import { CompetitorInsights } from "@/components/CompetitorInsights";
 import {
   Globe,
   Upload,
@@ -270,6 +271,14 @@ export default function TryItNow({ compact = false }: { compact?: boolean }) {
                 <FacebookAdCard key={i} ad={ad} businessName={result.business_name} />
               ))}
             </div>
+
+            {/* Competitor Intelligence */}
+            <CompetitorInsights
+              industry={businessName || result.business_name}
+              location="United States"
+              country="US"
+              businessName={result.business_name}
+            />
 
             {/* Direct signup CTA */}
             <div className="text-center space-y-6 pt-8">
