@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  Activity,
   Brain,
   Search,
   Palette,
@@ -99,6 +100,14 @@ const INITIAL_AGENTS: Agent[] = [
     icon: BarChart3,
     status: "idle",
     description: "Sets up tracking, projections, and automated reports.",
+  },
+  {
+    id: "monitor",
+    name: "Monitor",
+    role: "Campaign Monitoring",
+    icon: Activity,
+    status: "idle",
+    description: "Monitors live ad campaigns, detects creative fatigue, tracks competitor changes, flags performance issues.",
   },
 ];
 
@@ -388,6 +397,80 @@ export default function AgentConsole() {
     return analyticsData;
   };
 
+  // ─── Agent: Monitor (TinyFish SSE) ──────────────────────────────────────────
+
+  const runMonitor = async (businessName: string, industry: string): Promise<any> => {
+    updateAgentStatus("monitor", "working");
+    addActivity("monitor", "Monitor", "Connecting to Facebook Ads Manager...");
+
+    try {
+      const response = await fetch("/api/monitor-campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ business_name: businessName, industry }),
+      });
+
+      if (!response.ok || !response.body) throw new Error("Monitor agent failed");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalResult = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === "PROGRESS") {
+              addActivity("monitor", "Monitor", event.message);
+            }
+            if (event.type === "STREAMING_URL") {
+              addActivity("monitor", "Monitor", "Browser agent active — scanning live campaigns", "stream", {
+                streamUrl: event.url,
+              });
+            }
+            if (event.type === "COMPLETE") {
+              finalResult = event;
+              const report = event.monitoring_report || {};
+              addActivity("monitor", "Monitor", `Found ${report.total_active || 0} active ads`, "result");
+              if (report.longest_running_days > 0) {
+                addActivity("monitor", "Monitor", `Longest running ad: ${report.longest_running_days} days`, "result");
+              }
+              if (report.fatigue_risk?.length > 0) {
+                addActivity("monitor", "Monitor", `⚠ ${report.fatigue_risk.length} ad(s) showing creative fatigue`, "result");
+              }
+              if (report.recommendations?.[0]) {
+                addActivity("monitor", "Monitor", report.recommendations[0], "result");
+              }
+            }
+            if (event.type === "ERROR") {
+              throw new Error(event.message);
+            }
+          } catch (e: any) {
+            if (e.message && !e.message.includes("JSON")) throw e;
+          }
+        }
+      }
+
+      updateAgentStatus("monitor", finalResult ? "done" : "error");
+      if (finalResult) setResults((prev) => ({ ...prev, monitor: finalResult }));
+      return finalResult;
+    } catch (error: any) {
+      addActivity("monitor", "Monitor", `Error: ${error.message}`, "error");
+      updateAgentStatus("monitor", "error");
+      return null;
+    }
+  };
+
   // ─── Persist to Supabase ───────────────────────────────────────────────────
 
   const persistRun = async (
@@ -395,12 +478,18 @@ export default function AgentConsole() {
     allResults: Record<string, any>
   ): Promise<string | null> => {
     try {
+      const competitorData = allResults.research
+        ? { ...allResults.research, monitoring: allResults.monitor || null }
+        : allResults.monitor
+        ? { monitoring: allResults.monitor }
+        : null;
+
       const { data, error } = await supabase
         .from("agent_runs" as any)
         .insert({
           url: targetUrl,
           brand_data: allResults.strategist || null,
-          competitor_data: allResults.research || null,
+          competitor_data: competitorData,
           creative_data: allResults.creative || null,
           campaign_plan: allResults.mediaBuyer || null,
           outreach_plan: allResults.outreach || null,
@@ -448,12 +537,16 @@ export default function AgentConsole() {
     addActivity("system", "System", "Deploying Research and Creative agents in parallel...", "system");
     await Promise.all([runResearch(industry), runCreative(targetUrl, brandData)]);
 
-    // Phase 3: Media Buyer + Outreach + Analytics in parallel
-    addActivity("system", "System", "Deploying Media Buyer, Outreach, and Analytics agents...", "system");
-    const [mediaBuyerResult, outreachResult, analyticsResult] = await Promise.all([
+    // Phase 3: Media Buyer + Outreach + Analytics + Monitor in parallel
+    addActivity("system", "System", "Deploying Media Buyer, Outreach, Analytics, and Monitor agents...", "system");
+    const [mediaBuyerResult, outreachResult, analyticsResult, monitorResult] = await Promise.all([
       runMediaBuyer(brandData),
       runOutreach(brandData),
       runAnalytics(brandData),
+      runMonitor(
+        brandData?.business_name || url.replace(/https?:\/\//, "").split("/")[0],
+        brandData?.business_type || "business"
+      ),
     ]);
 
     addActivity("system", "System", "All agents complete. Saving results...", "system");
@@ -687,7 +780,7 @@ export default function AgentConsole() {
                             Paste a business URL and click "Deploy Agency"
                           </p>
                           <p className="text-xs text-muted-foreground/60 mt-1">
-                            6 AI agents will analyze and build your marketing strategy
+                            7 AI agents will analyze and build your marketing strategy
                           </p>
                         </div>
                       </div>
@@ -951,6 +1044,57 @@ export default function AgentConsole() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Monitor Result */}
+              {results.monitor && (
+                <Card className="animate-fade-in">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-md bg-amber-100 flex items-center justify-center">
+                        <Activity className="h-4 w-4 text-amber-600" />
+                      </div>
+                      <CardTitle className="text-sm">Campaign Monitor</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xs space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Active Ads</span>
+                        <span className="font-semibold text-primary">
+                          {results.monitor.monitoring_report?.total_active || 0}
+                        </span>
+                      </div>
+                      {results.monitor.monitoring_report?.longest_running_days > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Longest Running</span>
+                          <span className="font-semibold">
+                            {results.monitor.monitoring_report.longest_running_days} days
+                          </span>
+                        </div>
+                      )}
+                      {results.monitor.monitoring_report?.fatigue_risk?.length > 0 && (
+                        <div className="pt-1.5 border-t">
+                          <span className="text-amber-600 font-medium block mb-1">
+                            ⚠ {results.monitor.monitoring_report.fatigue_risk.length} fatigue risk{results.monitor.monitoring_report.fatigue_risk.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      )}
+                      {results.monitor.monitoring_report?.recommendations?.length > 0 && (
+                        <div className="pt-1.5 border-t">
+                          <span className="text-muted-foreground block mb-1">Recommendations</span>
+                          <ul className="space-y-1">
+                            {results.monitor.monitoring_report.recommendations.map((rec: string, i: number) => (
+                              <li key={i} className="text-muted-foreground leading-relaxed">
+                                • {rec}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* ── Signup Bridge CTA ─── */}
@@ -963,7 +1107,7 @@ export default function AgentConsole() {
                   <div>
                     <h3 className="text-xl font-bold">Your AI agency is ready.</h3>
                     <p className="text-muted-foreground mt-1 max-w-md mx-auto">
-                      6 agents built your complete marketing operation. Sign up to launch campaigns, track leads, and
+                      7 agents built your complete marketing operation. Sign up to launch campaigns, track leads, and
                       let your AI team run 24/7.
                     </p>
                   </div>
