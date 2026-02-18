@@ -25,6 +25,7 @@ import {
   Clock,
   Rocket,
   XCircle,
+  Building,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -122,7 +123,53 @@ export default function AgentConsole() {
   const [results, setResults] = useState<Record<string, any>>({});
   const [savedRunId, setSavedRunId] = useState<string | null>(null);
   const [allDone, setAllDone] = useState(false);
+  const [businessInfo, setBusinessInfo] = useState<{ name: string; trade: string; suburb: string; state: string } | null>(null);
+  const [loadingBusiness, setLoadingBusiness] = useState(true);
   const activityEndRef = useRef<HTMLDivElement>(null);
+
+  // Load business data for signed-in users
+  useEffect(() => {
+    const loadBusiness = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+          setLoadingBusiness(false);
+          return;
+        }
+        const { data: biz } = await supabase
+          .from("businesses" as any)
+          .select("name, trade, suburb, state, website")
+          .eq("user_id", session.user.id)
+          .maybeSingle();
+        if (biz) {
+          const b = biz as any;
+          setBusinessInfo({ name: b.name, trade: b.trade, suburb: b.suburb, state: b.state });
+          // Pre-fill URL: use saved website first, then last agent run URL
+          if (!url) {
+            if (b.website) {
+              setUrl(b.website);
+            } else {
+              const { data: prevRun } = await supabase
+                .from("agent_runs" as any)
+                .select("url")
+                .eq("user_id", session.user.id)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (prevRun && (prevRun as any).url) {
+                setUrl((prevRun as any).url);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[AgentConsole] Error loading business:", err);
+      } finally {
+        setLoadingBusiness(false);
+      }
+    };
+    loadBusiness();
+  }, []);
 
   useEffect(() => {
     activityEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -478,6 +525,10 @@ export default function AgentConsole() {
     allResults: Record<string, any>
   ): Promise<string | null> => {
     try {
+      // Get current user if logged in
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id || null;
+
       const competitorData = allResults.research
         ? { ...allResults.research, monitoring: allResults.monitor || null }
         : allResults.monitor
@@ -494,7 +545,7 @@ export default function AgentConsole() {
           campaign_plan: allResults.mediaBuyer || null,
           outreach_plan: allResults.outreach || null,
           analytics_projections: allResults.analytics || null,
-          user_id: null,
+          user_id: userId,
         } as any)
         .select("id")
         .single();
@@ -507,6 +558,15 @@ export default function AgentConsole() {
       if (runId) {
         localStorage.setItem("zuckerbot_run_id", runId);
       }
+
+      // Save website URL to business profile if logged in
+      if (userId && targetUrl) {
+        await supabase
+          .from("businesses" as any)
+          .update({ website: targetUrl } as any)
+          .eq("user_id", userId);
+      }
+
       return runId;
     } catch (err) {
       console.error("[AgentConsole] Persist error:", err);
@@ -681,13 +741,25 @@ export default function AgentConsole() {
       {/* URL Input Bar */}
       <div className="border-b bg-muted/30">
         <div className="container mx-auto px-4 py-4">
+          {businessInfo && (
+            <div className="max-w-4xl mx-auto mb-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Building className="h-4 w-4" />
+                <span>
+                  Running for <strong className="text-foreground">{businessInfo.name}</strong>
+                  {businessInfo.trade && <> · <span className="capitalize">{businessInfo.trade}</span></>}
+                  {businessInfo.suburb && <> · {businessInfo.suburb}, {businessInfo.state}</>}
+                </span>
+              </div>
+            </div>
+          )}
           <div className="max-w-4xl mx-auto flex gap-3">
             <div className="flex-1 relative">
               <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste any business URL to deploy your AI marketing agency..."
+                placeholder={businessInfo ? `Enter ${businessInfo.name}'s website URL...` : "Paste any business URL to deploy your AI marketing agency..."}
                 className="pl-10 h-12 text-base"
                 onKeyDown={(e) => e.key === "Enter" && !running && runAllAgents()}
                 disabled={running}

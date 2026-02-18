@@ -13,6 +13,7 @@ import {
   Facebook,
   ExternalLink,
   Image as ImageIcon,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ interface Business {
   postcode: string;
   state: string;
   phone: string;
+  website: string | null;
   facebook_page_id: string | null;
   facebook_ad_account_id: string | null;
 }
@@ -74,6 +76,7 @@ export default function Profile() {
     suburb: "",
     postcode: "",
     state: "",
+    website: "",
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -149,6 +152,7 @@ export default function Profile() {
           suburb: biz.suburb || "",
           postcode: biz.postcode || "",
           state: biz.state || "",
+          website: biz.website || "",
         }));
       }
     } catch (error: any) {
@@ -182,12 +186,13 @@ export default function Profile() {
 
       // Update business details if business exists
       if (business) {
-        const bizUpdate: Record<string, string> = { phone: formData.phone };
+        const bizUpdate: Record<string, string | null> = { phone: formData.phone };
         if (formData.business_name.trim()) bizUpdate.name = formData.business_name.trim();
         if (formData.trade.trim()) bizUpdate.trade = formData.trade.trim();
         if (formData.suburb.trim()) bizUpdate.suburb = formData.suburb.trim();
         if (formData.postcode.trim()) bizUpdate.postcode = formData.postcode.trim();
         if (formData.state.trim()) bizUpdate.state = formData.state.trim();
+        bizUpdate.website = formData.website.trim() || null;
 
         const { error: bizError } = await supabase
           .from("businesses" as any)
@@ -205,6 +210,7 @@ export default function Profile() {
                 suburb: formData.suburb.trim() || prev.suburb,
                 postcode: formData.postcode.trim() || prev.postcode,
                 state: formData.state.trim() || prev.state,
+                website: formData.website.trim() || null,
               }
             : null
         );
@@ -388,6 +394,7 @@ export default function Profile() {
                             suburb: business?.suburb || "",
                             postcode: business?.postcode || "",
                             state: business?.state || "",
+                            website: business?.website || "",
                           });
                         }}
                       >
@@ -534,6 +541,34 @@ export default function Profile() {
                           <p className="text-sm font-medium flex items-center gap-1">
                             <Phone className="w-3 h-3" />
                             {business.phone}
+                          </p>
+                        )}
+                      </div>
+                      <div className="space-y-1 sm:col-span-2">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Website
+                        </Label>
+                        {editMode ? (
+                          <Input
+                            value={formData.website}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                website: e.target.value,
+                              }))
+                            }
+                            placeholder="https://yourbusiness.com"
+                          />
+                        ) : (
+                          <p className="text-sm font-medium flex items-center gap-1">
+                            <Globe className="w-3 h-3" />
+                            {business.website ? (
+                              <a href={business.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                                {business.website}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">Not set</span>
+                            )}
                           </p>
                         )}
                       </div>
