@@ -1,11 +1,12 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, LayoutDashboard, Megaphone, Users, Settings, Menu, X, ShieldCheck } from "lucide-react";
+import { LogOut, LayoutDashboard, Megaphone, Users, Settings, Menu, X, ShieldCheck, Zap } from "lucide-react";
 import { useState } from "react";
 import { useEnhancedAuth } from "@/utils/auth";
 
 const NAV_LINKS = [
+  { href: "/agent-console", label: "AI Agency", icon: Zap },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/campaign/new", label: "New Campaign", icon: Megaphone },
   { href: "/leads", label: "Leads", icon: Users },

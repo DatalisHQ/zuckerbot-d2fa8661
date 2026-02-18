@@ -348,6 +348,11 @@ const Dashboard = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   
+  // ─── Agent Runs State ────────────────────────────────────────────────────
+  const [agentRuns, setAgentRuns] = useState<any[]>([]);
+  const [isLoadingAgentRuns, setIsLoadingAgentRuns] = useState(false);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+
   // ─── Admin State ────────────────────────────────────────────────────────
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
@@ -409,6 +414,38 @@ const Dashboard = () => {
         .limit(5);
 
       setLeads((leadData as unknown as Lead[]) || []);
+    }
+
+    // ─── Link anonymous agent_run from localStorage ───────────────────────
+    const storedRunId = localStorage.getItem("zuckerbot_run_id");
+    if (storedRunId) {
+      try {
+        await supabase
+          .from("agent_runs" as any)
+          .update({ user_id: session.user.id } as any)
+          .eq("id", storedRunId)
+          .is("user_id", null);
+      } catch (err) {
+        console.error("[Dashboard] Error linking agent_run:", err);
+      }
+      localStorage.removeItem("zuckerbot_run_id");
+    }
+
+    // ─── Load Agent Runs ─────────────────────────────────────────────────
+    setIsLoadingAgentRuns(true);
+    try {
+      const { data: runsData } = await supabase
+        .from("agent_runs" as any)
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      setAgentRuns((runsData as any[]) || []);
+    } catch (err) {
+      console.error("[Dashboard] Error loading agent_runs:", err);
+    } finally {
+      setIsLoadingAgentRuns(false);
     }
 
     // Load admin data if admin user
@@ -930,6 +967,210 @@ const Dashboard = () => {
               businessName={business.name}
             />
           )}
+
+          {/* ─── AI Agency Section ─────────────────────────────────────── */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <Zap className="h-5 w-5 text-primary" />
+                AI Agency
+              </h2>
+              <Link
+                to="/agent-console"
+                className="text-sm text-primary hover:underline flex items-center gap-1"
+              >
+                Open Console
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            {isLoadingAgentRuns ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : agentRuns.length === 0 ? (
+              <Card className="text-center py-12">
+                <CardContent className="space-y-4">
+                  <Zap className="h-10 w-10 text-muted-foreground mx-auto" />
+                  <div>
+                    <h3 className="font-semibold">No AI agent runs yet</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Let our AI agents analyze your competitors, generate ad creatives, and plan your campaigns.
+                    </p>
+                  </div>
+                  <Button onClick={() => navigate("/agent-console")}>
+                    <Zap className="h-4 w-4 mr-2" />
+                    Deploy Your AI Agency
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {agentRuns.map((run: any) => {
+                  const brandData = run.brand_data || {};
+                  const competitorData = run.competitor_data || {};
+                  const creativeData = run.creative_data || {};
+                  const campaignPlan = run.campaign_plan || {};
+                  const projections = run.analytics_projections || {};
+                  const isExpanded = expandedRunId === run.id;
+
+                  const competitorAdCount = Array.isArray(competitorData.ads)
+                    ? competitorData.ads.length
+                    : Array.isArray(competitorData.competitors)
+                    ? competitorData.competitors.reduce(
+                        (sum: number, c: any) => sum + (c.ads?.length || 0),
+                        0
+                      )
+                    : 0;
+
+                  const creativeCount = Array.isArray(creativeData.creatives)
+                    ? creativeData.creatives.length
+                    : Array.isArray(creativeData.ads)
+                    ? creativeData.ads.length
+                    : 0;
+
+                  const agentSteps = [
+                    { label: "Brand", done: !!run.brand_data },
+                    { label: "Competitors", done: !!run.competitor_data },
+                    { label: "Creatives", done: !!run.creative_data },
+                    { label: "Campaign", done: !!run.campaign_plan },
+                    { label: "Projections", done: !!run.analytics_projections },
+                  ];
+
+                  return (
+                    <Card key={run.id}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <CardTitle className="text-base truncate">
+                              {run.url || "Agent Run"}
+                            </CardTitle>
+                            <CardDescription>
+                              {run.created_at ? relativeTime(run.created_at) : "—"}
+                              {brandData.business_type && (
+                                <span className="ml-2">
+                                  · {brandData.business_type}
+                                </span>
+                              )}
+                            </CardDescription>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                            {agentSteps.map((step) => (
+                              <Badge
+                                key={step.label}
+                                variant="outline"
+                                className={`text-xs ${
+                                  step.done
+                                    ? "bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800"
+                                    : "bg-gray-500/10 text-gray-500 border-gray-200 dark:text-gray-400 dark:border-gray-700"
+                                }`}
+                              >
+                                {step.label}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {/* Summary stats */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                          {competitorAdCount > 0 && (
+                            <span className="text-muted-foreground">
+                              <strong className="text-foreground">{competitorAdCount}</strong> competitor ads
+                            </span>
+                          )}
+                          {creativeCount > 0 && (
+                            <span className="text-muted-foreground">
+                              <strong className="text-foreground">{creativeCount}</strong> ad creatives
+                            </span>
+                          )}
+                          {campaignPlan.daily_budget && (
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <DollarSign className="h-3.5 w-3.5" />
+                              <strong className="text-foreground">
+                                ${campaignPlan.daily_budget}
+                              </strong>
+                              /day
+                            </span>
+                          )}
+                          {campaignPlan.platforms && Array.isArray(campaignPlan.platforms) && (
+                            <span className="text-muted-foreground">
+                              {campaignPlan.platforms.join(", ")}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* ROI Projections summary */}
+                        {projections.estimated_roi && (
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <TrendingUp className="h-3.5 w-3.5" />
+                              Est. ROI: <strong className="text-foreground">{projections.estimated_roi}</strong>
+                            </span>
+                            {projections.estimated_leads_per_month && (
+                              <span className="text-muted-foreground">
+                                <strong className="text-foreground">{projections.estimated_leads_per_month}</strong> leads/mo
+                              </span>
+                            )}
+                            {projections.estimated_cpl && (
+                              <span className="text-muted-foreground">
+                                <strong className="text-foreground">${projections.estimated_cpl}</strong>/lead
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Expanded details */}
+                        {isExpanded && (
+                          <div className="border-t pt-3 space-y-2 text-sm">
+                            {brandData.brand_name && (
+                              <p><span className="text-muted-foreground">Brand:</span> {brandData.brand_name}</p>
+                            )}
+                            {brandData.target_audience && (
+                              <p><span className="text-muted-foreground">Audience:</span> {brandData.target_audience}</p>
+                            )}
+                            {campaignPlan.objective && (
+                              <p><span className="text-muted-foreground">Objective:</span> {campaignPlan.objective}</p>
+                            )}
+                            {campaignPlan.duration && (
+                              <p><span className="text-muted-foreground">Duration:</span> {campaignPlan.duration}</p>
+                            )}
+                            <div className="pt-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate(`/agent-console`)}
+                              >
+                                <Zap className="h-3.5 w-3.5 mr-1.5" />
+                                Open in Console
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Toggle details */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          onClick={() =>
+                            setExpandedRunId(isExpanded ? null : run.id)
+                          }
+                        >
+                          {isExpanded ? "Hide Details" : "View Details"}
+                          <ArrowRight
+                            className={`h-3 w-3 ml-1 transition-transform ${
+                              isExpanded ? "rotate-90" : ""
+                            }`}
+                          />
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </section>
 
           {/* Active Campaigns */}
           <section className="space-y-4">

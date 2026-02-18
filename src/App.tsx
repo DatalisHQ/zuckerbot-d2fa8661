@@ -170,7 +170,7 @@ function App() {
               <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />
-              <Route path="/agent-console" element={<AgentConsole />} />
+              <Route path="/agent-console" element={user ? <AgentConsole /> : <Navigate to="/auth?returnTo=/agent-console" />} />
               <Route path="/brief/:briefId" element={<BriefView />} />
               <Route path="/admin/audit" element={user ? <AdAudit /> : <Navigate to="/auth" />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
