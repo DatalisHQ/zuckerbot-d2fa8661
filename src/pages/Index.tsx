@@ -64,10 +64,11 @@ const ENHANCED_FUNCTION_URL =
 const THINKING_STEPS = [
   "Reading your website...",
   "Understanding your business...",
+  "Scanning your Google reviews...",
+  "Researching competitors...",
   "Writing ad copy...",
   "Generating ad creatives...",
-  "Designing your campaign...",
-  "Almost ready...",
+  "Preparing your presentation...",
 ];
 
 // Default question (always shown, not business-specific)
@@ -182,10 +183,12 @@ const Index = () => {
 
   // ── Presentation section observer ────────────────────────────────────
 
+  // Re-run observer whenever phase or brand data changes (picks up new sections)
   useEffect(() => {
     if (phase !== "presentation") return;
     const timer = setTimeout(() => {
-      const els = document.querySelectorAll("[data-pres]");
+      const els = document.querySelectorAll("[data-pres]:not(.pres-observed)");
+      if (els.length === 0) return;
       const obs = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
@@ -200,11 +203,14 @@ const Index = () => {
         },
         { threshold: 0.2 }
       );
-      els.forEach((el) => obs.observe(el));
+      els.forEach((el) => {
+        el.classList.add("pres-observed");
+        obs.observe(el);
+      });
       return () => obs.disconnect();
     }, 100);
     return () => clearTimeout(timer);
-  }, [phase]);
+  }, [phase, brand.reviews, brand.competitors]);
 
   // ── Typewriter effect ────────────────────────────────────────────────
 
@@ -310,37 +316,53 @@ const Index = () => {
       }
     }, 1200);
 
-    // Fire API call
-    try {
-      const response = await fetch(ENHANCED_FUNCTION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: trimmed }),
+    // Fire all three API calls in parallel
+    // 1. Ad creatives (generate-preview) - blocks presentation
+    // 2. Reviews (scrape-reviews via agent) - streams in when ready
+    // 3. Competitors (analyze-competitors via agent) - streams in when ready
+
+    const creativePromise = fetch(ENHANCED_FUNCTION_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: trimmed }),
+    }).then(r => r.json()).catch(() => null);
+
+    // Fire review scout (SSE endpoint, we just need the final result)
+    const reviewPromise = fetchReviewData(fallbackName, domain);
+
+    // Fire competitor analyst (SSE endpoint, we just need the final result)
+    const competitorPromise = fetchCompetitorData(fallbackName);
+
+    // Wait for creatives (the primary blocker for presentation)
+    const data = await creativePromise;
+
+    if (!data) {
+      setError("Network error. Please check your connection.");
+    } else if (data.error) {
+      setError(data.error || data.message || "Something went wrong. Please try again.");
+    } else {
+      setResult(data);
+
+      // Extract brand info
+      const ba = data.brand_analysis || {};
+      const name = ba.business_name || data.business_name || fallbackName;
+      setBizName(name);
+      setBizInitials(extractInitials(name));
+      setBizIndustry(ba.industry || ba.business_type || "your space");
+
+      setBrand({
+        ...ba,
+        business_name: name,
       });
-      const data = await response.json();
 
-      if (!response.ok) {
-        setError(data.error || data.message || "Something went wrong. Please try again.");
-        // Still show presentation with fallback data
-      } else {
-        setResult(data);
-
-        // Extract brand info
-        const ba = data.brand_analysis || {};
-        const name = ba.business_name || data.business_name || fallbackName;
-        setBizName(name);
-        setBizInitials(extractInitials(name));
-        setBizIndustry(ba.industry || ba.business_type || "your space");
-
-        // Only set real data from API, no fallbacks
-        setBrand({
-          ...ba,
-          business_name: name,
+      // Re-fire reviews with real business name if we got one
+      if (name !== fallbackName) {
+        fetchReviewData(name, domain).then(reviews => {
+          if (reviews) {
+            setBrand(prev => ({ ...prev, ...reviews }));
+          }
         });
       }
-    } catch {
-      setError("Network error. Please check your connection.");
-      // Still proceed to presentation with fallback data
     }
 
     // Clear the thinking interval and move to presentation
@@ -351,7 +373,146 @@ const Index = () => {
     // Small pause before transition
     await new Promise((r) => setTimeout(r, 800));
     setPhase("presentation");
+
+    // Reviews and competitors stream in after presentation starts
+    reviewPromise.then(reviews => {
+      if (reviews) {
+        setBrand(prev => ({ ...prev, ...reviews }));
+      }
+    });
+
+    competitorPromise.then(competitors => {
+      if (competitors) {
+        setBrand(prev => ({ ...prev, ...competitors }));
+      }
+    });
   }, [url]);
+
+  // ── SSE helpers for parallel agent calls ─────────────────────────────
+
+  async function fetchReviewData(businessName: string, domain: string): Promise<Partial<BrandAnalysis> | null> {
+    try {
+      // Derive a location guess from the domain
+      const location = "United States"; // default, could be smarter later
+      const response = await fetch("/api/scrape-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ business_name: businessName, location }),
+      });
+
+      if (!response.ok || !response.body) return null;
+
+      // Parse SSE stream for the COMPLETE event
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "COMPLETE") {
+              try { reader.cancel(); } catch {}
+              const reviews = (event.reviews || []).slice(0, 3).map((r: any) => ({
+                stars: r.rating || 5,
+                text: r.text || "",
+                author: r.author || "Customer",
+                date: r.date || "Recently",
+                highlight: extractHighlight(r.text || ""),
+              }));
+              if (reviews.length === 0) return null;
+              return {
+                rating: event.rating || 0,
+                review_count: event.total_reviews || reviews.length,
+                reviews,
+              };
+            }
+          } catch {}
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function fetchCompetitorData(businessName: string): Promise<Partial<BrandAnalysis> | null> {
+    try {
+      const response = await fetch("/api/analyze-competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          industry: businessName,
+          location: "United States",
+          country: "US",
+        }),
+      });
+
+      if (!response.ok || !response.body) return null;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "COMPLETE") {
+              try { reader.cancel(); } catch {}
+              const ads = event.competitor_ads || [];
+              if (ads.length === 0) return null;
+              const competitors = ads.slice(0, 3).map((ad: any) => ({
+                name: ad.page_name || "Competitor",
+                badge: ad.started_running_date
+                  ? `Running since ${ad.started_running_date}`
+                  : "Active",
+                description: ad.ad_body_text
+                  ? ad.ad_body_text.slice(0, 200) + (ad.ad_body_text.length > 200 ? "..." : "")
+                  : "Running ads on Facebook.",
+              }));
+              return { competitors };
+            }
+          } catch {}
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function extractHighlight(text: string): string | undefined {
+    if (!text || text.length < 20) return undefined;
+    // Find the most impactful phrase (simple heuristic: longest sentence fragment with positive words)
+    const positiveWords = ["great", "excellent", "amazing", "love", "best", "fantastic", "recommend", "outstanding", "perfect", "wonderful", "incredible", "awesome", "professional", "fast", "friendly", "quality", "honest", "reliable", "trust"];
+    const words = text.toLowerCase();
+    for (const pw of positiveWords) {
+      const idx = words.indexOf(pw);
+      if (idx !== -1) {
+        // Extract a phrase around the positive word (up to ~40 chars)
+        const start = Math.max(0, text.lastIndexOf(" ", Math.max(0, idx - 10)) + 1);
+        const end = Math.min(text.length, text.indexOf(" ", Math.min(text.length, idx + pw.length + 15)));
+        const phrase = text.slice(start, end === -1 ? undefined : end).trim();
+        if (phrase.length >= 8 && phrase.length <= 50) return phrase;
+      }
+    }
+    return undefined;
+  }
 
   // Cleanup interval on unmount
   useEffect(() => {
