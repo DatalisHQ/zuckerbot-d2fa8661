@@ -14,6 +14,19 @@ const TINYFISH_API_KEY = process.env.TINYFISH_API_KEY || 'sk-tinyfish-yhJdYawm4o
 const TINYFISH_URL = 'https://agent.tinyfish.ai/v1/automation/run-sse';
 
 const OPT_OUT_KEYWORDS = ['STOP', 'UNSUBSCRIBE', 'QUIT', 'CANCEL', 'END', 'OPTOUT'];
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = '1888653163';
+
+async function notifyTelegram(text: string) {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' }),
+    });
+  } catch {}
+}
 
 // ── Router ─────────────────────────────────────────────────────────────────
 
@@ -74,6 +87,10 @@ async function handleTrackClick(req: VercelRequest, res: VercelResponse) {
 
   await supabase.from('outbound_prospects').update(updateData).eq('id', prospect.id);
 
+  if (prospect.link_clicks === 0) {
+    await notifyTelegram(`🔗 <b>Link clicked:</b> ${prospect.business_name}\nStatus: ${prospect.status} → clicked`);
+  }
+
   const redirectUrl = prospect.website
     ? `https://zuckerbot.ai/?url=${encodeURIComponent(prospect.website)}&utm_source=sms&utm_medium=outbound`
     : `https://zuckerbot.ai/?biz=${encodeURIComponent(prospect.business_name)}&utm_source=sms&utm_medium=outbound`;
@@ -107,13 +124,13 @@ async function handleSmsWebhook(req: VercelRequest, res: VercelResponse) {
   const lastNine = cleaned.replace(/^0/, '').slice(-9);
 
   // Find prospect by phone
-  let prospect: { id: string; status: string } | null = null;
+  let prospect: { id: string; status: string; business_name?: string } | null = null;
   for (const variant of [from, cleaned, '+61' + cleaned.replace(/^0/, '')]) {
-    const { data } = await supabase.from('outbound_prospects').select('id, status').eq('phone', variant).single();
+    const { data } = await supabase.from('outbound_prospects').select('id, status, business_name').eq('phone', variant).single();
     if (data) { prospect = data; break; }
   }
   if (!prospect && lastNine.length === 9) {
-    const { data } = await supabase.from('outbound_prospects').select('id, status').ilike('phone', `%${lastNine}`).limit(1).single();
+    const { data } = await supabase.from('outbound_prospects').select('id, status, business_name').ilike('phone', `%${lastNine}`).limit(1).single();
     if (data) prospect = data;
   }
 
@@ -122,11 +139,15 @@ async function handleSmsWebhook(req: VercelRequest, res: VercelResponse) {
     const isOptOut = OPT_OUT_KEYWORDS.some(kw => body.trim().toUpperCase() === kw || body.trim().toUpperCase().includes(kw));
     if (isOptOut) {
       await supabase.from('outbound_prospects').update({ status: 'opted_out', reply_text: body, replied_at: now, updated_at: now }).eq('id', prospect.id);
+      await notifyTelegram(`🚫 <b>Opt-out:</b> ${prospect.business_name || from}\n"${body}"`);
     } else {
       const updateData: Record<string, unknown> = { reply_text: body, replied_at: now, updated_at: now };
       if (['new', 'contacted', 'clicked'].includes(prospect.status)) updateData.status = 'replied';
       await supabase.from('outbound_prospects').update(updateData).eq('id', prospect.id);
+      await notifyTelegram(`📩 <b>SMS Reply:</b> ${prospect.business_name || from}\n"${body}"\n\nPhone: ${from}`);
     }
+  } else {
+    await notifyTelegram(`📩 <b>Unknown SMS:</b> ${from}\n"${body}"`);
   }
 
   res.setHeader('Content-Type', 'text/xml');
