@@ -297,6 +297,42 @@
   
   .intro-body strong { color: var(--gray-900); }
   
+  /* Typewriter cursor */
+  .typewriter-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.1em;
+    background: var(--blue);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: cursor-blink 0.8s step-end infinite;
+  }
+  
+  @keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  
+  .typewriter-section {
+    min-height: auto;
+  }
+  
+  .typewriter-section .inner {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  
+  .type-line {
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  
+  .type-line.revealed {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  
   .zb-avatar {
     width: 64px;
     height: 64px;
@@ -877,42 +913,35 @@
 <!-- ─── PHASE 3: PRESENTATION ─────────────────────────────── -->
 <div id="presentation">
   
-  <!-- Intro -->
-  <div class="pres-section" data-pres>
+  <!-- Intro — Typewriter -->
+  <div class="pres-section typewriter-section" data-pres id="introSection">
     <div class="inner">
       <div class="zb-avatar">Z</div>
-      <h1 class="intro-greeting">Hey. I'm ZuckerBot.</h1>
-      <p class="intro-body">
-        I just spent 90 seconds learning everything about <strong>your business</strong>. 
-        I studied your website, analyzed your market, researched your competitors, 
-        and built you a complete advertising strategy.<br/><br/>
-        Think of me as your new account manager — except I work 24/7, 
-        I never forget, and I cost <strong>less than your monthly coffee budget</strong>.
-        <br/><br/>
-        Let me show you what I found.
-      </p>
+      <div id="typewriterContent" style="min-height: 300px;">
+        <!-- Lines injected by JS typewriter -->
+      </div>
     </div>
   </div>
   
   <!-- Ads -->
   <div class="pres-section" data-pres>
     <div class="inner">
-      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;">Here's what I made for you.</h2>
-      <p style="color: var(--gray-500); font-size: 16px; margin-bottom: 8px;">Two ad concepts, ready to launch on Facebook and Instagram.</p>
+      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;" class="type-line" data-reveal>I made these for <span id="adsBusinessName" class="highlight">your business</span>.</h2>
+      <p style="color: var(--gray-500); font-size: 16px; margin-bottom: 8px;" class="type-line" data-reveal>Two ad concepts, ready to launch on Facebook and Instagram.</p>
       <div class="ad-grid">
         <div class="ad-card" data-ad>
           <div class="ad-card-header">
-            <div class="ad-card-avatar">YB</div>
+            <div class="ad-card-avatar" id="adAvatar1">YB</div>
             <div>
-              <div class="ad-card-name">Your Business</div>
+              <div class="ad-card-name" id="adName1">Your Business</div>
               <div class="ad-card-meta">Sponsored · 🌏</div>
             </div>
           </div>
-          <div class="ad-card-copy">Transform your results with our proven approach. Trusted by hundreds of local customers. Book your free consultation today.</div>
+          <div class="ad-card-copy" id="adCopy1">Transform your results with our proven approach. Trusted by hundreds of local customers. Book your free consultation today.</div>
           <div class="ad-card-image">[ AI-generated creative ]</div>
           <div class="ad-card-headline">
-            <div class="url">yourbusiness.com</div>
-            <div class="title">The Local Choice for Quality Service</div>
+            <div class="url" id="adUrl1">yourbusiness.com</div>
+            <div class="title" id="adTitle1">The Local Choice for Quality Service</div>
           </div>
           <div class="ad-card-actions">
             <span>👍 Like</span>
@@ -922,17 +951,17 @@
         </div>
         <div class="ad-card" data-ad>
           <div class="ad-card-header">
-            <div class="ad-card-avatar">YB</div>
+            <div class="ad-card-avatar" id="adAvatar2">YB</div>
             <div>
-              <div class="ad-card-name">Your Business</div>
+              <div class="ad-card-name" id="adName2">Your Business</div>
               <div class="ad-card-meta">Sponsored · 🌏</div>
             </div>
           </div>
-          <div class="ad-card-copy">Why are locals switching? Because we deliver results, not promises. See what our customers are saying.</div>
+          <div class="ad-card-copy" id="adCopy2">Why are locals switching? Because we deliver results, not promises. See what our customers are saying.</div>
           <div class="ad-card-image">[ AI-generated creative ]</div>
           <div class="ad-card-headline">
-            <div class="url">yourbusiness.com</div>
-            <div class="title">See Why Locals Love Us →</div>
+            <div class="url" id="adUrl2">yourbusiness.com</div>
+            <div class="title" id="adTitle2">See Why Locals Love Us →</div>
           </div>
           <div class="ad-card-actions">
             <span>👍 Like</span>
@@ -947,8 +976,8 @@
   <!-- Strategy -->
   <div class="pres-section" data-pres>
     <div class="inner">
-      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;">Here's the plan.</h2>
-      <p style="color: var(--gray-500); font-size: 16px;">Your personalized campaign strategy based on your market and competitors.</p>
+      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;">Here's your campaign plan.</h2>
+      <p style="color: var(--gray-500); font-size: 16px;">Built specifically for <strong id="strategyBusinessName">your business</strong> based on your market and competitors.</p>
       
       <div class="strategy-card">
         <h4>Campaign Overview</h4>
@@ -961,8 +990,8 @@
           <span class="value">Facebook + Instagram</span>
         </div>
         <div class="strategy-item">
-          <span class="label">Target Radius</span>
-          <span class="value">25km from your location</span>
+          <span class="label">Target Area</span>
+          <span class="value" id="strategyLocation">25km from your location</span>
         </div>
         <div class="strategy-item">
           <span class="label">Projected Leads/Month</span>
@@ -983,8 +1012,8 @@
   <!-- Competitors -->
   <div class="pres-section" data-pres>
     <div class="inner">
-      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;">Your competitors aren't sleeping.</h2>
-      <p style="color: var(--gray-500); font-size: 16px; margin-bottom: 8px;">I found 3 active ad campaigns from businesses in your space.</p>
+      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;"><span id="compBusinessName">Your</span> competitors aren't sleeping.</h2>
+      <p style="color: var(--gray-500); font-size: 16px; margin-bottom: 8px;">I found 3 active ad campaigns from businesses in <span id="compIndustry">your space</span>.</p>
       
       <div class="competitor-card" data-comp>
         <div class="comp-name">Competitor A <span class="badge">Running 120+ days</span></div>
@@ -1069,8 +1098,8 @@
   </nav>
   
   <div class="dash-content">
-    <div class="dash-greeting">Good morning. ☀️</div>
-    <div class="dash-sub">Here's what's happening with your campaigns today.</div>
+    <div class="dash-greeting">Good morning, <span id="dashBusinessName">there</span>. ☀️</div>
+    <div class="dash-sub">Here's what's happening with <span id="dashBusinessNameSub">your</span> campaigns today.</div>
     
     <div class="dash-stats">
       <div class="dash-stat">
@@ -1154,6 +1183,207 @@
 </div>
 
 <script>
+  // ─── Business data (simulated — in production this comes from the pipeline) ──
+  const DEMO_BUSINESSES = {
+    default: {
+      name: "Sunrise Dental",
+      url: "sunrisedental.com",
+      initials: "SD",
+      type: "dental practice",
+      location: "Pittsburgh, PA",
+      industry: "dental & healthcare",
+      ad1Copy: "Nervous about the dentist? You're not alone. At Sunrise Dental, we specialize in gentle, anxiety-free care. New patients get a free consultation + X-ray. Book online in 30 seconds.",
+      ad1Title: "Gentle Dental Care — Free First Visit",
+      ad2Copy: "4.9 stars from 200+ Pittsburgh families. Same-day emergency appointments. Modern technology, old-fashioned care. Your smile deserves Sunrise.",
+      ad2Title: "Pittsburgh's Most Trusted Dentist →",
+      targetArea: "15km radius around Pittsburgh, PA",
+    }
+  };
+  
+  let biz = DEMO_BUSINESSES.default;
+  
+  function getBusinessFromUrl(url) {
+    // In production, this data comes from brand-analysis API
+    // For prototype, we personalize based on what they type
+    const clean = url.replace(/https?:\/\//, '').replace(/\/$/, '').split('/')[0];
+    const name = clean.replace(/\.(com|net|org|io|ai|co)$/i, '')
+                      .replace(/[-_]/g, ' ')
+                      .replace(/\b\w/g, c => c.toUpperCase());
+    return {
+      ...biz,
+      name: name || biz.name,
+      url: clean || biz.url,
+      initials: (name || biz.name).split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+    };
+  }
+  
+  function personalizeAllSections() {
+    // Ad cards
+    document.querySelectorAll('#adAvatar1, #adAvatar2').forEach(el => el.textContent = biz.initials);
+    document.querySelectorAll('#adName1, #adName2').forEach(el => el.textContent = biz.name);
+    document.querySelectorAll('#adUrl1, #adUrl2').forEach(el => el.textContent = biz.url);
+    document.getElementById('adCopy1').textContent = biz.ad1Copy;
+    document.getElementById('adTitle1').textContent = biz.ad1Title;
+    document.getElementById('adCopy2').textContent = biz.ad2Copy;
+    document.getElementById('adTitle2').textContent = biz.ad2Title;
+    document.getElementById('adsBusinessName').textContent = biz.name;
+    
+    // Strategy
+    document.getElementById('strategyBusinessName').textContent = biz.name;
+    document.getElementById('strategyLocation').textContent = biz.targetArea;
+    
+    // Competitors
+    document.getElementById('compBusinessName').textContent = biz.name + "'s";
+    document.getElementById('compIndustry').textContent = biz.industry;
+    
+    // Dashboard
+    document.getElementById('dashBusinessName').textContent = biz.name;
+    document.getElementById('dashBusinessNameSub').textContent = biz.name + "'s";
+  }
+  
+  // ─── Typewriter engine ──────────────────────────────────
+  function typewrite(container, lines, onComplete) {
+    container.innerHTML = '';
+    let lineIndex = 0;
+    
+    function typeLine() {
+      if (lineIndex >= lines.length) {
+        // Remove final cursor
+        const cursors = container.querySelectorAll('.typewriter-cursor');
+        cursors.forEach(c => c.remove());
+        if (onComplete) onComplete();
+        return;
+      }
+      
+      const line = lines[lineIndex];
+      const el = document.createElement(line.tag || 'p');
+      el.className = line.className || '';
+      el.style.cssText = line.style || '';
+      container.appendChild(el);
+      
+      // Remove cursor from previous lines
+      const oldCursors = container.querySelectorAll('.typewriter-cursor');
+      oldCursors.forEach(c => c.remove());
+      
+      const fullHTML = line.html || line.text || '';
+      let charIndex = 0;
+      const cursor = document.createElement('span');
+      cursor.className = 'typewriter-cursor';
+      
+      // For HTML content, we reveal chunks between tags
+      if (line.html) {
+        // Parse HTML and reveal progressively
+        el.innerHTML = '';
+        el.appendChild(cursor);
+        
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = fullHTML;
+        const textContent = tempDiv.textContent || '';
+        let textIndex = 0;
+        const speed = line.speed || 18;
+        
+        function typeChar() {
+          if (textIndex >= textContent.length) {
+            el.innerHTML = fullHTML;
+            el.appendChild(cursor);
+            lineIndex++;
+            setTimeout(typeLine, line.pause || 300);
+            return;
+          }
+          
+          // Reveal proportional amount of HTML
+          const ratio = textIndex / textContent.length;
+          const htmlIndex = Math.floor(ratio * fullHTML.length);
+          // Find a safe cut point (not inside a tag)
+          let safeCut = htmlIndex;
+          let inTag = false;
+          for (let i = 0; i <= htmlIndex; i++) {
+            if (fullHTML[i] === '<') inTag = true;
+            if (fullHTML[i] === '>') inTag = false;
+          }
+          if (inTag) {
+            safeCut = fullHTML.indexOf('>', htmlIndex) + 1;
+          }
+          
+          el.innerHTML = fullHTML.slice(0, safeCut);
+          el.appendChild(cursor);
+          textIndex++;
+          setTimeout(typeChar, speed);
+        }
+        
+        setTimeout(typeChar, line.delay || 0);
+      } else {
+        // Plain text
+        el.textContent = '';
+        el.appendChild(cursor);
+        const speed = line.speed || 18;
+        
+        function typeChar() {
+          if (charIndex >= fullHTML.length) {
+            el.appendChild(cursor);
+            lineIndex++;
+            setTimeout(typeLine, line.pause || 300);
+            return;
+          }
+          
+          el.textContent = fullHTML.slice(0, charIndex + 1);
+          el.appendChild(cursor);
+          charIndex++;
+          setTimeout(typeChar, speed);
+        }
+        
+        setTimeout(typeChar, line.delay || 0);
+      }
+    }
+    
+    typeLine();
+  }
+  
+  function startTypewriter() {
+    const container = document.getElementById('typewriterContent');
+    
+    const lines = [
+      {
+        tag: 'h1',
+        className: 'intro-greeting',
+        text: `Hey, ${biz.name}.`,
+        speed: 30,
+        pause: 600,
+      },
+      {
+        tag: 'p',
+        className: 'intro-body',
+        text: `I'm ZuckerBot — your new account manager.`,
+        speed: 22,
+        pause: 400,
+      },
+      {
+        tag: 'p',
+        className: 'intro-body',
+        html: `I just spent 90 seconds studying <strong>${biz.url}</strong>, analyzing the <strong>${biz.industry}</strong> market, and researching what your competitors are running on Facebook.`,
+        speed: 16,
+        pause: 500,
+      },
+      {
+        tag: 'p',
+        className: 'intro-body',
+        html: `I've already built your first ad campaign — <strong>custom creatives, targeted copy, and a full launch strategy</strong> — all tailored specifically to ${biz.name}.`,
+        speed: 16,
+        pause: 500,
+      },
+      {
+        tag: 'p',
+        className: 'intro-body',
+        style: 'color: var(--gray-400); font-size: 16px; margin-top: 24px;',
+        text: `Scroll down — let me show you everything.`,
+        speed: 25,
+        pause: 0,
+      },
+    ];
+    
+    typewrite(container, lines);
+  }
+  
   // ─── Scroll animation for marketing cards ───────────────
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
@@ -1177,10 +1407,13 @@
     
     if (phase === 'presentation') {
       window.scrollTo(0, 0);
+      personalizeAllSections();
+      setTimeout(startTypewriter, 600);
       initPresentation();
     }
     if (phase === 'dashboard') {
       window.scrollTo(0, 0);
+      personalizeAllSections();
     }
     if (phase === 'landing') {
       document.getElementById('landing').classList.remove('fade-out');
@@ -1189,19 +1422,23 @@
   }
   
   // ─── Thinking phase ─────────────────────────────────────
-  const thinkingSteps = [
-    "Reading your website...",
-    "Understanding your business...",
-    "Studying your market...",
-    "Researching your competitors...",
-    "Designing your ads...",
-    "Building your campaign...",
-    "Preparing your strategy...",
-  ];
-  
   let thinkingInterval;
   
   function startThinking() {
+    // Grab URL and personalize
+    const urlVal = document.getElementById('urlInput').value.trim() || 'sunrisedental.com';
+    biz = getBusinessFromUrl(urlVal);
+    
+    const thinkingSteps = [
+      `Reading ${biz.url}...`,
+      `Understanding ${biz.name}...`,
+      `Studying the ${biz.industry} market...`,
+      "Researching your competitors...",
+      `Designing ads for ${biz.name}...`,
+      "Building your campaign...",
+      "Preparing your strategy...",
+    ];
+    
     document.getElementById('landing').classList.add('fade-out');
     
     setTimeout(() => {
@@ -1211,6 +1448,7 @@
       
       let step = 0;
       const textEl = document.getElementById('thinkingText');
+      textEl.textContent = thinkingSteps[0];
       
       thinkingInterval = setInterval(() => {
         step++;
@@ -1232,6 +1470,11 @@
     }, 600);
   }
   
+  // Allow Enter key on input
+  document.getElementById('urlInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') startThinking();
+  });
+  
   // ─── Presentation scroll animations ─────────────────────
   function initPresentation() {
     const presObserver = new IntersectionObserver((entries) => {
@@ -1249,6 +1492,12 @@
           const comps = entry.target.querySelectorAll('[data-comp]');
           comps.forEach((comp, i) => {
             setTimeout(() => comp.classList.add('visible'), i * 250);
+          });
+          
+          // Reveal type-lines with stagger
+          const reveals = entry.target.querySelectorAll('[data-reveal]');
+          reveals.forEach((el, i) => {
+            setTimeout(() => el.classList.add('revealed'), i * 150);
           });
         }
       });
