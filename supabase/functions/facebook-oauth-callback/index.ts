@@ -132,6 +132,116 @@ serve(async (req: Request) => {
       console.warn("[fb-oauth] No ad accounts found for this user");
     }
 
+    // ── Fetch campaign history if ad account exists ─────────────────────
+    let adHistory: any = null;
+    if (adAccountId) {
+      try {
+        // Get campaigns with performance data (last 90 days)
+        const campaignsRes = await fetch(
+          `https://graph.facebook.com/v21.0/${adAccountId}/campaigns?` +
+          `access_token=${accessToken}` +
+          `&fields=id,name,objective,status,created_time,start_time,stop_time,daily_budget,lifetime_budget,buying_type` +
+          `&date_preset=last_90d` +
+          `&limit=25`
+        );
+        const campaignsData = await campaignsRes.json();
+
+        if (campaignsData.data && campaignsData.data.length > 0) {
+          // Get insights for each campaign
+          const campaignInsights = [];
+          for (const campaign of campaignsData.data.slice(0, 10)) {
+            try {
+              const insightsRes = await fetch(
+                `https://graph.facebook.com/v21.0/${campaign.id}/insights?` +
+                `access_token=${accessToken}` +
+                `&fields=impressions,clicks,spend,cpc,cpm,ctr,actions,cost_per_action_type` +
+                `&date_preset=last_90d`
+              );
+              const insightsData = await insightsRes.json();
+
+              campaignInsights.push({
+                id: campaign.id,
+                name: campaign.name,
+                objective: campaign.objective,
+                status: campaign.status,
+                created_time: campaign.created_time,
+                daily_budget: campaign.daily_budget,
+                lifetime_budget: campaign.lifetime_budget,
+                insights: insightsData.data?.[0] || null,
+              });
+            } catch (e) {
+              console.warn(`[fb-oauth] Failed to fetch insights for campaign ${campaign.id}:`, e.message);
+              campaignInsights.push({
+                id: campaign.id,
+                name: campaign.name,
+                objective: campaign.objective,
+                status: campaign.status,
+                insights: null,
+              });
+            }
+          }
+
+          // Also get ad creatives from the most recent campaigns
+          const creativeHistory = [];
+          for (const campaign of campaignsData.data.slice(0, 5)) {
+            try {
+              const adsRes = await fetch(
+                `https://graph.facebook.com/v21.0/${campaign.id}/ads?` +
+                `access_token=${accessToken}` +
+                `&fields=id,name,status,creative{title,body,link_url,image_url,thumbnail_url}` +
+                `&limit=10`
+              );
+              const adsData = await adsRes.json();
+              if (adsData.data) {
+                for (const ad of adsData.data) {
+                  const creative = ad.creative || {};
+                  creativeHistory.push({
+                    campaign_name: campaign.name,
+                    campaign_objective: campaign.objective,
+                    ad_name: ad.name,
+                    ad_status: ad.status,
+                    title: creative.title || null,
+                    body: creative.body || null,
+                    image_url: creative.image_url || creative.thumbnail_url || null,
+                  });
+                }
+              }
+            } catch (e) {
+              console.warn(`[fb-oauth] Failed to fetch ads for campaign ${campaign.id}:`, e.message);
+            }
+          }
+
+          adHistory = {
+            fetched_at: new Date().toISOString(),
+            total_campaigns: campaignsData.data.length,
+            campaigns: campaignInsights,
+            creatives: creativeHistory.slice(0, 20),
+            summary: {
+              total_spend: campaignInsights.reduce((sum, c) => {
+                const spend = parseFloat(c.insights?.spend || "0");
+                return sum + spend;
+              }, 0),
+              total_impressions: campaignInsights.reduce((sum, c) => {
+                return sum + parseInt(c.insights?.impressions || "0", 10);
+              }, 0),
+              total_clicks: campaignInsights.reduce((sum, c) => {
+                return sum + parseInt(c.insights?.clicks || "0", 10);
+              }, 0),
+              objectives_used: [...new Set(campaignsData.data.map((c: any) => c.objective).filter(Boolean))],
+              active_count: campaignsData.data.filter((c: any) => c.status === "ACTIVE").length,
+            },
+          };
+
+          console.log(`[fb-oauth] Fetched ad history: ${adHistory.total_campaigns} campaigns, ${creativeHistory.length} creatives`);
+        } else {
+          console.log("[fb-oauth] No campaign history found");
+        }
+      } catch (e) {
+        console.warn("[fb-oauth] Failed to fetch ad history:", e.message);
+        // Non-fatal, continue without history
+      }
+    }
+
     // ── Update the business record ───────────────────────────────────────
     const updateData: Record<string, any> = {
       facebook_access_token: accessToken,
@@ -139,6 +249,7 @@ serve(async (req: Request) => {
 
     if (pageId) updateData.facebook_page_id = pageId;
     if (adAccountId) updateData.facebook_ad_account_id = adAccountId;
+    if (adHistory) updateData.facebook_ad_history = adHistory;
 
     const { error: updateError } = await supabase
       .from("businesses")

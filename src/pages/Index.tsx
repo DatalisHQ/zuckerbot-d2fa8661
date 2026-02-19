@@ -10,6 +10,7 @@ interface AdPreview {
   image_base64?: string;
   headline: string;
   copy: string;
+  rationale?: string;
 }
 
 interface BrandAnalysis {
@@ -20,6 +21,7 @@ interface BrandAnalysis {
   target_area?: string;
   rating?: number;
   review_count?: number;
+  keywords?: string[];
   reviews?: Array<{
     stars: number;
     text: string;
@@ -63,12 +65,11 @@ const ENHANCED_FUNCTION_URL =
 
 const THINKING_STEPS = [
   "Reading your website...",
-  "Understanding your business...",
   "Scanning your Google reviews...",
   "Researching competitors...",
-  "Writing ad copy...",
-  "Generating ad creatives...",
-  "Preparing your presentation...",
+  "Analyzing what works...",
+  "Designing informed ads...",
+  "Almost ready...",
 ];
 
 // Default question (always shown, not business-specific)
@@ -100,6 +101,75 @@ function extractDomain(url: string): string {
     .split("/")[0];
 }
 
+/** Wraps a promise with a timeout. Resolves to null if the timeout fires first. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+/** Scans competitor ad copy for common marketing hooks. */
+function extractHooksFromCompetitors(data: Partial<BrandAnalysis>): string[] {
+  const hooks: string[] = [];
+  const patterns: Array<{ keyword: string; label: string }> = [
+    { keyword: "free", label: "Free offer" },
+    { keyword: "discount", label: "Discount" },
+    { keyword: "% off", label: "Percentage off" },
+    { keyword: "limited", label: "Scarcity / limited time" },
+    { keyword: "hurry", label: "Urgency" },
+    { keyword: "today only", label: "Urgency" },
+    { keyword: "book now", label: "Urgency" },
+    { keyword: "call now", label: "Direct CTA" },
+    { keyword: "guarantee", label: "Guarantee" },
+    { keyword: "trusted", label: "Trust signal" },
+    { keyword: "rated", label: "Social proof" },
+    { keyword: "review", label: "Social proof" },
+    { keyword: "award", label: "Authority" },
+    { keyword: "certified", label: "Authority" },
+  ];
+
+  const allCopy = (data.competitors || [])
+    .map((c) => c.description)
+    .join(" ")
+    .toLowerCase();
+
+  const seen = new Set<string>();
+  for (const p of patterns) {
+    if (allCopy.includes(p.keyword) && !seen.has(p.label)) {
+      seen.add(p.label);
+      hooks.push(p.label);
+    }
+  }
+  return hooks;
+}
+
+/** Identifies strategic gaps competitors are NOT using. */
+function identifyGaps(data: Partial<BrandAnalysis>): string[] {
+  const gaps: string[] = [];
+  const allCopy = (data.competitors || [])
+    .map((c) => c.description)
+    .join(" ")
+    .toLowerCase();
+
+  if (!allCopy.includes("review") && !allCopy.includes("rated") && !allCopy.includes("star")) {
+    gaps.push("No competitors mention customer reviews or ratings");
+  }
+  if (!allCopy.includes("guarantee") && !allCopy.includes("money back")) {
+    gaps.push("No competitors offer a guarantee");
+  }
+  if (!allCopy.includes("free")) {
+    gaps.push("No competitors lead with a free offer");
+  }
+  if (!allCopy.includes("video") && !allCopy.includes("watch")) {
+    gaps.push("No competitors use video-based CTAs");
+  }
+  if (allCopy.length > 0 && !allCopy.includes("local") && !allCopy.includes("near")) {
+    gaps.push("Competitors use generic messaging without local targeting");
+  }
+  return gaps;
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 const Index = () => {
@@ -123,6 +193,11 @@ const Index = () => {
   const [bizDomain, setBizDomain] = useState("yourbusiness.com");
   const [bizIndustry, setBizIndustry] = useState("your space");
   const [error, setError] = useState<string | null>(null);
+
+  // Two-phase orchestration state
+  const [adsLoading, setAdsLoading] = useState(false);
+  const [reviewResult, setReviewResult] = useState<any>(null);
+  const [competitorResult, setCompetitorResult] = useState<any>(null);
 
   // Presentation scroll
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -210,7 +285,7 @@ const Index = () => {
       return () => obs.disconnect();
     }, 100);
     return () => clearTimeout(timer);
-  }, [phase, brand.reviews, brand.competitors]);
+  }, [phase, brand.reviews, brand.competitors, result]);
 
   // ── Typewriter effect ────────────────────────────────────────────────
 
@@ -285,7 +360,7 @@ const Index = () => {
     }
   }, [phase, runTypewriter]);
 
-  // ── Thinking phase ───────────────────────────────────────────────────
+  // ── Thinking phase (Two-Phase Orchestration) ─────────────────────────
 
   const startThinking = useCallback(async () => {
     const trimmed = url.trim();
@@ -302,6 +377,10 @@ const Index = () => {
     setBizInitials(extractInitials(fallbackName));
     setBizDomain(domain);
     setError(null);
+    setResult(null);
+    setReviewResult(null);
+    setCompetitorResult(null);
+    setAdsLoading(false);
 
     // Transition to thinking
     setPhase("thinking");
@@ -316,76 +395,125 @@ const Index = () => {
       }
     }, 1200);
 
-    // Fire all three API calls in parallel
-    // 1. Ad creatives (generate-preview) - blocks presentation
-    // 2. Reviews (scrape-reviews via agent) - streams in when ready
-    // 3. Competitors (analyze-competitors via agent) - streams in when ready
+    // ── PHASE 1: Discovery (parallel) ──────────────────────────────────
+    // Fire reviews + competitors in parallel, wait for both (or timeout at 30s)
 
-    const creativePromise = fetch(ENHANCED_FUNCTION_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: trimmed }),
-    }).then(r => r.json()).catch(() => null);
-
-    // Fire review scout (SSE endpoint, we just need the final result)
     const reviewPromise = fetchReviewData(fallbackName, domain);
-
-    // Fire competitor analyst (SSE endpoint, we just need the final result)
     const competitorPromise = fetchCompetitorData(fallbackName);
 
-    // Wait for creatives (the primary blocker for presentation)
-    const data = await creativePromise;
+    const [reviewSettled, competitorSettled] = await Promise.allSettled([
+      withTimeout(reviewPromise, 30000),
+      withTimeout(competitorPromise, 30000),
+    ]);
 
-    if (!data) {
-      setError("Network error. Please check your connection.");
-    } else if (data.error) {
-      setError(data.error || data.message || "Something went wrong. Please try again.");
-    } else {
-      setResult(data);
+    // Extract Phase 1 results
+    const rawReviews = reviewSettled.status === "fulfilled" ? reviewSettled.value : null;
+    const rawCompetitors = competitorSettled.status === "fulfilled" ? competitorSettled.value : null;
 
-      // Extract brand info
-      const ba = data.brand_analysis || {};
-      const name = ba.business_name || data.business_name || fallbackName;
-      setBizName(name);
-      setBizInitials(extractInitials(name));
-      setBizIndustry(ba.industry || ba.business_type || "your space");
+    // Store raw results for Phase 2
+    setReviewResult(rawReviews);
+    setCompetitorResult(rawCompetitors);
 
-      setBrand({
-        ...ba,
-        business_name: name,
-      });
+    // Populate brand display data from Phase 1
+    const updatedBrand: BrandAnalysis = {
+      business_name: fallbackName,
+    };
 
-      // Re-fire reviews with real business name if we got one
-      if (name !== fallbackName) {
-        fetchReviewData(name, domain).then(reviews => {
-          if (reviews) {
-            setBrand(prev => ({ ...prev, ...reviews }));
-          }
-        });
-      }
+    if (rawReviews) {
+      updatedBrand.rating = rawReviews.rating;
+      updatedBrand.review_count = rawReviews.review_count;
+      updatedBrand.reviews = rawReviews.reviews;
+      updatedBrand.keywords = rawReviews.keywords;
     }
 
-    // Clear the thinking interval and move to presentation
+    if (rawCompetitors) {
+      updatedBrand.competitors = rawCompetitors.competitors;
+    }
+
+    setBrand(updatedBrand);
+
+    // Clear the thinking interval and transition to presentation
     if (thinkingIntervalRef.current) {
       clearInterval(thinkingIntervalRef.current);
       thinkingIntervalRef.current = null;
     }
-    // Small pause before transition
     await new Promise((r) => setTimeout(r, 800));
     setPhase("presentation");
 
-    // Reviews and competitors stream in after presentation starts
-    reviewPromise.then(reviews => {
-      if (reviews) {
-        setBrand(prev => ({ ...prev, ...reviews }));
-      }
-    });
+    // ── PHASE 2: Enriched Creative Generation ──────────────────────────
+    // Fire ad generation WITH review/competitor enrichment data
+    setAdsLoading(true);
 
-    competitorPromise.then(competitors => {
-      if (competitors) {
-        setBrand(prev => ({ ...prev, ...competitors }));
+    try {
+      const creativePayload: Record<string, any> = { url: trimmed };
+
+      if (rawReviews) {
+        creativePayload.review_data = {
+          rating: rawReviews.rating,
+          review_count: rawReviews.review_count,
+          themes: rawReviews.keywords || [],
+          best_quotes: (rawReviews.reviews || []).map((r: any) => r.text).slice(0, 3),
+        };
       }
-    });
+
+      if (rawCompetitors) {
+        creativePayload.competitor_data = {
+          ad_count: rawCompetitors.competitors?.length || 0,
+          competitors: (rawCompetitors.competitors || []).slice(0, 3).map((c: any) => ({
+            page_name: c.name,
+            ad_body_text: c.description,
+          })),
+          common_hooks: extractHooksFromCompetitors(rawCompetitors),
+          gaps: identifyGaps(rawCompetitors),
+        };
+      }
+
+      const response = await fetch(ENHANCED_FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(creativePayload),
+      });
+
+      const data = await response.json();
+
+      if (data && !data.error) {
+        setResult(data);
+
+        // Update brand with any additional info from generate-preview
+        const ba = data.brand_analysis || {};
+        const name = ba.business_name || data.business_name || fallbackName;
+        setBizName(name);
+        setBizInitials(extractInitials(name));
+        setBizIndustry(ba.industry || ba.business_type || "your space");
+
+        setBrand((prev) => ({
+          ...prev,
+          ...ba,
+          business_name: name,
+          // Preserve Phase 1 data that may not be in generate-preview response
+          rating: prev.rating || ba.rating,
+          review_count: prev.review_count || ba.review_count,
+          reviews: prev.reviews || ba.reviews,
+          competitors: prev.competitors || ba.competitors,
+        }));
+
+        // If we got a better business name, re-fire reviews
+        if (name !== fallbackName && !rawReviews) {
+          fetchReviewData(name, domain).then((reviews) => {
+            if (reviews) {
+              setReviewResult(reviews);
+              setBrand((prev) => ({ ...prev, ...reviews }));
+            }
+          });
+        }
+      } else {
+        setError(data?.error || data?.message || "Something went wrong. Please try again.");
+      }
+    } catch {
+      setError("Network error. Please check your connection.");
+    } finally {
+      setAdsLoading(false);
+    }
   }, [url]);
 
   // ── SSE helpers for parallel agent calls ─────────────────────────────
@@ -393,11 +521,11 @@ const Index = () => {
   async function fetchReviewData(businessName: string, domain: string): Promise<Partial<BrandAnalysis> | null> {
     try {
       // Derive a location guess from the domain
-      const location = "United States"; // default, could be smarter later
+      const loc = "United States"; // default, could be smarter later
       const response = await fetch("/api/scrape-reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ business_name: businessName, location }),
+        body: JSON.stringify({ business_name: businessName, location: loc }),
       });
 
       if (!response.ok || !response.body) return null;
@@ -432,6 +560,7 @@ const Index = () => {
                 rating: event.rating || 0,
                 review_count: event.total_reviews || reviews.length,
                 reviews,
+                keywords: event.keywords || [],
               };
             }
           } catch {}
@@ -765,6 +894,26 @@ const Index = () => {
           opacity: 1 !important;
           transform: none !important;
         }
+
+        /* ── Ads loading shimmer ───────────────────────────── */
+        .ads-loading-shimmer {
+          background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.5s ease-in-out infinite;
+        }
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+
+        /* ── Ad fade-in when loaded ────────────────────────── */
+        .ad-fade-in {
+          animation: adFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes adFadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
 
       <div className="landing-root">
@@ -1026,6 +1175,44 @@ const Index = () => {
               </div>
             </div>
 
+            {/* ── Competitors (shown before ads when real data exists) ── */}
+            {brand.competitors && brand.competitors.length > 0 && (
+            <div
+              data-pres
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+            >
+              <div className="pres-inner max-w-[720px] w-full">
+                <h2 className="text-[clamp(24px,4vw,36px)] font-extrabold tracking-tight mb-2">
+                  {bizName}&apos;s competitors are not sleeping.
+                </h2>
+                <p className="text-gray-500 text-base mb-2">
+                  I found active ad campaigns from businesses in{" "}
+                  <span className="text-gray-700 font-medium">{bizIndustry}</span>.
+                </p>
+
+                <div className="space-y-4 mt-4">
+                  {brand.competitors.map((comp, i) => (
+                    <div
+                      key={i}
+                      data-stagger
+                      className="comp-card-anim bg-white border border-gray-200 rounded-2xl p-6"
+                    >
+                      <div className="font-semibold text-[15px] mb-2 flex items-center gap-2">
+                        {comp.name}
+                        <span className="text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                          {comp.badge}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-500 leading-relaxed">
+                        {comp.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            )}
+
             {/* ── Ads ────────────────────────────────────────────────── */}
             <div
               id="pres-ads"
@@ -1041,103 +1228,155 @@ const Index = () => {
                   Two ad concepts, ready to launch on Facebook and Instagram.
                 </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-10">
-                  {result?.ads && result.ads.length > 0
-                    ? result.ads.slice(0, 2).map((ad, i) => (
+                {/* Ads loading state */}
+                {adsLoading && !result && (
+                  <div className="mt-10">
+                    <div className="flex items-center gap-3 mb-8">
+                      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-sm text-gray-500">
+                        I'm designing your ads based on what I found...
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      {[0, 1].map((i) => (
                         <div
                           key={i}
-                          data-stagger
-                          className="ad-card-anim bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
-                        >
-                          {/* Header */}
-                          <div className="p-4 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
-                              {bizInitials}
-                            </div>
-                            <div>
-                              <div className="text-sm font-semibold">{bizName}</div>
-                              <div className="text-xs text-gray-400">
-                                Sponsored · 🌏
-                              </div>
-                            </div>
-                          </div>
-                          {/* Copy */}
-                          <div className="px-4 pb-3 text-sm leading-relaxed text-gray-700">
-                            {ad.copy}
-                          </div>
-                          {/* Image */}
-                          {ad.image_base64 ? (
-                            <img
-                              src={`data:image/png;base64,${ad.image_base64}`}
-                              alt="AI-generated ad creative"
-                              className="w-full aspect-square object-cover"
-                            />
-                          ) : (
-                            <div className="w-full aspect-square bg-gradient-to-br from-blue-50 via-purple-50 to-amber-50 flex items-center justify-center text-gray-400 text-sm">
-                              [ AI-generated creative ]
-                            </div>
-                          )}
-                          {/* Headline */}
-                          <div className="p-3 px-4 border-t border-gray-100 bg-gray-50">
-                            <div className="text-[11px] text-gray-400 uppercase">
-                              {bizDomain}
-                            </div>
-                            <div className="text-sm font-semibold mt-0.5">
-                              {ad.headline}
-                            </div>
-                          </div>
-                          {/* Actions */}
-                          <div className="flex justify-around py-2.5 px-4 border-t border-gray-100 text-[13px] text-gray-500">
-                            <span>👍 Like</span>
-                            <span>💬 Comment</span>
-                            <span>↗️ Share</span>
-                          </div>
-                        </div>
-                      ))
-                    : // Placeholder ad cards
-                      [0, 1].map((i) => (
-                        <div
-                          key={i}
-                          data-stagger
-                          className="ad-card-anim bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+                          className="bg-white border border-gray-200 rounded-2xl overflow-hidden"
                         >
                           <div className="p-4 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
-                              {bizInitials}
-                            </div>
-                            <div>
-                              <div className="text-sm font-semibold">{bizName}</div>
-                              <div className="text-xs text-gray-400">
-                                Sponsored · 🌏
-                              </div>
+                            <div className="w-10 h-10 rounded-full ads-loading-shimmer" />
+                            <div className="flex-1 space-y-2">
+                              <div className="h-3 w-24 rounded ads-loading-shimmer" />
+                              <div className="h-2 w-16 rounded ads-loading-shimmer" />
                             </div>
                           </div>
-                          <div className="px-4 pb-3 text-sm leading-relaxed text-gray-700">
-                            {i === 0
-                              ? `Transform your results with ${bizName}. Trusted by hundreds of local customers. Book your free consultation today.`
-                              : `Why are locals switching to ${bizName}? Because we deliver results, not promises. See what our customers are saying.`}
+                          <div className="px-4 pb-3 space-y-2">
+                            <div className="h-3 w-full rounded ads-loading-shimmer" />
+                            <div className="h-3 w-3/4 rounded ads-loading-shimmer" />
                           </div>
-                          <div className="w-full aspect-square bg-gradient-to-br from-blue-50 via-purple-50 to-amber-50 flex items-center justify-center text-gray-400 text-sm">
-                            [ AI-generated creative ]
-                          </div>
-                          <div className="p-3 px-4 border-t border-gray-100 bg-gray-50">
-                            <div className="text-[11px] text-gray-400 uppercase">
-                              {bizDomain}
-                            </div>
-                            <div className="text-sm font-semibold mt-0.5">
-                              {i === 0
-                                ? `The Local Choice for Quality Service`
-                                : `See Why Locals Love Us`}
-                            </div>
-                          </div>
-                          <div className="flex justify-around py-2.5 px-4 border-t border-gray-100 text-[13px] text-gray-500">
-                            <span>👍 Like</span>
-                            <span>💬 Comment</span>
-                            <span>↗️ Share</span>
+                          <div className="w-full aspect-square ads-loading-shimmer" />
+                          <div className="p-3 px-4 border-t border-gray-100 bg-gray-50 space-y-2">
+                            <div className="h-2 w-20 rounded ads-loading-shimmer" />
+                            <div className="h-3 w-40 rounded ads-loading-shimmer" />
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actual ad cards (fade in when Phase 2 completes) */}
+                {result?.ads && result.ads.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-10">
+                  {result.ads.slice(0, 2).map((ad, i) => (
+                    <div
+                      key={i}
+                      data-stagger
+                      className="ad-card-anim ad-fade-in bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+                    >
+                      {/* Header */}
+                      <div className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
+                          {bizInitials}
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold">{bizName}</div>
+                          <div className="text-xs text-gray-400">
+                            Sponsored · 🌏
+                          </div>
+                        </div>
+                      </div>
+                      {/* Copy */}
+                      <div className="px-4 pb-3 text-sm leading-relaxed text-gray-700">
+                        {ad.copy}
+                      </div>
+                      {/* Image */}
+                      {ad.image_base64 ? (
+                        <img
+                          src={`data:image/png;base64,${ad.image_base64}`}
+                          alt="AI-generated ad creative"
+                          className="w-full aspect-square object-cover"
+                        />
+                      ) : (
+                        <div className="w-full aspect-square bg-gradient-to-br from-blue-50 via-purple-50 to-amber-50 flex items-center justify-center text-gray-400 text-sm">
+                          [ AI-generated creative ]
+                        </div>
+                      )}
+                      {/* Headline */}
+                      <div className="p-3 px-4 border-t border-gray-100 bg-gray-50">
+                        <div className="text-[11px] text-gray-400 uppercase">
+                          {bizDomain}
+                        </div>
+                        <div className="text-sm font-semibold mt-0.5">
+                          {ad.headline}
+                        </div>
+                      </div>
+                      {/* Rationale */}
+                      {ad.rationale && (
+                        <div className="px-4 pb-4 pt-0">
+                          <p className="text-xs text-gray-400 italic leading-relaxed">
+                            💡 {ad.rationale}
+                          </p>
+                        </div>
+                      )}
+                      {/* Actions */}
+                      <div className="flex justify-around py-2.5 px-4 border-t border-gray-100 text-[13px] text-gray-500">
+                        <span>👍 Like</span>
+                        <span>💬 Comment</span>
+                        <span>↗️ Share</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+                )}
+
+                {/* Fallback placeholder cards (no result yet and not loading) */}
+                {!result && !adsLoading && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-10">
+                  {[0, 1].map((i) => (
+                    <div
+                      key={i}
+                      data-stagger
+                      className="ad-card-anim bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+                    >
+                      <div className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
+                          {bizInitials}
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold">{bizName}</div>
+                          <div className="text-xs text-gray-400">
+                            Sponsored · 🌏
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-4 pb-3 text-sm leading-relaxed text-gray-700">
+                        {i === 0
+                          ? `Transform your results with ${bizName}. Trusted by hundreds of local customers. Book your free consultation today.`
+                          : `Why are locals switching to ${bizName}? Because we deliver results, not promises. See what our customers are saying.`}
+                      </div>
+                      <div className="w-full aspect-square bg-gradient-to-br from-blue-50 via-purple-50 to-amber-50 flex items-center justify-center text-gray-400 text-sm">
+                        [ AI-generated creative ]
+                      </div>
+                      <div className="p-3 px-4 border-t border-gray-100 bg-gray-50">
+                        <div className="text-[11px] text-gray-400 uppercase">
+                          {bizDomain}
+                        </div>
+                        <div className="text-sm font-semibold mt-0.5">
+                          {i === 0
+                            ? `The Local Choice for Quality Service`
+                            : `See Why Locals Love Us`}
+                        </div>
+                      </div>
+                      <div className="flex justify-around py-2.5 px-4 border-t border-gray-100 text-[13px] text-gray-500">
+                        <span>👍 Like</span>
+                        <span>💬 Comment</span>
+                        <span>↗️ Share</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                )}
               </div>
             </div>
 
@@ -1203,44 +1442,6 @@ const Index = () => {
                 </div>
               </div>
             </div>
-
-            {/* ── Competitors (only shown when real data exists) ────── */}
-            {brand.competitors && brand.competitors.length > 0 && (
-            <div
-              data-pres
-              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
-            >
-              <div className="pres-inner max-w-[720px] w-full">
-                <h2 className="text-[clamp(24px,4vw,36px)] font-extrabold tracking-tight mb-2">
-                  {bizName}&apos;s competitors are not sleeping.
-                </h2>
-                <p className="text-gray-500 text-base mb-2">
-                  I found active ad campaigns from businesses in{" "}
-                  <span className="text-gray-700 font-medium">{bizIndustry}</span>.
-                </p>
-
-                <div className="space-y-4 mt-4">
-                  {brand.competitors.map((comp, i) => (
-                    <div
-                      key={i}
-                      data-stagger
-                      className="comp-card-anim bg-white border border-gray-200 rounded-2xl p-6"
-                    >
-                      <div className="font-semibold text-[15px] mb-2 flex items-center gap-2">
-                        {comp.name}
-                        <span className="text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
-                          {comp.badge}
-                        </span>
-                      </div>
-                      <div className="text-sm text-gray-500 leading-relaxed">
-                        {comp.description}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            )}
 
             {/* ── CTA / Pricing ──────────────────────────────────────── */}
             <div
