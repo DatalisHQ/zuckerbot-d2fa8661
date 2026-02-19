@@ -139,11 +139,34 @@ const Onboarding = () => {
   const [tradeOpen, setTradeOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
+  // Check for Try It Now data from landing page
+  const tryItNowRaw = (() => {
+    try { return JSON.parse(localStorage.getItem("tryItNowData") || "null"); } catch { return null; }
+  })();
+
+  // Map industry string to business type dropdown value
+  const mapIndustryToTrade = (industry?: string): string => {
+    if (!industry) return "";
+    const i = industry.toLowerCase();
+    if (i.includes("dental") || i.includes("medical") || i.includes("health")) return "Dental / Medical";
+    if (i.includes("restaurant") || i.includes("cafe") || i.includes("food")) return "Restaurant / Café";
+    if (i.includes("gym") || i.includes("fitness")) return "Gym / Fitness";
+    if (i.includes("beauty") || i.includes("salon")) return "Beauty / Salon";
+    if (i.includes("real estate") || i.includes("property")) return "Real Estate";
+    if (i.includes("retail") || i.includes("ecommerce") || i.includes("e-commerce")) return "Retail / E-commerce";
+    if (i.includes("legal") || i.includes("law") || i.includes("account")) return "Professional Services";
+    if (i.includes("trades") || i.includes("plumb") || i.includes("electric") || i.includes("roof") || i.includes("construction") || i.includes("clean")) return "Trades / Home Services";
+    if (i.includes("veterinary") || i.includes("pet")) return "Health & Wellness";
+    if (i.includes("auto") || i.includes("mechanic") || i.includes("car")) return "Automotive";
+    if (i.includes("photo") || i.includes("video")) return "Professional Services";
+    return "";
+  };
+
   const [form, setForm] = useState<BusinessForm>({
-    trade: "",
+    trade: mapIndustryToTrade(tryItNowRaw?.industry || tryItNowRaw?.business_type),
     customTrade: "",
-    businessName: "",
-    websiteUrl: "",
+    businessName: tryItNowRaw?.business_name || "",
+    websiteUrl: tryItNowRaw?.url || "",
     phone: "",
     country: "",
     targetType: "local",
@@ -182,7 +205,7 @@ const Onboarding = () => {
         .maybeSingle();
 
       if (business) {
-        navigate("/campaign/new");
+        navigate("/agency");
         return;
       }
     };
@@ -293,6 +316,13 @@ const Onboarding = () => {
         insertData.state = form.state;
       }
 
+      // Attach Try It Now intelligence if available
+      if (tryItNowRaw) {
+        if (tryItNowRaw.url) insertData.website = tryItNowRaw.url;
+        if (tryItNowRaw.ads) insertData.preview_ads = tryItNowRaw.ads;
+        if (tryItNowRaw.competitor_data) insertData.competitor_names = (tryItNowRaw.competitor_data.competitors || []).map((c: any) => c.name);
+      }
+
       const { error: insertError } = await (supabase as any)
         .from("businesses")
         .insert(insertData);
@@ -350,12 +380,15 @@ const Onboarding = () => {
         // Non-critical — don't block user flow
       }
 
+      // Clear Try It Now data from localStorage
+      try { localStorage.removeItem("tryItNowData"); } catch {}
+
       toast({
         title: "You're all set! 🎉",
-        description: "Let's create your first ad campaign.",
+        description: "Let's get your first campaign ready.",
       });
 
-      navigate("/campaign/new");
+      navigate("/agency");
     } catch (error: any) {
       console.error("Onboarding save error:", error);
       toast({

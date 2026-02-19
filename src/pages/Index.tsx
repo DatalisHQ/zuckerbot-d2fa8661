@@ -487,8 +487,8 @@ const Index = () => {
             page_name: c.name,
             ad_body_text: c.description,
           })),
-          common_hooks: extractHooksFromCompetitors(rawCompetitors),
-          gaps: identifyGaps(rawCompetitors),
+          common_hooks: (rawCompetitors as any).common_hooks?.length ? (rawCompetitors as any).common_hooks : extractHooksFromCompetitors(rawCompetitors),
+          gaps: (rawCompetitors as any).gaps?.length ? (rawCompetitors as any).gaps : identifyGaps(rawCompetitors),
         };
       }
 
@@ -627,18 +627,27 @@ const Index = () => {
             const event = JSON.parse(line.slice(6));
             if (event.type === "COMPLETE") {
               try { reader.cancel(); } catch {}
-              const ads = event.competitor_ads || [];
-              if (ads.length === 0) return null;
-              const competitors = ads.slice(0, 3).map((ad: any) => ({
-                name: ad.page_name || "Competitor",
-                badge: ad.started_running_date
-                  ? `Running since ${ad.started_running_date}`
-                  : "Active",
-                description: ad.ad_body_text
-                  ? ad.ad_body_text.slice(0, 200) + (ad.ad_body_text.length > 200 ? "..." : "")
-                  : "Running ads on Facebook.",
-              }));
-              return { competitors };
+              // Support both new format (competitors array) and old TinyFish format (competitor_ads)
+              let competitors: Array<{ name: string; badge: string; description: string }> = [];
+              if (event.competitors && event.competitors.length > 0) {
+                competitors = event.competitors.slice(0, 5).map((c: any) => ({
+                  name: c.name || "Competitor",
+                  badge: c.badge || "Active",
+                  description: c.description || "Running ads on Facebook.",
+                }));
+              } else if (event.competitor_ads && event.competitor_ads.length > 0) {
+                competitors = event.competitor_ads.slice(0, 3).map((ad: any) => ({
+                  name: ad.page_name || "Competitor",
+                  badge: ad.started_running_date ? `Running since ${ad.started_running_date}` : "Active",
+                  description: ad.ad_body_text ? ad.ad_body_text.slice(0, 200) + (ad.ad_body_text.length > 200 ? "..." : "") : "Running ads on Facebook.",
+                }));
+              }
+              if (competitors.length === 0) return null;
+              return {
+                competitors,
+                common_hooks: event.common_hooks || [],
+                gaps: event.gaps || [],
+              };
             }
           } catch {}
         }
@@ -689,6 +698,39 @@ const Index = () => {
 
   const handleCTA = () => {
     trackFunnelEvent.startSignup();
+
+    // Save Try It Now results so onboarding can skip redundant steps
+    const tryItNowData: Record<string, any> = {
+      url: url.trim(),
+      business_name: bizName,
+      industry: bizIndustry !== "your space" ? bizIndustry : undefined,
+      domain: bizDomain,
+    };
+    if (result) {
+      tryItNowData.ads = result.ads;
+      tryItNowData.description = result.description;
+    }
+    if (brand) {
+      tryItNowData.rating = brand.rating;
+      tryItNowData.review_count = brand.review_count;
+      tryItNowData.reviews = brand.reviews;
+      tryItNowData.competitors = brand.competitors;
+      tryItNowData.strategy = brand.strategy;
+      tryItNowData.keywords = brand.keywords;
+      tryItNowData.location = brand.location;
+      tryItNowData.target_area = brand.target_area;
+      tryItNowData.business_type = brand.business_type;
+    }
+    if (reviewResult) {
+      tryItNowData.review_data = reviewResult;
+    }
+    if (competitorResult) {
+      tryItNowData.competitor_data = competitorResult;
+    }
+    try {
+      localStorage.setItem("tryItNowData", JSON.stringify(tryItNowData));
+    } catch {}
+
     navigate("/auth");
   };
 
