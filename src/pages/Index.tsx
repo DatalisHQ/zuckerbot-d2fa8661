@@ -64,77 +64,21 @@ const ENHANCED_FUNCTION_URL =
 const THINKING_STEPS = [
   "Reading your website...",
   "Understanding your business...",
-  "Studying your market...",
-  "Researching your competitors...",
-  "Designing your ads...",
-  "Building your campaign...",
-  "Preparing your strategy...",
+  "Writing ad copy...",
+  "Generating ad creatives...",
+  "Designing your campaign...",
+  "Almost ready...",
 ];
 
-// Fallback demo data used when API returns partial results
-const FALLBACK: BrandAnalysis = {
-  rating: 4.8,
-  review_count: 127,
-  reviews: [
-    {
-      stars: 5,
-      text: "Incredible service. They understood exactly what we needed and delivered fast.",
-      author: "Sarah M.",
-      date: "3 months ago",
-      highlight: "understood exactly what we needed",
-    },
-    {
-      stars: 5,
-      text: "Called on short notice and they still showed up the same day. Highly recommend.",
-      author: "Mike T.",
-      date: "1 month ago",
-      highlight: "showed up the same day",
-    },
-    {
-      stars: 5,
-      text: "Most honest team I have worked with. Fair pricing, no pressure. Just great work.",
-      author: "Jennifer L.",
-      date: "2 weeks ago",
-      highlight: "Most honest team",
-    },
+// Default question (always shown, not business-specific)
+const DEFAULT_QUESTION = {
+  title: "One question before I build your campaign.",
+  body: "Which outcome matters most for your business right now?",
+  options: [
+    { emoji: "📞", label: "More phone calls", sub: "High-intent leads, fast conversion" },
+    { emoji: "📋", label: "More form fills", sub: "Build a pipeline of warm prospects" },
+    { emoji: "⚡", label: "Both. Let AI optimize", sub: "I will split-test and find the winner" },
   ],
-  competitors: [
-    {
-      name: "Competitor A",
-      badge: "Running 120+ days",
-      description:
-        "Running engagement ads on Facebook and Instagram. Their creative has not been updated in 4 months, showing signs of creative fatigue. Opportunity to stand out with fresh messaging.",
-    },
-    {
-      name: "Competitor B",
-      badge: "Running 45 days",
-      description:
-        "Active lead generation campaign with carousel ads. Targeting a broad audience. Their copy focuses on price. You can differentiate on quality and trust.",
-    },
-    {
-      name: "Competitor C",
-      badge: "Running 12 days",
-      description:
-        "New entrant with video ads. Small budget, testing phase. They are going after the same audience. Move fast to establish presence first.",
-    },
-  ],
-  question: {
-    title: "One question before I build your campaign.",
-    body: "Based on what I found, which outcome matters most for your business right now?",
-    options: [
-      { emoji: "📞", label: "More phone calls", sub: "High-intent leads, fast conversion" },
-      { emoji: "📋", label: "More form fills", sub: "Build a pipeline of warm prospects" },
-      { emoji: "⚡", label: "Both. Let AI optimize", sub: "I will split-test and find the winner" },
-    ],
-  },
-  strategy: {
-    monthly_budget: "$600 - $900",
-    platforms: "Facebook + Instagram",
-    target_area: "25km from your location",
-    projected_leads: "40 - 65",
-    cost_per_lead: "$9 - $15",
-    expected_roi: "3.2x - 5.1x",
-  },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -172,7 +116,7 @@ const Index = () => {
 
   // API result
   const [result, setResult] = useState<PreviewResult | null>(null);
-  const [brand, setBrand] = useState<BrandAnalysis>(FALLBACK);
+  const [brand, setBrand] = useState<BrandAnalysis>({});
   const [bizName, setBizName] = useState("");
   const [bizInitials, setBizInitials] = useState("ZB");
   const [bizDomain, setBizDomain] = useState("yourbusiness.com");
@@ -388,15 +332,11 @@ const Index = () => {
         setBizInitials(extractInitials(name));
         setBizIndustry(ba.industry || ba.business_type || "your space");
 
-        // Merge brand analysis with fallback
-        setBrand((prev) => ({
-          ...prev,
+        // Only set real data from API, no fallbacks
+        setBrand({
           ...ba,
-          reviews: ba.reviews && ba.reviews.length > 0 ? ba.reviews : prev.reviews,
-          competitors: ba.competitors && ba.competitors.length > 0 ? ba.competitors : prev.competitors,
-          question: ba.question || prev.question,
-          strategy: ba.strategy ? { ...prev.strategy, ...ba.strategy } : prev.strategy,
-        }));
+          business_name: name,
+        });
       }
     } catch {
       setError("Network error. Please check your connection.");
@@ -810,7 +750,8 @@ const Index = () => {
               </div>
             </div>
 
-            {/* ── Reviews ────────────────────────────────────────────── */}
+            {/* ── Reviews (only shown when real data exists) ─────────── */}
+            {brand.reviews && brand.reviews.length > 0 && (
             <div
               data-pres
               className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
@@ -824,28 +765,30 @@ const Index = () => {
                 </p>
 
                 {/* Rating summary */}
+                {brand.rating && (
                 <div
                   data-stagger
                   className="review-card-anim flex items-center gap-4 mt-8 p-5 bg-gray-50 rounded-2xl border border-gray-100"
                 >
                   <div className="text-5xl font-extrabold text-gray-900 leading-none">
-                    {brand.rating || 4.8}
+                    {brand.rating}
                   </div>
                   <div className="text-sm text-gray-500">
                     <div className="text-amber-500 text-base tracking-widest">
-                      {"★".repeat(Math.round(brand.rating || 4.8))}
-                      {"☆".repeat(5 - Math.round(brand.rating || 4.8))}
+                      {"★".repeat(Math.round(brand.rating))}
+                      {"☆".repeat(5 - Math.round(brand.rating))}
                     </div>
                     <strong className="text-gray-900">
-                      {brand.review_count || 127} reviews
+                      {brand.review_count} reviews
                     </strong>{" "}
                     on Google
                   </div>
                 </div>
+                )}
 
                 {/* Review cards */}
                 <div className="grid gap-4 mt-8">
-                  {(brand.reviews || FALLBACK.reviews!).map((rev, i) => (
+                  {brand.reviews.map((rev, i) => (
                     <div
                       key={i}
                       data-stagger
@@ -885,6 +828,7 @@ const Index = () => {
                 </p>
               </div>
             </div>
+            )}
 
             {/* ── Smart Question ──────────────────────────────────────── */}
             <div
@@ -895,13 +839,13 @@ const Index = () => {
                 <div className="bg-gradient-to-br from-blue-50 to-purple-50 border-2 border-blue-600/15 rounded-2xl p-10 text-center">
                   <div className="text-[32px] mb-4">🤔</div>
                   <h3 className="text-[22px] font-bold mb-3 text-gray-900">
-                    {brand.question?.title || FALLBACK.question!.title}
+                    {brand.question?.title || DEFAULT_QUESTION.title}
                   </h3>
                   <p className="text-base text-gray-600 mb-6 max-w-[500px] mx-auto">
-                    {brand.question?.body || FALLBACK.question!.body}
+                    {brand.question?.body || DEFAULT_QUESTION.body}
                   </p>
                   <div className="flex gap-3 justify-center flex-wrap">
-                    {(brand.question?.options || FALLBACK.question!.options).map(
+                    {(brand.question?.options || DEFAULT_QUESTION.options).map(
                       (opt, i) => (
                         <button
                           key={i}
@@ -1046,19 +990,19 @@ const Index = () => {
                   Here is your campaign plan.
                 </h2>
                 <p className="text-gray-500 text-base">
-                  Built specifically for{" "}
-                  <strong className="text-gray-900">{bizName}</strong> based on
-                  your market and competitors.
+                  Based on industry benchmarks for{" "}
+                  <strong className="text-gray-900">{bizIndustry}</strong> businesses.
+                  {brand.strategy ? "" : " I will refine this once your campaign is live."}
                 </p>
 
                 <div className="bg-gray-50 border border-gray-100 rounded-2xl p-8 mt-6">
                   <h4 className="text-[13px] uppercase tracking-widest text-gray-400 mb-3">
-                    Campaign Overview
+                    Recommended Campaign Setup
                   </h4>
                   {[
                     {
-                      label: "Monthly Budget",
-                      value: brand.strategy?.monthly_budget || "$600 - $900",
+                      label: "Recommended Budget",
+                      value: brand.strategy?.monthly_budget || "$500 - $1,000/mo",
                     },
                     {
                       label: "Platforms",
@@ -1066,21 +1010,21 @@ const Index = () => {
                     },
                     {
                       label: "Target Area",
-                      value: brand.strategy?.target_area || "25km from your location",
+                      value: brand.strategy?.target_area || brand.target_area || "Your local area",
                     },
                     {
                       label: "Projected Leads/Month",
-                      value: brand.strategy?.projected_leads || "40 - 65",
-                      green: true,
+                      value: brand.strategy?.projected_leads || "Depends on budget",
+                      green: !!brand.strategy?.projected_leads,
                     },
                     {
                       label: "Estimated Cost Per Lead",
-                      value: brand.strategy?.cost_per_lead || "$9 - $15",
+                      value: brand.strategy?.cost_per_lead || "Varies by industry",
                     },
                     {
                       label: "Expected ROI",
-                      value: brand.strategy?.expected_roi || "3.2x - 5.1x",
-                      green: true,
+                      value: brand.strategy?.expected_roi || "Optimized over time",
+                      green: !!brand.strategy?.expected_roi,
                     },
                   ].map((item, i) => (
                     <div
@@ -1099,7 +1043,8 @@ const Index = () => {
               </div>
             </div>
 
-            {/* ── Competitors ────────────────────────────────────────── */}
+            {/* ── Competitors (only shown when real data exists) ────── */}
+            {brand.competitors && brand.competitors.length > 0 && (
             <div
               data-pres
               className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
@@ -1114,7 +1059,7 @@ const Index = () => {
                 </p>
 
                 <div className="space-y-4 mt-4">
-                  {(brand.competitors || FALLBACK.competitors!).map((comp, i) => (
+                  {brand.competitors.map((comp, i) => (
                     <div
                       key={i}
                       data-stagger
@@ -1134,6 +1079,7 @@ const Index = () => {
                 </div>
               </div>
             </div>
+            )}
 
             {/* ── CTA / Pricing ──────────────────────────────────────── */}
             <div
