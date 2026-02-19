@@ -65,7 +65,7 @@ export default function AgencyDashboard() {
       // Fetch business
       const { data: businesses, error: bizError } = await supabase
         .from("businesses")
-        .select("id, business_name")
+        .select("id, name")
         .eq("user_id", user.id)
         .limit(1);
 
@@ -80,7 +80,7 @@ export default function AgencyDashboard() {
 
       const biz = businesses[0];
       setBusinessId(biz.id);
-      setBusinessName(biz.business_name || undefined);
+      setBusinessName(biz.name || undefined);
 
       // Fetch automation runs
       const { data: runsData, error: runsError } = await supabase
