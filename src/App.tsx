@@ -161,10 +161,10 @@ function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Index />} />
-              <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/dashboard" />} />
+              <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/agency" />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
-              <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
+              <Route path="/dashboard" element={user ? <AgencyDashboard /> : <Navigate to="/auth" />} />
               <Route path="/campaign/new" element={user ? <CampaignCreator /> : <Navigate to="/auth" />} />
               <Route path="/leads" element={user ? <LeadInbox /> : <Navigate to="/auth" />} />
               <Route path="/profile" element={user ? <Profile /> : <Navigate to="/auth" />} />

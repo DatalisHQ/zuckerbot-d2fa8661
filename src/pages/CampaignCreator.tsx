@@ -298,7 +298,7 @@ const CampaignCreator = () => {
         });
       }
 
-      navigate("/dashboard");
+      navigate("/agency");
     } catch (err: any) {
       toast({
         title: "Error saving campaign",

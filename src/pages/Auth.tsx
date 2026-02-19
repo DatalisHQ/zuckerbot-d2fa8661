@@ -36,7 +36,7 @@ const Auth = () => {
           .maybeSingle();
 
         if (profile?.onboarding_completed) {
-          navigate("/dashboard");
+          navigate("/agency");
         } else {
           // Fire pixel event for new signups landing on onboarding
           if (typeof window !== "undefined" && (window as any).fbq) {
@@ -195,7 +195,7 @@ const Auth = () => {
         });
         navigate("/onboarding");
       } else if (profile.onboarding_completed) {
-        navigate("/dashboard");
+        navigate("/agency");
       } else {
         navigate("/onboarding");
       }

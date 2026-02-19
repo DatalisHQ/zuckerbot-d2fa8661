@@ -101,7 +101,7 @@ const Index = () => {
     if (!profile?.onboarding_completed) {
       navigate("/onboarding");
     } else {
-      navigate("/dashboard");
+      navigate("/agency");
     }
   };
 
@@ -126,7 +126,7 @@ const Index = () => {
           </div>
           <div className="flex items-center gap-3">
             {user ? (
-              <Button onClick={() => navigate("/dashboard")}>
+              <Button onClick={() => navigate("/agency")}>
                 Dashboard <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             ) : (

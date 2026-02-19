@@ -35,8 +35,8 @@ const AuthCallback = () => {
           .maybeSingle();
 
         if (business) {
-          // Existing user with business - go to dashboard
-          navigate("/dashboard");
+          // Existing user with business - go to agency dashboard
+          navigate("/agency");
         } else {
           // New user - go to onboarding
           // Fire pixel event for new signups
