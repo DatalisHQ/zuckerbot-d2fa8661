@@ -27,11 +27,20 @@ serve(async (req: Request) => {
       );
     }
 
+    // Normalize AU phone to E.164 format (+61...)
+    let normalizedTo = to.replace(/[\s\-()]/g, "");
+    if (normalizedTo.startsWith("0")) {
+      normalizedTo = "+61" + normalizedTo.slice(1);
+    } else if (!normalizedTo.startsWith("+")) {
+      normalizedTo = "+" + normalizedTo;
+    }
+
     const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
     const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+    const messagingServiceSid = Deno.env.get("TWILIO_MESSAGING_SERVICE_SID");
     const fromPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
 
-    if (!accountSid || !authToken || !fromPhone) {
+    if (!accountSid || !authToken || (!messagingServiceSid && !fromPhone)) {
       return new Response(
         JSON.stringify({ error: "Twilio credentials not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -42,7 +51,12 @@ serve(async (req: Request) => {
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
     const credentials = btoa(`${accountSid}:${authToken}`);
 
-    const form = new URLSearchParams({ To: to, From: fromPhone, Body: body });
+    const form = new URLSearchParams({ To: normalizedTo, Body: body });
+    if (messagingServiceSid) {
+      form.set("MessagingServiceSid", messagingServiceSid);
+    } else {
+      form.set("From", fromPhone!);
+    }
 
     const res = await fetch(twilioUrl, {
       method: "POST",
