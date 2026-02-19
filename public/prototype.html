@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZuckerBot — Prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  :root {
+    --blue: #2563eb;
+    --blue-light: #3b82f6;
+    --blue-bg: #eff6ff;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+    --green: #10b981;
+    --orange: #f59e0b;
+    --radius: 16px;
+  }
+  
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--gray-900);
+    background: #fff;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* ─── PHASE 1: LANDING ─────────────────────────────────── */
+  
+  #landing {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  
+  #landing.fade-out {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+
+  .logo {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 48px;
+    color: var(--gray-900);
+  }
+  
+  .logo span { color: var(--blue); }
+  
+  .input-wrapper {
+    position: relative;
+    width: min(560px, 90vw);
+  }
+  
+  .input-wrapper input {
+    width: 100%;
+    height: 56px;
+    border: 2px solid var(--gray-200);
+    border-radius: 999px;
+    padding: 0 56px 0 24px;
+    font-size: 16px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    background: #fff;
+  }
+  
+  .input-wrapper input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+  }
+  
+  .input-wrapper input::placeholder { color: var(--gray-400); }
+  
+  .input-wrapper button {
+    position: absolute;
+    right: 4px;
+    top: 4px;
+    height: 48px;
+    width: 48px;
+    border: none;
+    background: var(--blue);
+    color: #fff;
+    border-radius: 999px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.1s;
+  }
+  
+  .input-wrapper button:hover { background: var(--blue-light); }
+  .input-wrapper button:active { transform: scale(0.95); }
+  
+  .input-wrapper button svg { width: 20px; height: 20px; }
+  
+  .landing-sub {
+    margin-top: 16px;
+    color: var(--gray-400);
+    font-size: 14px;
+  }
+
+  /* ─── Below the fold: Marketing scroll ─────────────────── */
+  
+  .marketing-section {
+    padding: 120px 24px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  
+  .scroll-card {
+    opacity: 0;
+    transform: translateY(60px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+    margin-bottom: 80px;
+  }
+  
+  .scroll-card.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  
+  .scroll-card h2 {
+    font-size: clamp(28px, 5vw, 42px);
+    font-weight: 800;
+    letter-spacing: -1px;
+    line-height: 1.15;
+    margin-bottom: 16px;
+  }
+  
+  .scroll-card p {
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--gray-600);
+  }
+  
+  .scroll-card .highlight { color: var(--blue); }
+  
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-top: 32px;
+  }
+  
+  .stat-box {
+    text-align: center;
+    padding: 32px 16px;
+    background: var(--gray-50);
+    border-radius: var(--radius);
+    border: 1px solid var(--gray-100);
+  }
+  
+  .stat-box .number {
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--blue);
+  }
+  
+  .stat-box .label {
+    font-size: 14px;
+    color: var(--gray-500);
+    margin-top: 4px;
+  }
+
+  /* ─── PHASE 2: THINKING ─────────────────────────────────── */
+  
+  #thinking {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+  }
+  
+  #thinking.active {
+    display: flex;
+    opacity: 1;
+  }
+  
+  .thinking-text {
+    font-size: clamp(20px, 4vw, 32px);
+    font-weight: 600;
+    color: var(--gray-800);
+    text-align: center;
+    transition: opacity 0.4s ease;
+    min-height: 44px;
+  }
+  
+  .thinking-sub {
+    margin-top: 12px;
+    color: var(--gray-400);
+    font-size: 14px;
+  }
+  
+  .pulse-ring {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 3px solid var(--blue);
+    margin-bottom: 40px;
+    animation: pulse-ring 2s ease-in-out infinite;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .pulse-ring::after {
+    content: '';
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--blue);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  
+  @keyframes pulse-ring {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.15); opacity: 0.7; }
+  }
+  
+  @keyframes pulse-dot {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(0.8); }
+  }
+
+  /* ─── PHASE 3: PRESENTATION (scroll-driven) ─────────────── */
+  
+  #presentation {
+    display: none;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  
+  #presentation.active {
+    display: block;
+    opacity: 1;
+  }
+  
+  .pres-section {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px;
+    position: relative;
+  }
+  
+  .pres-section .inner {
+    max-width: 720px;
+    width: 100%;
+    opacity: 0;
+    transform: translateY(50px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+  }
+  
+  .pres-section.visible .inner {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  
+  /* Intro section */
+  .intro-greeting {
+    font-size: clamp(32px, 6vw, 56px);
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1.1;
+    margin-bottom: 24px;
+  }
+  
+  .intro-body {
+    font-size: 20px;
+    line-height: 1.7;
+    color: var(--gray-600);
+  }
+  
+  .intro-body strong { color: var(--gray-900); }
+  
+  .zb-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--blue) 0%, #7c3aed 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 8px 32px rgba(37, 99, 235, 0.3);
+  }
+  
+  /* Ad cards */
+  .ad-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    margin-top: 40px;
+  }
+  
+  @media (max-width: 640px) {
+    .ad-grid { grid-template-columns: 1fr; }
+    .stat-row { grid-template-columns: 1fr; }
+  }
+  
+  .ad-card {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(40px) scale(0.95);
+    transition: opacity 0.6s ease, transform 0.6s ease, box-shadow 0.3s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  
+  .ad-card:hover {
+    box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+    transform: translateY(-2px) scale(1);
+  }
+  
+  .ad-card.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  
+  .ad-card-header {
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .ad-card-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--blue-bg);
+    color: var(--blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  
+  .ad-card-name { font-size: 14px; font-weight: 600; }
+  .ad-card-meta { font-size: 12px; color: var(--gray-400); }
+  
+  .ad-card-copy {
+    padding: 0 16px 12px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--gray-700);
+  }
+  
+  .ad-card-image {
+    width: 100%;
+    aspect-ratio: 1;
+    background: linear-gradient(135deg, var(--blue-bg) 0%, #faf5ff 50%, #fef3c7 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--gray-400);
+    font-size: 14px;
+  }
+  
+  .ad-card-headline {
+    padding: 12px 16px;
+    border-top: 1px solid var(--gray-100);
+    background: var(--gray-50);
+  }
+  
+  .ad-card-headline .url { font-size: 11px; color: var(--gray-400); text-transform: uppercase; }
+  .ad-card-headline .title { font-size: 14px; font-weight: 600; margin-top: 2px; }
+  
+  .ad-card-actions {
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 16px;
+    border-top: 1px solid var(--gray-100);
+    font-size: 13px;
+    color: var(--gray-500);
+  }
+
+  /* Strategy section */
+  .strategy-card {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius);
+    padding: 32px;
+    margin-top: 24px;
+  }
+  
+  .strategy-card h4 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--gray-400);
+    margin-bottom: 12px;
+  }
+  
+  .strategy-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--gray-100);
+    font-size: 15px;
+  }
+  
+  .strategy-item:last-child { border-bottom: none; }
+  .strategy-item .label { color: var(--gray-500); }
+  .strategy-item .value { font-weight: 600; }
+  
+  /* Competitor section */
+  .competitor-card {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-top: 16px;
+    opacity: 0;
+    transform: translateX(-30px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  
+  .competitor-card.visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  
+  .competitor-card .comp-name {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .competitor-card .comp-name .badge {
+    font-size: 11px;
+    background: var(--blue-bg);
+    color: var(--blue);
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 500;
+  }
+  
+  .competitor-card .comp-body {
+    font-size: 14px;
+    color: var(--gray-500);
+    line-height: 1.5;
+  }
+
+  /* CTA section */
+  .cta-section {
+    text-align: center;
+  }
+  
+  .cta-section h2 {
+    font-size: clamp(28px, 5vw, 44px);
+    font-weight: 800;
+    letter-spacing: -1px;
+    margin-bottom: 16px;
+  }
+  
+  .cta-section p {
+    font-size: 18px;
+    color: var(--gray-500);
+    margin-bottom: 40px;
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  
+  .cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 56px;
+    padding: 0 40px;
+    background: var(--blue);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    font-size: 17px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+    box-shadow: 0 4px 24px rgba(37, 99, 235, 0.3);
+  }
+  
+  .cta-btn:hover {
+    background: var(--blue-light);
+    box-shadow: 0 8px 32px rgba(37, 99, 235, 0.4);
+  }
+  
+  .cta-btn:active { transform: scale(0.98); }
+  
+  .pricing-row {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-top: 48px;
+    flex-wrap: wrap;
+  }
+  
+  .price-card {
+    background: var(--gray-50);
+    border: 2px solid var(--gray-100);
+    border-radius: var(--radius);
+    padding: 32px;
+    width: 260px;
+    text-align: center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  
+  .price-card.featured {
+    border-color: var(--blue);
+    box-shadow: 0 8px 32px rgba(37, 99, 235, 0.1);
+    position: relative;
+  }
+  
+  .price-card.featured::before {
+    content: 'Most Popular';
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--blue);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 16px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .price-card .tier {
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--gray-500);
+    margin-bottom: 8px;
+  }
+  
+  .price-card .price {
+    font-size: 48px;
+    font-weight: 800;
+    letter-spacing: -2px;
+  }
+  
+  .price-card .price span { font-size: 18px; font-weight: 400; color: var(--gray-400); }
+  
+  .price-card .price-desc {
+    font-size: 14px;
+    color: var(--gray-500);
+    margin-top: 8px;
+  }
+  
+  .price-card ul {
+    list-style: none;
+    margin-top: 24px;
+    text-align: left;
+    font-size: 14px;
+    color: var(--gray-600);
+  }
+  
+  .price-card ul li {
+    padding: 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .price-card ul li::before {
+    content: '✓';
+    color: var(--green);
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  /* ─── PHASE 4: DASHBOARD (rough) ────────────────────────── */
+  
+  #dashboard {
+    display: none;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    min-height: 100vh;
+    background: var(--gray-50);
+  }
+  
+  #dashboard.active {
+    display: block;
+    opacity: 1;
+  }
+  
+  .dash-nav {
+    background: #fff;
+    border-bottom: 1px solid var(--gray-200);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  
+  .dash-nav .nav-logo { font-size: 18px; font-weight: 700; }
+  .dash-nav .nav-logo span { color: var(--blue); }
+  
+  .dash-nav-links {
+    display: flex;
+    gap: 4px;
+  }
+  
+  .dash-nav-links a {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--gray-500);
+    text-decoration: none;
+    transition: background 0.2s, color 0.2s;
+  }
+  
+  .dash-nav-links a.active {
+    background: var(--blue-bg);
+    color: var(--blue);
+  }
+  
+  .dash-content {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+  
+  .dash-greeting {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  
+  .dash-sub {
+    color: var(--gray-500);
+    font-size: 15px;
+    margin-bottom: 32px;
+  }
+  
+  .dash-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  
+  @media (max-width: 640px) {
+    .dash-stats { grid-template-columns: repeat(2, 1fr); }
+  }
+  
+  .dash-stat {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  
+  .dash-stat .stat-label { font-size: 13px; color: var(--gray-400); margin-bottom: 4px; }
+  .dash-stat .stat-value { font-size: 28px; font-weight: 700; }
+  .dash-stat .stat-change { font-size: 12px; color: var(--green); margin-top: 2px; }
+  
+  .dash-card {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  
+  .dash-card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  /* Chat interface mock */
+  .chat-container {
+    margin-top: 32px;
+  }
+  
+  .chat-messages {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 24px;
+    min-height: 200px;
+  }
+  
+  .chat-bubble {
+    max-width: 80%;
+    padding: 12px 16px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+  
+  .chat-bubble.bot {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-bottom-left-radius: 4px;
+  }
+  
+  .chat-bubble.bot .bot-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--blue);
+    margin-bottom: 4px;
+  }
+  
+  .chat-input-bar {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+  }
+  
+  .chat-input-bar input {
+    flex: 1;
+    height: 40px;
+    border: 1px solid var(--gray-200);
+    border-radius: 999px;
+    padding: 0 16px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+  }
+  
+  .chat-input-bar button {
+    height: 40px;
+    padding: 0 20px;
+    background: var(--blue);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  
+  /* Nav between prototype sections */
+  .proto-nav {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 200;
+    display: flex;
+    gap: 8px;
+  }
+  
+  .proto-nav button {
+    padding: 8px 16px;
+    border: 1px solid var(--gray-200);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--gray-600);
+    transition: all 0.2s;
+  }
+  
+  .proto-nav button:hover { border-color: var(--blue); color: var(--blue); }
+  .proto-nav button.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+</style>
+</head>
+<body>
+
+<!-- Prototype navigation -->
+<div class="proto-nav">
+  <button class="active" onclick="showPhase('landing')">1. Landing</button>
+  <button onclick="startThinking()">2. Thinking</button>
+  <button onclick="showPhase('presentation')">3. Presentation</button>
+  <button onclick="showPhase('dashboard')">4. Dashboard</button>
+</div>
+
+<!-- ─── PHASE 1: LANDING ──────────────────────────────────── -->
+<div id="landing">
+  <div class="logo">Zucker<span>Bot</span></div>
+  <div class="input-wrapper">
+    <input type="text" placeholder="Enter your business website" id="urlInput" />
+    <button onclick="startThinking()">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+      </svg>
+    </button>
+  </div>
+  <p class="landing-sub">No signup required · Free preview · 90 seconds</p>
+  
+  <!-- Below the fold marketing -->
+  <div class="marketing-section">
+    <div class="scroll-card">
+      <h2>Stop paying agencies.<br/><span class="highlight">Start outperforming them.</span></h2>
+      <p>The average small business pays $2,000–5,000/month for an agency that runs the same playbook for every client. ZuckerBot replaces that with an AI that actually learns your business.</p>
+    </div>
+    
+    <div class="scroll-card">
+      <h2>Your own AI account manager.</h2>
+      <p>Not a tool. Not a template. A dedicated AI that analyzes your market, creates your ads, launches your campaigns, and optimizes them while you sleep.</p>
+      <div class="stat-row">
+        <div class="stat-box">
+          <div class="number">90s</div>
+          <div class="label">First campaign live</div>
+        </div>
+        <div class="stat-box">
+          <div class="number">24/7</div>
+          <div class="label">Always monitoring</div>
+        </div>
+        <div class="stat-box">
+          <div class="number">$99</div>
+          <div class="label">Per month</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="scroll-card">
+      <h2>Trusted by businesses who<br/><span class="highlight">refuse to overpay.</span></h2>
+      <p>Restaurants, gyms, salons, roofers, tutors, dentists — any business that needs customers but doesn't need a $5K agency retainer.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PHASE 2: THINKING ─────────────────────────────────── -->
+<div id="thinking">
+  <div class="pulse-ring"></div>
+  <div class="thinking-text" id="thinkingText">Reading your website...</div>
+  <p class="thinking-sub">This takes about 90 seconds</p>
+</div>
+
+<!-- ─── PHASE 3: PRESENTATION ─────────────────────────────── -->
+<div id="presentation">
+  
+  <!-- Intro -->
+  <div class="pres-section" data-pres>
+    <div class="inner">
+      <div class="zb-avatar">Z</div>
+      <h1 class="intro-greeting">Hey. I'm ZuckerBot.</h1>
+      <p class="intro-body">
+        I just spent 90 seconds learning everything about <strong>your business</strong>. 
+        I studied your website, analyzed your market, researched your competitors, 
+        and built you a complete advertising strategy.<br/><br/>
+        Think of me as your new account manager — except I work 24/7, 
+        I never forget, and I cost <strong>less than your monthly coffee budget</strong>.
+        <br/><br/>
+        Let me show you what I found.
+      </p>
+    </div>
+  </div>
+  
+  <!-- Ads -->
+  <div class="pres-section" data-pres>
+    <div class="inner">
+      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;">Here's what I made for you.</h2>
+      <p style="color: var(--gray-500); font-size: 16px; margin-bottom: 8px;">Two ad concepts, ready to launch on Facebook and Instagram.</p>
+      <div class="ad-grid">
+        <div class="ad-card" data-ad>
+          <div class="ad-card-header">
+            <div class="ad-card-avatar">YB</div>
+            <div>
+              <div class="ad-card-name">Your Business</div>
+              <div class="ad-card-meta">Sponsored · 🌏</div>
+            </div>
+          </div>
+          <div class="ad-card-copy">Transform your results with our proven approach. Trusted by hundreds of local customers. Book your free consultation today.</div>
+          <div class="ad-card-image">[ AI-generated creative ]</div>
+          <div class="ad-card-headline">
+            <div class="url">yourbusiness.com</div>
+            <div class="title">The Local Choice for Quality Service</div>
+          </div>
+          <div class="ad-card-actions">
+            <span>👍 Like</span>
+            <span>💬 Comment</span>
+            <span>↗️ Share</span>
+          </div>
+        </div>
+        <div class="ad-card" data-ad>
+          <div class="ad-card-header">
+            <div class="ad-card-avatar">YB</div>
+            <div>
+              <div class="ad-card-name">Your Business</div>
+              <div class="ad-card-meta">Sponsored · 🌏</div>
+            </div>
+          </div>
+          <div class="ad-card-copy">Why are locals switching? Because we deliver results, not promises. See what our customers are saying.</div>
+          <div class="ad-card-image">[ AI-generated creative ]</div>
+          <div class="ad-card-headline">
+            <div class="url">yourbusiness.com</div>
+            <div class="title">See Why Locals Love Us →</div>
+          </div>
+          <div class="ad-card-actions">
+            <span>👍 Like</span>
+            <span>💬 Comment</span>
+            <span>↗️ Share</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Strategy -->
+  <div class="pres-section" data-pres>
+    <div class="inner">
+      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;">Here's the plan.</h2>
+      <p style="color: var(--gray-500); font-size: 16px;">Your personalized campaign strategy based on your market and competitors.</p>
+      
+      <div class="strategy-card">
+        <h4>Campaign Overview</h4>
+        <div class="strategy-item">
+          <span class="label">Monthly Budget</span>
+          <span class="value">$600 – $900</span>
+        </div>
+        <div class="strategy-item">
+          <span class="label">Platforms</span>
+          <span class="value">Facebook + Instagram</span>
+        </div>
+        <div class="strategy-item">
+          <span class="label">Target Radius</span>
+          <span class="value">25km from your location</span>
+        </div>
+        <div class="strategy-item">
+          <span class="label">Projected Leads/Month</span>
+          <span class="value" style="color: var(--green);">40 – 65</span>
+        </div>
+        <div class="strategy-item">
+          <span class="label">Estimated Cost Per Lead</span>
+          <span class="value">$9 – $15</span>
+        </div>
+        <div class="strategy-item">
+          <span class="label">Expected ROI</span>
+          <span class="value" style="color: var(--green);">3.2x – 5.1x</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Competitors -->
+  <div class="pres-section" data-pres>
+    <div class="inner">
+      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;">Your competitors aren't sleeping.</h2>
+      <p style="color: var(--gray-500); font-size: 16px; margin-bottom: 8px;">I found 3 active ad campaigns from businesses in your space.</p>
+      
+      <div class="competitor-card" data-comp>
+        <div class="comp-name">Competitor A <span class="badge">Running 120+ days</span></div>
+        <div class="comp-body">Running engagement ads on Facebook and Instagram. Their creative hasn't been updated in 4 months — signs of creative fatigue. Opportunity to stand out with fresh messaging.</div>
+      </div>
+      <div class="competitor-card" data-comp>
+        <div class="comp-name">Competitor B <span class="badge">Running 45 days</span></div>
+        <div class="comp-body">Active lead generation campaign with carousel ads. Targeting a broad audience. Their copy focuses on price — you can differentiate on quality and trust.</div>
+      </div>
+      <div class="competitor-card" data-comp>
+        <div class="comp-name">Competitor C <span class="badge">Running 12 days</span></div>
+        <div class="comp-body">New entrant with video ads. Small budget, testing phase. They're going after the same audience — move fast to establish presence first.</div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- CTA -->
+  <div class="pres-section" data-pres>
+    <div class="inner cta-section">
+      <h2>Ready to launch?</h2>
+      <p>Connect your Facebook page and your first campaign goes live today. Everything I built is ready — you just approve it.</p>
+      
+      <button class="cta-btn" onclick="showPhase('dashboard')">
+        Connect Facebook & Launch
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+        </svg>
+      </button>
+      
+      <div class="pricing-row">
+        <div class="price-card">
+          <div class="tier">Starter</div>
+          <div class="price">$99<span>/mo</span></div>
+          <div class="price-desc">For single-location businesses</div>
+          <ul>
+            <li>1 active campaign</li>
+            <li>AI ad creatives</li>
+            <li>Competitor monitoring</li>
+            <li>Weekly performance reports</li>
+            <li>Chat with ZuckerBot 24/7</li>
+          </ul>
+        </div>
+        <div class="price-card featured">
+          <div class="tier">Growth</div>
+          <div class="price">$199<span>/mo</span></div>
+          <div class="price-desc">For businesses ready to scale</div>
+          <ul>
+            <li>3 active campaigns</li>
+            <li>Multi-platform (FB + IG + Google)</li>
+            <li>Automatic creative refresh</li>
+            <li>Advanced audience targeting</li>
+            <li>Priority support</li>
+          </ul>
+        </div>
+        <div class="price-card">
+          <div class="tier">Enterprise</div>
+          <div class="price" style="font-size: 32px; padding-top: 8px;">Let's talk</div>
+          <div class="price-desc">For agencies & multi-location</div>
+          <ul>
+            <li>Unlimited campaigns</li>
+            <li>White-label option</li>
+            <li>Dedicated account manager</li>
+            <li>Custom integrations</li>
+            <li>SLA & priority support</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PHASE 4: DASHBOARD ────────────────────────────────── -->
+<div id="dashboard">
+  <nav class="dash-nav">
+    <div class="nav-logo">Zucker<span>Bot</span></div>
+    <div class="dash-nav-links">
+      <a href="#" class="active">Overview</a>
+      <a href="#">Campaigns</a>
+      <a href="#">Creatives</a>
+      <a href="#">Settings</a>
+    </div>
+  </nav>
+  
+  <div class="dash-content">
+    <div class="dash-greeting">Good morning. ☀️</div>
+    <div class="dash-sub">Here's what's happening with your campaigns today.</div>
+    
+    <div class="dash-stats">
+      <div class="dash-stat">
+        <div class="stat-label">Impressions</div>
+        <div class="stat-value">12,847</div>
+        <div class="stat-change">↑ 23% vs last week</div>
+      </div>
+      <div class="dash-stat">
+        <div class="stat-label">Clicks</div>
+        <div class="stat-value">342</div>
+        <div class="stat-change">↑ 18% vs last week</div>
+      </div>
+      <div class="dash-stat">
+        <div class="stat-label">Leads</div>
+        <div class="stat-value">28</div>
+        <div class="stat-change">↑ 12% vs last week</div>
+      </div>
+      <div class="dash-stat">
+        <div class="stat-label">Cost per Lead</div>
+        <div class="stat-value">$11.20</div>
+        <div class="stat-change">↓ 8% vs last week</div>
+      </div>
+    </div>
+    
+    <div class="dash-card">
+      <h3>⚡ ZuckerBot Actions</h3>
+      <div style="font-size: 14px; color: var(--gray-600); line-height: 2;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span>🟢 Paused underperforming ad variant B — CTR dropped below 0.8%</span>
+          <span style="color: var(--gray-400); font-size: 12px;">2h ago</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span>🎨 Generated 2 new creative variants to replace fatigued ads</span>
+          <span style="color: var(--gray-400); font-size: 12px;">6h ago</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span>📊 Weekly performance report sent to your email</span>
+          <span style="color: var(--gray-400); font-size: 12px;">Yesterday</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--blue-bg); border-radius: 8px; margin-top: 8px;">
+          <span>⏳ <strong>Awaiting your approval:</strong> Budget increase from $20/day → $30/day (ROAS is 4.2x)</span>
+          <div style="display: flex; gap: 8px;">
+            <button style="padding: 4px 16px; background: var(--blue); color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;">Approve</button>
+            <button style="padding: 4px 16px; background: #fff; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 13px; cursor: pointer;">Decline</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="dash-card">
+      <h3>📈 Active Campaign</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0;">
+        <div>
+          <div style="font-weight: 600;">Spring Lead Generation</div>
+          <div style="font-size: 13px; color: var(--gray-400);">Facebook + Instagram · $20/day · Running 12 days</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green);"></span>
+          <span style="font-size: 13px; font-weight: 500; color: var(--green);">Active</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Chat with ZuckerBot -->
+    <div class="chat-container">
+      <div class="dash-card" style="padding: 0; overflow: hidden;">
+        <h3 style="padding: 20px 24px 0;">💬 Chat with ZuckerBot</h3>
+        <div class="chat-messages">
+          <div class="chat-bubble bot">
+            <div class="bot-name">ZuckerBot</div>
+            Your campaign is performing well. CTR is at 2.7% — that's above the industry average of 1.5%. I noticed your competitors increased their spend this week, so I'd recommend we increase budget slightly to maintain impression share. Want me to prepare that?
+          </div>
+        </div>
+        <div class="chat-input-bar">
+          <input type="text" placeholder="Ask ZuckerBot anything..." />
+          <button>Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ─── Scroll animation for marketing cards ───────────────
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -50px 0px' });
+  
+  document.querySelectorAll('.scroll-card').forEach(el => observer.observe(el));
+  
+  // ─── Phase management ───────────────────────────────────
+  function showPhase(phase) {
+    document.getElementById('landing').style.display = phase === 'landing' ? 'flex' : 'none';
+    document.getElementById('thinking').className = phase === 'thinking' ? 'active' : '';
+    document.getElementById('presentation').className = phase === 'presentation' ? 'active' : '';
+    document.getElementById('dashboard').className = phase === 'dashboard' ? 'active' : '';
+    
+    document.querySelectorAll('.proto-nav button').forEach(b => b.classList.remove('active'));
+    event?.target?.classList?.add('active');
+    
+    if (phase === 'presentation') {
+      window.scrollTo(0, 0);
+      initPresentation();
+    }
+    if (phase === 'dashboard') {
+      window.scrollTo(0, 0);
+    }
+    if (phase === 'landing') {
+      document.getElementById('landing').classList.remove('fade-out');
+      document.getElementById('landing').style.display = 'flex';
+    }
+  }
+  
+  // ─── Thinking phase ─────────────────────────────────────
+  const thinkingSteps = [
+    "Reading your website...",
+    "Understanding your business...",
+    "Studying your market...",
+    "Researching your competitors...",
+    "Designing your ads...",
+    "Building your campaign...",
+    "Preparing your strategy...",
+  ];
+  
+  let thinkingInterval;
+  
+  function startThinking() {
+    document.getElementById('landing').classList.add('fade-out');
+    
+    setTimeout(() => {
+      showPhase('thinking');
+      document.querySelectorAll('.proto-nav button')[1].classList.add('active');
+      document.querySelectorAll('.proto-nav button')[0].classList.remove('active');
+      
+      let step = 0;
+      const textEl = document.getElementById('thinkingText');
+      
+      thinkingInterval = setInterval(() => {
+        step++;
+        if (step < thinkingSteps.length) {
+          textEl.style.opacity = 0;
+          setTimeout(() => {
+            textEl.textContent = thinkingSteps[step];
+            textEl.style.opacity = 1;
+          }, 300);
+        } else {
+          clearInterval(thinkingInterval);
+          setTimeout(() => {
+            showPhase('presentation');
+            document.querySelectorAll('.proto-nav button')[2].classList.add('active');
+            document.querySelectorAll('.proto-nav button')[1].classList.remove('active');
+          }, 800);
+        }
+      }, 1200);
+    }, 600);
+  }
+  
+  // ─── Presentation scroll animations ─────────────────────
+  function initPresentation() {
+    const presObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          
+          // Animate ad cards with stagger
+          const ads = entry.target.querySelectorAll('[data-ad]');
+          ads.forEach((ad, i) => {
+            setTimeout(() => ad.classList.add('visible'), i * 200);
+          });
+          
+          // Animate competitor cards with stagger
+          const comps = entry.target.querySelectorAll('[data-comp]');
+          comps.forEach((comp, i) => {
+            setTimeout(() => comp.classList.add('visible'), i * 250);
+          });
+        }
+      });
+    }, { threshold: 0.2 });
+    
+    document.querySelectorAll('[data-pres]').forEach(el => presObserver.observe(el));
+  }
+</script>
+
+</body>
+</html>
