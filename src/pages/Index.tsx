@@ -59,7 +59,7 @@ type Phase = "landing" | "thinking" | "presentation";
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const ENHANCED_FUNCTION_URL =
-  "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/generate-preview-v2";
+  "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/generate-preview";
 
 const THINKING_STEPS = [
   "Reading your website...",
