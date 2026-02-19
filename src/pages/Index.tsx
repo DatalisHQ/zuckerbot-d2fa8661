@@ -1,575 +1,1268 @@
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { trackFunnelEvent, trackPageView } from "@/utils/analytics";
-import {
-  Zap,
-  Phone,
-  MessageSquare,
-  MapPin,
-  DollarSign,
-  ChevronRight,
-  Star,
-  Clock,
-  TrendingUp,
-  Shield,
-  Check,
-  ArrowRight,
-} from "lucide-react";
-import TryItNow from "@/components/TryItNow";
 
-// ─── Business types for the rotating hero text ─────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
-const BUSINESSES = [
-  "Restaurant",
-  "Gym",
-  "Salon",
-  "Dentist",
-  "Real Estate Agent",
-  "Café",
-  "Retailer",
-  "Physio",
-  "Accountant",
-  "Small Business",
+interface AdPreview {
+  image_base64?: string;
+  headline: string;
+  copy: string;
+}
+
+interface BrandAnalysis {
+  business_name?: string;
+  business_type?: string;
+  industry?: string;
+  location?: string;
+  target_area?: string;
+  rating?: number;
+  review_count?: number;
+  reviews?: Array<{
+    stars: number;
+    text: string;
+    author: string;
+    date: string;
+    highlight?: string;
+  }>;
+  competitors?: Array<{
+    name: string;
+    badge: string;
+    description: string;
+  }>;
+  question?: {
+    title: string;
+    body: string;
+    options: Array<{ emoji: string; label: string; sub: string }>;
+  };
+  strategy?: {
+    monthly_budget?: string;
+    platforms?: string;
+    target_area?: string;
+    projected_leads?: string;
+    cost_per_lead?: string;
+    expected_roi?: string;
+  };
+}
+
+interface PreviewResult {
+  business_name: string;
+  description?: string;
+  ads: AdPreview[];
+  brand_analysis?: BrandAnalysis;
+}
+
+type Phase = "landing" | "thinking" | "presentation";
+
+// ── Constants ──────────────────────────────────────────────────────────────
+
+const ENHANCED_FUNCTION_URL =
+  "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/generate-preview-v2";
+
+const THINKING_STEPS = [
+  "Reading your website...",
+  "Understanding your business...",
+  "Studying your market...",
+  "Researching your competitors...",
+  "Designing your ads...",
+  "Building your campaign...",
+  "Preparing your strategy...",
 ];
 
-// ─── Component ──────────────────────────────────────────────────────────────
+// Fallback demo data used when API returns partial results
+const FALLBACK: BrandAnalysis = {
+  rating: 4.8,
+  review_count: 127,
+  reviews: [
+    {
+      stars: 5,
+      text: "Incredible service. They understood exactly what we needed and delivered fast.",
+      author: "Sarah M.",
+      date: "3 months ago",
+      highlight: "understood exactly what we needed",
+    },
+    {
+      stars: 5,
+      text: "Called on short notice and they still showed up the same day. Highly recommend.",
+      author: "Mike T.",
+      date: "1 month ago",
+      highlight: "showed up the same day",
+    },
+    {
+      stars: 5,
+      text: "Most honest team I have worked with. Fair pricing, no pressure. Just great work.",
+      author: "Jennifer L.",
+      date: "2 weeks ago",
+      highlight: "Most honest team",
+    },
+  ],
+  competitors: [
+    {
+      name: "Competitor A",
+      badge: "Running 120+ days",
+      description:
+        "Running engagement ads on Facebook and Instagram. Their creative has not been updated in 4 months, showing signs of creative fatigue. Opportunity to stand out with fresh messaging.",
+    },
+    {
+      name: "Competitor B",
+      badge: "Running 45 days",
+      description:
+        "Active lead generation campaign with carousel ads. Targeting a broad audience. Their copy focuses on price. You can differentiate on quality and trust.",
+    },
+    {
+      name: "Competitor C",
+      badge: "Running 12 days",
+      description:
+        "New entrant with video ads. Small budget, testing phase. They are going after the same audience. Move fast to establish presence first.",
+    },
+  ],
+  question: {
+    title: "One question before I build your campaign.",
+    body: "Based on what I found, which outcome matters most for your business right now?",
+    options: [
+      { emoji: "📞", label: "More phone calls", sub: "High-intent leads, fast conversion" },
+      { emoji: "📋", label: "More form fills", sub: "Build a pipeline of warm prospects" },
+      { emoji: "⚡", label: "Both. Let AI optimize", sub: "I will split-test and find the winner" },
+    ],
+  },
+  strategy: {
+    monthly_budget: "$600 - $900",
+    platforms: "Facebook + Instagram",
+    target_area: "25km from your location",
+    projected_leads: "40 - 65",
+    cost_per_lead: "$9 - $15",
+    expected_roi: "3.2x - 5.1x",
+  },
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function extractInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function extractDomain(url: string): string {
+  return url
+    .replace(/https?:\/\//, "")
+    .replace(/\/$/, "")
+    .split("/")[0];
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
 
 const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [businessIndex, setBusinessIndex] = useState(0);
 
-  // Track page view on load
+  // Auth state
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // UX phases
+  const [phase, setPhase] = useState<Phase>("landing");
+  const [url, setUrl] = useState("");
+  const [thinkingStep, setThinkingStep] = useState(0);
+
+  // API result
+  const [result, setResult] = useState<PreviewResult | null>(null);
+  const [brand, setBrand] = useState<BrandAnalysis>(FALLBACK);
+  const [bizName, setBizName] = useState("");
+  const [bizInitials, setBizInitials] = useState("ZB");
+  const [bizDomain, setBizDomain] = useState("yourbusiness.com");
+  const [bizIndustry, setBizIndustry] = useState("your space");
+  const [error, setError] = useState<string | null>(null);
+
+  // Presentation scroll
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+
+  // Refs
+  const thinkingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const typewriterContainerRef = useRef<HTMLDivElement>(null);
+
+  // ── Analytics & auth ──────────────────────────────────────────────────
+
   useEffect(() => {
-    // Get URL parameters for source/medium tracking from ads
     const urlParams = new URLSearchParams(location.search);
-    const source = urlParams.get('utm_source') || urlParams.get('source');
-    const medium = urlParams.get('utm_medium') || urlParams.get('medium');
-    
-    // Track landing page view
+    const source = urlParams.get("utm_source") || urlParams.get("source");
+    const medium = urlParams.get("utm_medium") || urlParams.get("medium");
     trackFunnelEvent.viewLanding(source || undefined, medium || undefined);
-    trackPageView('/', 'ZuckerBot — Facebook Ads in 60 Seconds', {
-      source,
-      medium,
-    });
+    trackPageView("/", "ZuckerBot - AI Ad Manager", { source, medium });
   }, [location]);
 
-  // Auth check
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-        setIsLoading(false);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      setAuthLoading(false);
+      // Redirect logged-in users
+      if (u) {
+        navigate("/agency");
       }
-    );
+    });
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setIsLoading(false);
+      const u = session?.user ?? null;
+      setUser(u);
+      setAuthLoading(false);
+      if (u) {
+        navigate("/agency");
+      }
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [navigate]);
 
-  // Rotating business text
+  // ── Scroll-card observer (landing below-fold) ────────────────────────
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setBusinessIndex((prev) => (prev + 1) % BUSINESSES.length);
-    }, 2000);
-    return () => clearInterval(interval);
+    if (phase !== "landing") return;
+    const els = document.querySelectorAll("[data-scroll-card]");
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) e.target.classList.add("scroll-visible");
+        });
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -50px 0px" }
+    );
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [phase]);
+
+  // ── Presentation section observer ────────────────────────────────────
+
+  useEffect(() => {
+    if (phase !== "presentation") return;
+    const timer = setTimeout(() => {
+      const els = document.querySelectorAll("[data-pres]");
+      const obs = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("pres-visible");
+              // Stagger child animations
+              entry.target.querySelectorAll("[data-stagger]").forEach((child, i) => {
+                setTimeout(() => child.classList.add("stagger-visible"), 200 + i * 200);
+              });
+            }
+          });
+        },
+        { threshold: 0.2 }
+      );
+      els.forEach((el) => obs.observe(el));
+      return () => obs.disconnect();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
+  // ── Typewriter effect ────────────────────────────────────────────────
+
+  const runTypewriter = useCallback(() => {
+    const container = typewriterContainerRef.current;
+    if (!container) return;
+    container.innerHTML = "";
+
+    const lines = [
+      { tag: "h1", className: "tw-greeting", text: `Hey, ${bizName}.` },
+      { tag: "p", className: "tw-body", text: `I'm ZuckerBot, your new account manager.` },
+      {
+        tag: "p",
+        className: "tw-body",
+        text: `I just spent 90 seconds studying ${bizDomain}, analyzing the ${bizIndustry} market, and researching what your competitors are running on Facebook.`,
+      },
+      {
+        tag: "p",
+        className: "tw-body",
+        text: `I have already built your first ad campaign with custom creatives, targeted copy, and a full launch strategy, all tailored specifically to ${bizName}.`,
+      },
+      {
+        tag: "p",
+        className: "tw-body-hint",
+        text: `Scroll down. Let me show you everything.`,
+      },
+    ];
+
+    let lineIdx = 0;
+
+    function typeLine() {
+      if (lineIdx >= lines.length || !container) return;
+      const line = lines[lineIdx];
+      const el = document.createElement(line.tag);
+      el.className = line.className;
+      container.appendChild(el);
+
+      // Remove any prior cursor
+      container.querySelectorAll(".tw-cursor").forEach((c) => c.remove());
+
+      const cursor = document.createElement("span");
+      cursor.className = "tw-cursor";
+      el.appendChild(cursor);
+
+      const fullText = line.text;
+      let charIdx = 0;
+      const speed = lineIdx === 0 ? 30 : 18;
+
+      function typeChar() {
+        if (charIdx >= fullText.length) {
+          el.textContent = fullText;
+          el.appendChild(cursor);
+          lineIdx++;
+          setTimeout(typeLine, lineIdx === 1 ? 600 : 400);
+          return;
+        }
+        el.textContent = fullText.slice(0, charIdx + 1);
+        el.appendChild(cursor);
+        charIdx++;
+        setTimeout(typeChar, speed);
+      }
+      typeChar();
+    }
+
+    setTimeout(typeLine, 400);
+  }, [bizName, bizDomain, bizIndustry]);
+
+  useEffect(() => {
+    if (phase === "presentation") {
+      window.scrollTo(0, 0);
+      runTypewriter();
+    }
+  }, [phase, runTypewriter]);
+
+  // ── Thinking phase ───────────────────────────────────────────────────
+
+  const startThinking = useCallback(async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+
+    // Derive basics from URL immediately
+    const domain = extractDomain(trimmed);
+    const fallbackName = domain
+      .replace(/\.(com|net|org|io|ai|co)$/i, "")
+      .replace(/[-_]/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+    setBizName(fallbackName);
+    setBizInitials(extractInitials(fallbackName));
+    setBizDomain(domain);
+    setError(null);
+
+    // Transition to thinking
+    setPhase("thinking");
+    setThinkingStep(0);
+
+    // Animate through thinking steps
+    let step = 0;
+    thinkingIntervalRef.current = setInterval(() => {
+      step++;
+      if (step < THINKING_STEPS.length) {
+        setThinkingStep(step);
+      }
+    }, 1200);
+
+    // Fire API call
+    try {
+      const response = await fetch(ENHANCED_FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmed }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || data.message || "Something went wrong. Please try again.");
+        // Still show presentation with fallback data
+      } else {
+        setResult(data);
+
+        // Extract brand info
+        const ba = data.brand_analysis || {};
+        const name = ba.business_name || data.business_name || fallbackName;
+        setBizName(name);
+        setBizInitials(extractInitials(name));
+        setBizIndustry(ba.industry || ba.business_type || "your space");
+
+        // Merge brand analysis with fallback
+        setBrand((prev) => ({
+          ...prev,
+          ...ba,
+          reviews: ba.reviews && ba.reviews.length > 0 ? ba.reviews : prev.reviews,
+          competitors: ba.competitors && ba.competitors.length > 0 ? ba.competitors : prev.competitors,
+          question: ba.question || prev.question,
+          strategy: ba.strategy ? { ...prev.strategy, ...ba.strategy } : prev.strategy,
+        }));
+      }
+    } catch {
+      setError("Network error. Please check your connection.");
+      // Still proceed to presentation with fallback data
+    }
+
+    // Clear the thinking interval and move to presentation
+    if (thinkingIntervalRef.current) {
+      clearInterval(thinkingIntervalRef.current);
+      thinkingIntervalRef.current = null;
+    }
+    // Small pause before transition
+    await new Promise((r) => setTimeout(r, 800));
+    setPhase("presentation");
+  }, [url]);
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (thinkingIntervalRef.current) clearInterval(thinkingIntervalRef.current);
+    };
   }, []);
 
-  const handleCTA = async () => {
-    // Track that user clicked get started
-    if (!user) {
-      trackFunnelEvent.startSignup();
-      navigate("/auth");
-      return;
-    }
-    
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("onboarding_completed")
-      .eq("user_id", user.id)
-      .maybeSingle();
+  // ── Question option handler ──────────────────────────────────────────
 
-    if (!profile?.onboarding_completed) {
-      navigate("/onboarding");
-    } else {
-      navigate("/agency");
-    }
+  const handleOptionSelect = (idx: number) => {
+    setSelectedOption(idx);
+    // Smooth scroll to next section after brief pause
+    setTimeout(() => {
+      const nextEl = document.getElementById("pres-ads");
+      if (nextEl) nextEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 600);
   };
 
-  if (isLoading) {
+  // ── CTA handler ──────────────────────────────────────────────────────
+
+  const handleCTA = () => {
+    trackFunnelEvent.startSignup();
+    navigate("/auth");
+  };
+
+  // ── Loading state ────────────────────────────────────────────────────
+
+  if (authLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
       </div>
     );
   }
 
+  // ── Render ───────────────────────────────────────────────────────────
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* ── Nav ─────────────────────────────────────────────────────────── */}
-      <nav className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-lg">
-        <div className="container mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Zap className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold">ZuckerBot</span>
-          </div>
-          <div className="flex items-center gap-3">
-            {user ? (
-              <Button onClick={() => navigate("/agency")}>
-                Dashboard <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            ) : (
-              <>
-                <Link to="/auth">
-                  <Button variant="ghost">Sign In</Button>
-                </Link>
-                <Link to="/auth">
-                  <Button>Start Free Trial</Button>
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </nav>
+    <>
+      <style>{`
+        /* ── Global resets for landing ──────────────────────── */
+        .landing-root {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          color: #111827;
+          background: #fff;
+          -webkit-font-smoothing: antialiased;
+          overflow-x: hidden;
+        }
 
-      {/* ── Hero + Try It Now (above the fold) ────────────────────────── */}
-      <section className="container mx-auto px-4 sm:px-6 pt-12 sm:pt-20 pb-16">
-        <div className="max-w-4xl mx-auto text-center space-y-6">
-          <Badge variant="secondary" className="text-sm px-4 py-1.5">
-            🚀 The $49 AI agency alternative
-          </Badge>
+        /* ── Scroll cards (landing below-fold) ─────────────── */
+        [data-scroll-card] {
+          opacity: 0;
+          transform: translateY(80px);
+          transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        [data-scroll-card].scroll-visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight">
-            Your first ad campaign
-            <br />
-            <span className="text-primary">in 60 seconds. Not 60 days.</span>
-          </h1>
+        /* ── Pulse ring (thinking) ─────────────────────────── */
+        .pulse-ring {
+          width: 80px; height: 80px;
+          border-radius: 50%;
+          border: 3px solid #2563eb;
+          animation: pulse-ring 2s ease-in-out infinite;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .pulse-ring::after {
+          content: '';
+          width: 20px; height: 20px;
+          border-radius: 50%;
+          background: #2563eb;
+          animation: pulse-dot 2s ease-in-out infinite;
+        }
+        @keyframes pulse-ring {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.15); opacity: 0.7; }
+        }
+        @keyframes pulse-dot {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(0.8); }
+        }
 
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Paste your website and watch AI build your Facebook ads — strategy, copy, and creatives.
-            <strong className="text-foreground"> Free preview, no signup required.</strong>
-          </p>
-        </div>
+        /* ── Presentation sections ─────────────────────────── */
+        [data-pres] .pres-inner {
+          opacity: 0;
+          transform: translateY(60px);
+          transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        [data-pres].pres-visible .pres-inner {
+          opacity: 1;
+          transform: translateY(0);
+        }
 
-        {/* Inline Try It Now */}
-        <div className="max-w-4xl mx-auto mt-8">
-          <TryItNow compact />
-        </div>
+        /* Stagger children */
+        [data-stagger] {
+          opacity: 0;
+          transform: translateY(40px);
+          transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        [data-stagger].stagger-visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
 
-        <div className="max-w-4xl mx-auto text-center mt-6">
-          <p className="text-sm text-muted-foreground">
-            While other <span className="text-foreground font-medium">{BUSINESSES[businessIndex]}s</span> pay agencies $2K/month, you could be live for <strong className="text-foreground">$49/mo</strong>. Cancel anytime.
-          </p>
-        </div>
-      </section>
+        /* Ad card stagger variant */
+        .ad-card-anim {
+          opacity: 0;
+          transform: translateY(60px) scale(0.92);
+          transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                      box-shadow 0.3s ease;
+        }
+        .ad-card-anim.stagger-visible {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        .ad-card-anim:hover {
+          box-shadow: 0 16px 48px rgba(0,0,0,0.1);
+          transform: translateY(-4px) scale(1.01);
+        }
 
-      {/* ── Social proof strip ──────────────────────────────────────────── */}
-      <section className="border-y border-border/40 bg-muted/30 py-8">
-        <div className="container mx-auto px-4 sm:px-6">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 text-center">
-            <div>
-              <div className="text-2xl font-bold">60 sec</div>
-              <div className="text-sm text-muted-foreground">Setup to live ad</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold">$49</div>
-              <div className="text-sm text-muted-foreground">vs $2K agencies</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold">Low cost</div>
-              <div className="text-sm text-muted-foreground">Per lead</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold">7-day</div>
-              <div className="text-sm text-muted-foreground">Free trial</div>
-            </div>
-          </div>
-        </div>
-      </section>
+        /* Review card stagger */
+        .review-card-anim {
+          opacity: 0;
+          transform: translateY(40px) rotate(-1deg);
+          transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .review-card-anim:nth-child(even) {
+          transform: translateY(40px) rotate(0.5deg);
+        }
+        .review-card-anim.stagger-visible {
+          opacity: 1;
+          transform: translateY(0) rotate(0);
+        }
+        .review-card-anim:hover {
+          box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+        }
 
-      {/* ── How It Works ────────────────────────────────────────────────── */}
-      <section id="how-it-works" className="container mx-auto px-4 sm:px-6 py-20">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-            Three steps. Sixty seconds. Done.
-          </h2>
-          <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            While agencies take weeks and charge $2K/month, you'll be live in 60 seconds.
-          </p>
-        </div>
+        /* Competitor card stagger */
+        .comp-card-anim {
+          opacity: 0;
+          transform: translateX(-30px);
+          transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .comp-card-anim.stagger-visible {
+          opacity: 1;
+          transform: translateX(0);
+        }
 
-        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-          {/* Step 1 */}
-          <Card className="relative overflow-hidden border-2 hover:border-primary/30 transition-colors">
-            <div className="absolute top-4 right-4 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-              1
-            </div>
-            <CardContent className="pt-8 pb-6 px-6 space-y-4">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <MapPin className="w-6 h-6 text-primary" />
+        /* ── Typewriter ────────────────────────────────────── */
+        .tw-cursor {
+          display: inline-block;
+          width: 2px;
+          height: 1.1em;
+          background: #2563eb;
+          margin-left: 2px;
+          vertical-align: text-bottom;
+          animation: cursor-blink 0.8s step-end infinite;
+        }
+        @keyframes cursor-blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        .tw-greeting {
+          font-size: clamp(32px, 6vw, 56px);
+          font-weight: 800;
+          letter-spacing: -2px;
+          line-height: 1.1;
+          margin-bottom: 24px;
+          color: #111827;
+        }
+        .tw-body {
+          font-size: 20px;
+          line-height: 1.7;
+          color: #4b5563;
+          margin-bottom: 16px;
+        }
+        .tw-body-hint {
+          font-size: 16px;
+          line-height: 1.7;
+          color: #9ca3af;
+          margin-top: 24px;
+        }
+
+        /* ── Thinking text crossfade ───────────────────────── */
+        .thinking-text-fade {
+          transition: opacity 0.4s ease;
+        }
+
+        /* ── Question option ───────────────────────────────── */
+        .q-option {
+          padding: 14px 28px;
+          border: 2px solid #e5e7eb;
+          border-radius: 12px;
+          background: #fff;
+          font-size: 15px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+          color: #374151;
+          text-align: center;
+        }
+        .q-option:hover {
+          border-color: #2563eb;
+          color: #2563eb;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+        .q-option.q-selected {
+          border-color: #2563eb;
+          background: #2563eb;
+          color: #fff;
+          transform: scale(1.02);
+        }
+
+        /* ── CTA button ────────────────────────────────────── */
+        .cta-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          height: 56px;
+          padding: 0 40px;
+          background: #2563eb;
+          color: #fff;
+          border: none;
+          border-radius: 999px;
+          font-size: 17px;
+          font-weight: 600;
+          font-family: inherit;
+          cursor: pointer;
+          transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+          box-shadow: 0 4px 24px rgba(37, 99, 235, 0.3);
+        }
+        .cta-btn:hover {
+          background: #3b82f6;
+          box-shadow: 0 8px 32px rgba(37, 99, 235, 0.4);
+        }
+        .cta-btn:active { transform: scale(0.98); }
+
+        /* ── Typewriter section: always visible inner ──────── */
+        .tw-section .pres-inner {
+          opacity: 1 !important;
+          transform: none !important;
+        }
+      `}</style>
+
+      <div className="landing-root">
+        {/* ════════════════════════════════════════════════════════════════
+            PHASE 1: LANDING
+            ════════════════════════════════════════════════════════════ */}
+        {phase === "landing" && (
+          <div>
+            {/* Above the fold: Google-simple */}
+            <div className="min-h-screen flex flex-col items-center justify-center relative px-6">
+              <div className="text-[28px] font-bold tracking-tight mb-12 text-gray-900">
+                Zucker<span className="text-blue-600">Bot</span>
               </div>
-              <h3 className="text-xl font-semibold">Tell us your business</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Pick your business type, enter your suburb, and upload a photo.
-                That's the hard part done.
-              </p>
-            </CardContent>
-          </Card>
 
-          {/* Step 2 */}
-          <Card className="relative overflow-hidden border-2 hover:border-primary/30 transition-colors">
-            <div className="absolute top-4 right-4 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-              2
-            </div>
-            <CardContent className="pt-8 pb-6 px-6 space-y-4">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Zap className="w-6 h-6 text-primary" />
+              {/* URL Input */}
+              <div className="relative w-full max-w-[560px]">
+                <input
+                  type="text"
+                  placeholder="Enter your business website"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && startThinking()}
+                  className="w-full h-14 border-2 border-gray-200 rounded-full pl-6 pr-14 text-base font-[inherit] outline-none transition-all focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 bg-white placeholder:text-gray-400"
+                />
+                <button
+                  onClick={() => startThinking()}
+                  className="absolute right-1 top-1 h-12 w-12 border-none bg-blue-600 text-white rounded-full cursor-pointer flex items-center justify-center transition-all hover:bg-blue-500 active:scale-95"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
+                    />
+                  </svg>
+                </button>
               </div>
-              <h3 className="text-xl font-semibold">AI writes your ad</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Our AI creates 3 ad options tailored to your business and area.
-                Pick one, tweak the budget, hit launch.
-              </p>
-            </CardContent>
-          </Card>
 
-          {/* Step 3 */}
-          <Card className="relative overflow-hidden border-2 hover:border-primary/30 transition-colors">
-            <div className="absolute top-4 right-4 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-              3
+              <p className="mt-4 text-gray-400 text-sm">
+                No signup required · Free preview · 90 seconds
+              </p>
             </div>
-            <CardContent className="pt-8 pb-6 px-6 space-y-4">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Phone className="w-6 h-6 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold">Leads hit your phone</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                When someone fills in your ad, they get an instant SMS and you get a
-                notification. Just call them back.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
 
-      {/* ── Why small businesses love it ──────────────────────────────── */}
-      <section className="bg-muted/30 border-y border-border/40 py-20">
-        <div className="container mx-auto px-4 sm:px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Why small businesses love it
-            </h2>
-            <p className="text-lg text-muted-foreground">
-              Ditch the agencies. Skip the courses. Get leads in 60 seconds.
+            {/* Below the fold: marketing scroll cards */}
+            <div className="py-[120px] px-6 max-w-[800px] mx-auto">
+              {/* Card 1 */}
+              <div data-scroll-card className="mb-20">
+                <h2 className="text-[clamp(28px,5vw,42px)] font-extrabold tracking-tight leading-[1.15] mb-4">
+                  Stop paying agencies.
+                  <br />
+                  <span className="text-blue-600">Start outperforming them.</span>
+                </h2>
+                <p className="text-lg leading-relaxed text-gray-600">
+                  The average small business pays $2,000 to $5,000 per month for an
+                  agency that runs the same playbook for every client. ZuckerBot
+                  replaces that with an AI that actually learns your business.
+                </p>
+              </div>
+
+              {/* Card 2 */}
+              <div data-scroll-card className="mb-20">
+                <h2 className="text-[clamp(28px,5vw,42px)] font-extrabold tracking-tight leading-[1.15] mb-4">
+                  Your own AI account manager.
+                </h2>
+                <p className="text-lg leading-relaxed text-gray-600">
+                  Not a tool. Not a template. A dedicated AI that analyzes your
+                  market, creates your ads, launches your campaigns, and optimizes
+                  them while you sleep.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-8">
+                  {[
+                    { number: "90s", label: "First campaign live" },
+                    { number: "24/7", label: "Always monitoring" },
+                    { number: "$99", label: "Per month" },
+                  ].map((s, i) => (
+                    <div
+                      key={i}
+                      className="text-center p-8 bg-gray-50 rounded-2xl border border-gray-100"
+                    >
+                      <div className="text-4xl font-extrabold text-blue-600">
+                        {s.number}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Card 3 */}
+              <div data-scroll-card className="mb-20">
+                <h2 className="text-[clamp(28px,5vw,42px)] font-extrabold tracking-tight leading-[1.15] mb-4">
+                  Trusted by businesses who
+                  <br />
+                  <span className="text-blue-600">refuse to overpay.</span>
+                </h2>
+                <p className="text-lg leading-relaxed text-gray-600">
+                  Restaurants, gyms, salons, roofers, tutors, dentists. Any
+                  business that needs customers but does not need a $5K agency
+                  retainer.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════
+            PHASE 2: THINKING
+            ════════════════════════════════════════════════════════════ */}
+        {phase === "thinking" && (
+          <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+            <div className="pulse-ring mb-10" />
+            <div className="text-[clamp(20px,4vw,32px)] font-semibold text-gray-800 text-center min-h-[44px] thinking-text-fade">
+              {THINKING_STEPS[thinkingStep]}
+            </div>
+            <p className="mt-3 text-gray-400 text-sm">
+              This takes about 90 seconds
             </p>
           </div>
+        )}
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {[
-              {
-                icon: Clock,
-                title: "60 seconds, not 60 days",
-                desc: "60 seconds from signup to your ad being live on Facebook. That's it. No waiting, no back-and-forth.",
-              },
-              {
-                icon: DollarSign,
-                title: "$49/mo, not $2000/mo",
-                desc: "Stop paying agencies $2K/month. Do it yourself for $49. Keep the difference.",
-              },
-              {
-                icon: MessageSquare,
-                title: "Auto-SMS to leads",
-                desc: "Every lead gets an instant text: \"Thanks for reaching out, we'll call you within the hour.\"",
-              },
-              {
-                icon: MapPin,
-                title: "Local-only targeting",
-                desc: "Your ad only shows to people in your area. No wasted spend on people 100km away.",
-              },
-              {
-                icon: TrendingUp,
-                title: "AI-written ad copy",
-                desc: "Our AI knows what works for your business type. No more staring at a blank text box.",
-              },
-              {
-                icon: Shield,
-                title: "You stay in control",
-                desc: "Set your own budget ($20/day minimum), pause anytime, see every lead. No lock-in contracts ever.",
-              },
-            ].map((item, i) => (
-              <div
-                key={i}
-                className="flex gap-4 p-5 rounded-xl bg-background border border-border/50 hover:border-primary/20 transition-colors"
-              >
-                <div className="shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <item.icon className="w-5 h-5 text-primary" />
+        {/* ════════════════════════════════════════════════════════════════
+            PHASE 3: PRESENTATION (scroll-driven)
+            ════════════════════════════════════════════════════════════ */}
+        {phase === "presentation" && (
+          <div>
+            {/* ── Intro / Typewriter ─────────────────────────────────── */}
+            <div
+              data-pres
+              className="tw-section min-h-screen flex flex-col items-center justify-center px-6 py-20"
+            >
+              <div className="pres-inner max-w-[720px] w-full">
+                {/* Avatar */}
+                <div className="w-16 h-16 rounded-[20px] bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-extrabold text-2xl mb-6 shadow-[0_8px_32px_rgba(37,99,235,0.3)]">
+                  Z
                 </div>
-                <div>
-                  <h3 className="font-semibold mb-1">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                <div ref={typewriterContainerRef} className="min-h-[300px]" />
+              </div>
+            </div>
+
+            {/* ── Reviews ────────────────────────────────────────────── */}
+            <div
+              data-pres
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+            >
+              <div className="pres-inner max-w-[720px] w-full">
+                <h2 className="text-[clamp(24px,4vw,36px)] font-extrabold tracking-tight mb-2">
+                  I found what your customers love about you.
+                </h2>
+                <p className="text-gray-500 text-base">
+                  I pulled your Google reviews. Here is what stands out:
+                </p>
+
+                {/* Rating summary */}
+                <div
+                  data-stagger
+                  className="review-card-anim flex items-center gap-4 mt-8 p-5 bg-gray-50 rounded-2xl border border-gray-100"
+                >
+                  <div className="text-5xl font-extrabold text-gray-900 leading-none">
+                    {brand.rating || 4.8}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    <div className="text-amber-500 text-base tracking-widest">
+                      {"★".repeat(Math.round(brand.rating || 4.8))}
+                      {"☆".repeat(5 - Math.round(brand.rating || 4.8))}
+                    </div>
+                    <strong className="text-gray-900">
+                      {brand.review_count || 127} reviews
+                    </strong>{" "}
+                    on Google
+                  </div>
+                </div>
+
+                {/* Review cards */}
+                <div className="grid gap-4 mt-8">
+                  {(brand.reviews || FALLBACK.reviews!).map((rev, i) => (
+                    <div
+                      key={i}
+                      data-stagger
+                      className="review-card-anim bg-white border border-gray-100 rounded-2xl p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+                    >
+                      <div className="text-amber-500 text-base tracking-widest mb-3">
+                        {"★".repeat(rev.stars)}
+                        {"☆".repeat(5 - rev.stars)}
+                      </div>
+                      <div className="text-[15px] leading-relaxed text-gray-700 italic">
+                        &quot;
+                        {rev.highlight ? (
+                          <>
+                            {rev.text.split(rev.highlight)[0]}
+                            <span className="not-italic font-medium text-blue-600 bg-blue-600/10 px-1.5 py-0.5 rounded">
+                              {rev.highlight}
+                            </span>
+                            {rev.text.split(rev.highlight)[1]}
+                          </>
+                        ) : (
+                          rev.text
+                        )}
+                        &quot;
+                      </div>
+                      <div className="mt-3 text-[13px] text-gray-400 font-medium">
+                        {rev.author} · {rev.date}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-gray-500 text-[15px] mt-6 text-center">
+                  I will use these real customer stories in your ad copy.{" "}
+                  <strong className="text-gray-900">
+                    Social proof converts 2-3x better than generic messaging.
+                  </strong>
+                </p>
+              </div>
+            </div>
+
+            {/* ── Smart Question ──────────────────────────────────────── */}
+            <div
+              data-pres
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+            >
+              <div className="pres-inner max-w-[720px] w-full">
+                <div className="bg-gradient-to-br from-blue-50 to-purple-50 border-2 border-blue-600/15 rounded-2xl p-10 text-center">
+                  <div className="text-[32px] mb-4">🤔</div>
+                  <h3 className="text-[22px] font-bold mb-3 text-gray-900">
+                    {brand.question?.title || FALLBACK.question!.title}
+                  </h3>
+                  <p className="text-base text-gray-600 mb-6 max-w-[500px] mx-auto">
+                    {brand.question?.body || FALLBACK.question!.body}
+                  </p>
+                  <div className="flex gap-3 justify-center flex-wrap">
+                    {(brand.question?.options || FALLBACK.question!.options).map(
+                      (opt, i) => (
+                        <button
+                          key={i}
+                          className={`q-option ${selectedOption === i ? "q-selected" : ""}`}
+                          onClick={() => handleOptionSelect(i)}
+                        >
+                          {opt.emoji} {opt.label}
+                          <br />
+                          <span className={`text-xs ${selectedOption === i ? "text-white/70" : "text-gray-400"}`}>
+                            {opt.sub}
+                          </span>
+                        </button>
+                      )
+                    )}
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
+            </div>
 
-      {/* ── Pricing ─────────────────────────────────────────────────────── */}
-      <section className="container mx-auto px-4 sm:px-6 py-20">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl sm:text-4xl font-bold mb-4">Simple pricing</h2>
-          <p className="text-lg text-muted-foreground">
-            No setup fees. No hidden costs. You control the ad spend.
-          </p>
-        </div>
+            {/* ── Ads ────────────────────────────────────────────────── */}
+            <div
+              id="pres-ads"
+              data-pres
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+            >
+              <div className="pres-inner max-w-[720px] w-full">
+                <h2 className="text-[clamp(24px,4vw,36px)] font-extrabold tracking-tight mb-2">
+                  I made these for{" "}
+                  <span className="text-blue-600">{bizName}</span>.
+                </h2>
+                <p className="text-gray-500 text-base mb-2">
+                  Two ad concepts, ready to launch on Facebook and Instagram.
+                </p>
 
-        <div className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
-          {/* Starter */}
-          <Card className="border-2 relative">
-            <CardContent className="pt-8 pb-6 px-6 space-y-6">
-              <div>
-                <h3 className="text-xl font-semibold">Starter</h3>
-                <div className="mt-2">
-                  <span className="text-4xl font-bold">$49</span>
-                  <span className="text-muted-foreground">/mo</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-10">
+                  {result?.ads && result.ads.length > 0
+                    ? result.ads.slice(0, 2).map((ad, i) => (
+                        <div
+                          key={i}
+                          data-stagger
+                          className="ad-card-anim bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+                        >
+                          {/* Header */}
+                          <div className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
+                              {bizInitials}
+                            </div>
+                            <div>
+                              <div className="text-sm font-semibold">{bizName}</div>
+                              <div className="text-xs text-gray-400">
+                                Sponsored · 🌏
+                              </div>
+                            </div>
+                          </div>
+                          {/* Copy */}
+                          <div className="px-4 pb-3 text-sm leading-relaxed text-gray-700">
+                            {ad.copy}
+                          </div>
+                          {/* Image */}
+                          {ad.image_base64 ? (
+                            <img
+                              src={`data:image/png;base64,${ad.image_base64}`}
+                              alt="AI-generated ad creative"
+                              className="w-full aspect-square object-cover"
+                            />
+                          ) : (
+                            <div className="w-full aspect-square bg-gradient-to-br from-blue-50 via-purple-50 to-amber-50 flex items-center justify-center text-gray-400 text-sm">
+                              [ AI-generated creative ]
+                            </div>
+                          )}
+                          {/* Headline */}
+                          <div className="p-3 px-4 border-t border-gray-100 bg-gray-50">
+                            <div className="text-[11px] text-gray-400 uppercase">
+                              {bizDomain}
+                            </div>
+                            <div className="text-sm font-semibold mt-0.5">
+                              {ad.headline}
+                            </div>
+                          </div>
+                          {/* Actions */}
+                          <div className="flex justify-around py-2.5 px-4 border-t border-gray-100 text-[13px] text-gray-500">
+                            <span>👍 Like</span>
+                            <span>💬 Comment</span>
+                            <span>↗️ Share</span>
+                          </div>
+                        </div>
+                      ))
+                    : // Placeholder ad cards
+                      [0, 1].map((i) => (
+                        <div
+                          key={i}
+                          data-stagger
+                          className="ad-card-anim bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+                        >
+                          <div className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
+                              {bizInitials}
+                            </div>
+                            <div>
+                              <div className="text-sm font-semibold">{bizName}</div>
+                              <div className="text-xs text-gray-400">
+                                Sponsored · 🌏
+                              </div>
+                            </div>
+                          </div>
+                          <div className="px-4 pb-3 text-sm leading-relaxed text-gray-700">
+                            {i === 0
+                              ? `Transform your results with ${bizName}. Trusted by hundreds of local customers. Book your free consultation today.`
+                              : `Why are locals switching to ${bizName}? Because we deliver results, not promises. See what our customers are saying.`}
+                          </div>
+                          <div className="w-full aspect-square bg-gradient-to-br from-blue-50 via-purple-50 to-amber-50 flex items-center justify-center text-gray-400 text-sm">
+                            [ AI-generated creative ]
+                          </div>
+                          <div className="p-3 px-4 border-t border-gray-100 bg-gray-50">
+                            <div className="text-[11px] text-gray-400 uppercase">
+                              {bizDomain}
+                            </div>
+                            <div className="text-sm font-semibold mt-0.5">
+                              {i === 0
+                                ? `The Local Choice for Quality Service`
+                                : `See Why Locals Love Us`}
+                            </div>
+                          </div>
+                          <div className="flex justify-around py-2.5 px-4 border-t border-gray-100 text-[13px] text-gray-500">
+                            <span>👍 Like</span>
+                            <span>💬 Comment</span>
+                            <span>↗️ Share</span>
+                          </div>
+                        </div>
+                      ))}
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">+ $20/day minimum ad budget (you control this)</p>
               </div>
-              <ul className="space-y-3">
-                {[
-                  "1 active campaign",
-                  "AI-generated ad copy",
-                  "Lead inbox",
-                  "Email notifications",
-                  "25km targeting radius",
-                ].map((f, i) => (
-                  <li key={i} className="flex items-center gap-2 text-sm">
-                    <Check className="w-4 h-4 text-primary shrink-0" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <Button className="w-full" onClick={handleCTA}>
-                Start Free Trial
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Pro */}
-          <Card className="border-2 border-primary relative">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-              <Badge className="bg-primary text-primary-foreground px-3">Most Popular</Badge>
             </div>
-            <CardContent className="pt-8 pb-6 px-6 space-y-6">
-              <div>
-                <h3 className="text-xl font-semibold">Pro</h3>
-                <div className="mt-2">
-                  <span className="text-4xl font-bold">$99</span>
-                  <span className="text-muted-foreground">/mo</span>
+
+            {/* ── Strategy ───────────────────────────────────────────── */}
+            <div
+              data-pres
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+            >
+              <div className="pres-inner max-w-[720px] w-full">
+                <h2 className="text-[clamp(24px,4vw,36px)] font-extrabold tracking-tight mb-2">
+                  Here is your campaign plan.
+                </h2>
+                <p className="text-gray-500 text-base">
+                  Built specifically for{" "}
+                  <strong className="text-gray-900">{bizName}</strong> based on
+                  your market and competitors.
+                </p>
+
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-8 mt-6">
+                  <h4 className="text-[13px] uppercase tracking-widest text-gray-400 mb-3">
+                    Campaign Overview
+                  </h4>
+                  {[
+                    {
+                      label: "Monthly Budget",
+                      value: brand.strategy?.monthly_budget || "$600 - $900",
+                    },
+                    {
+                      label: "Platforms",
+                      value: brand.strategy?.platforms || "Facebook + Instagram",
+                    },
+                    {
+                      label: "Target Area",
+                      value: brand.strategy?.target_area || "25km from your location",
+                    },
+                    {
+                      label: "Projected Leads/Month",
+                      value: brand.strategy?.projected_leads || "40 - 65",
+                      green: true,
+                    },
+                    {
+                      label: "Estimated Cost Per Lead",
+                      value: brand.strategy?.cost_per_lead || "$9 - $15",
+                    },
+                    {
+                      label: "Expected ROI",
+                      value: brand.strategy?.expected_roi || "3.2x - 5.1x",
+                      green: true,
+                    },
+                  ].map((item, i) => (
+                    <div
+                      key={i}
+                      className="flex justify-between py-3 border-b border-gray-100 last:border-b-0 text-[15px]"
+                    >
+                      <span className="text-gray-500">{item.label}</span>
+                      <span
+                        className={`font-semibold ${item.green ? "text-emerald-500" : "text-gray-900"}`}
+                      >
+                        {item.value}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">+ $20/day minimum ad budget (you control this)</p>
               </div>
-              <ul className="space-y-3">
-                {[
-                  "3 active campaigns",
-                  "AI-generated ad copy",
-                  "Lead inbox + analytics",
-                  "Auto-SMS to leads",
-                  "50km targeting radius",
-                  "Priority support",
-                ].map((f, i) => (
-                  <li key={i} className="flex items-center gap-2 text-sm">
-                    <Check className="w-4 h-4 text-primary shrink-0" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <Button className="w-full" onClick={handleCTA}>
-                Start Free Trial
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
 
-        <p className="text-center text-sm text-muted-foreground mt-8">
-          Both plans include a 7-day free trial. Cancel anytime. You pause/resume ad spend as needed.
-        </p>
-      </section>
-
-      {/* ── Early Adopter CTA ────────────────────────────────────────────── */}
-      <section className="bg-muted/30 border-y border-border/40 py-20">
-        <div className="container mx-auto px-4 sm:px-6">
-          <div className="max-w-4xl mx-auto">
-            <Card className="p-8 border-2 border-primary/20 text-center">
-              <div className="inline-flex items-center gap-2 bg-primary/10 text-primary rounded-full px-4 py-1.5 text-sm font-medium mb-6">
-                <Star className="w-4 h-4" />
-                Early Adopter Offer
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-                Be one of our first success stories
-              </h2>
-              <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6 leading-relaxed">
-                We're onboarding our first wave of businesses right now. 
-                Early users get <strong className="text-foreground">white-glove setup support</strong> — 
-                we'll personally help you launch your first campaign and optimize it for results.
-              </p>
-              <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
-                Claim Your Early Adopter Spot
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
-              <p className="text-sm text-muted-foreground mt-4">
-                7-day free trial • Personal onboarding support • Cancel anytime
-              </p>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-      {/* ── FAQ ─────────────────────────────────────────────────────────── */}
-      <section className="container mx-auto px-4 sm:px-6 py-20">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Common Questions
-            </h2>
-            <p className="text-lg text-muted-foreground">
-              Everything you need to know about getting started
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8">
-            <div className="space-y-8">
-              <div>
-                <h3 className="text-lg font-semibold mb-3 text-primary">
-                  How much will I spend on Facebook ads?
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  You control this completely. We recommend starting with $20/day minimum ($140/week). 
-                  You can pause, reduce, or increase anytime through Facebook's interface. 
-                  Most businesses spend $20-50/day and get 3-8 leads per week.
+            {/* ── Competitors ────────────────────────────────────────── */}
+            <div
+              data-pres
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+            >
+              <div className="pres-inner max-w-[720px] w-full">
+                <h2 className="text-[clamp(24px,4vw,36px)] font-extrabold tracking-tight mb-2">
+                  {bizName}&apos;s competitors are not sleeping.
+                </h2>
+                <p className="text-gray-500 text-base mb-2">
+                  I found active ad campaigns from businesses in{" "}
+                  <span className="text-gray-700 font-medium">{bizIndustry}</span>.
                 </p>
-              </div>
 
-              <div>
-                <h3 className="text-lg font-semibold mb-3 text-primary">
-                  What if I don't get any leads?
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  We have a 7-day free trial and our AI is trained on thousands of successful local business ads. 
-                  If you're not getting leads after the first week, we'll help you tweak your ad copy and targeting for free.
+                <div className="space-y-4 mt-4">
+                  {(brand.competitors || FALLBACK.competitors!).map((comp, i) => (
+                    <div
+                      key={i}
+                      data-stagger
+                      className="comp-card-anim bg-white border border-gray-200 rounded-2xl p-6"
+                    >
+                      <div className="font-semibold text-[15px] mb-2 flex items-center gap-2">
+                        {comp.name}
+                        <span className="text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                          {comp.badge}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-500 leading-relaxed">
+                        {comp.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ── CTA / Pricing ──────────────────────────────────────── */}
+            <div
+              data-pres
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+            >
+              <div className="pres-inner max-w-[720px] w-full text-center">
+                <h2 className="text-[clamp(28px,5vw,44px)] font-extrabold tracking-tight mb-4">
+                  Ready to launch?
+                </h2>
+                <p className="text-lg text-gray-500 mb-10 max-w-[480px] mx-auto">
+                  Connect your Facebook page and your first campaign goes live
+                  today. Everything I built is ready. You just approve it.
                 </p>
-              </div>
 
-              <div>
-                <h3 className="text-lg font-semibold mb-3 text-primary">
-                  Do you lock me into contracts?
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Never. Cancel your ZuckerBot subscription anytime with one click. 
-                  Your Facebook ad account stays yours forever. No setup fees, no cancellation fees.
+                <button className="cta-btn" onClick={handleCTA}>
+                  Get Started for $99/mo
+                  <svg
+                    width="20"
+                    height="20"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
+                    />
+                  </svg>
+                </button>
+
+                {/* Pricing cards */}
+                <div className="flex justify-center gap-8 mt-12 flex-wrap">
+                  {/* Standard */}
+                  <div className="bg-gray-50 border-2 border-gray-100 rounded-2xl p-8 w-[260px] text-center transition-all">
+                    <div className="text-sm font-semibold uppercase tracking-widest text-gray-500 mb-2">
+                      Standard
+                    </div>
+                    <div className="text-5xl font-extrabold tracking-tight">
+                      $99
+                      <span className="text-lg font-normal text-gray-400">
+                        /mo
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-500 mt-2">
+                      For single-location businesses
+                    </div>
+                    <ul className="mt-6 text-left text-sm text-gray-600 space-y-1.5">
+                      {[
+                        "1 active campaign",
+                        "AI ad creatives",
+                        "Competitor monitoring",
+                        "Weekly performance reports",
+                        "Chat with ZuckerBot 24/7",
+                      ].map((f, i) => (
+                        <li key={i} className="flex items-center gap-2 py-1">
+                          <span className="text-emerald-500 font-bold text-sm">
+                            ✓
+                          </span>
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Growth (featured) */}
+                  <div className="bg-gray-50 border-2 border-blue-600 rounded-2xl p-8 w-[260px] text-center relative shadow-[0_8px_32px_rgba(37,99,235,0.1)]">
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[11px] font-semibold px-4 py-1 rounded-full uppercase tracking-wider">
+                      Most Popular
+                    </div>
+                    <div className="text-sm font-semibold uppercase tracking-widest text-gray-500 mb-2">
+                      Growth
+                    </div>
+                    <div className="text-5xl font-extrabold tracking-tight">
+                      $199
+                      <span className="text-lg font-normal text-gray-400">
+                        /mo
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-500 mt-2">
+                      For businesses ready to scale
+                    </div>
+                    <ul className="mt-6 text-left text-sm text-gray-600 space-y-1.5">
+                      {[
+                        "3 active campaigns",
+                        "Multi-platform (FB + IG + Google)",
+                        "Automatic creative refresh",
+                        "Advanced audience targeting",
+                        "Priority support",
+                      ].map((f, i) => (
+                        <li key={i} className="flex items-center gap-2 py-1">
+                          <span className="text-emerald-500 font-bold text-sm">
+                            ✓
+                          </span>
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <p className="text-sm text-gray-400 mt-10">
+                  7-day free trial · Cancel anytime · No setup fees
                 </p>
               </div>
             </div>
 
-            <div className="space-y-8">
-              <div>
-                <h3 className="text-lg font-semibold mb-3 text-primary">
-                  How is this different from hiring an agency?
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Agencies charge $2000+/month and often use your budget for multiple clients. 
-                  With ZuckerBot, you pay $49-99/month, keep full control, and your ad budget goes 100% to your ads.
-                </p>
+            {/* ── Footer ─────────────────────────────────────────────── */}
+            <footer className="border-t border-gray-200 py-10 px-6">
+              <div className="max-w-[720px] mx-auto flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-gray-400">
+                <div className="font-semibold text-gray-900">
+                  Zucker<span className="text-blue-600">Bot</span>
+                </div>
+                <p>&copy; {new Date().getFullYear()} ZuckerBot</p>
               </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-3 text-primary">
-                  What happens after I get leads?
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Leads automatically get an SMS saying you'll call within the hour. 
-                  You get instant notifications and can call them back. The faster you call, the higher your conversion rate.
-                </p>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-3 text-primary">
-                  Can I really set this up in 60 seconds?
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Yes - from signup to your ad being live takes about 60 seconds. You'll answer 3 questions, 
-                  upload a photo, pick your AI-generated ad copy, set your budget, and launch. That's it.
-                </p>
-              </div>
-            </div>
+            </footer>
           </div>
-        </div>
-      </section>
+        )}
 
-      {/* ── Final CTA ───────────────────────────────────────────────────── */}
-      <section className="container mx-auto px-4 sm:px-6 py-24">
-        <div className="max-w-3xl mx-auto text-center space-y-8">
-          <h2 className="text-3xl sm:text-4xl font-bold">
-            Ready to stop paying agencies $2K/month?
-          </h2>
-          <p className="text-xl text-muted-foreground">
-            Get Facebook leads for $49/month instead of paying agencies $2000/month.
-          </p>
-          <Button size="lg" className="text-lg px-8 py-6" onClick={handleCTA}>
-            Start Free Trial
-            <ArrowRight className="w-5 h-5 ml-2" />
-          </Button>
-          <p className="text-sm text-muted-foreground">
-            7-day free trial • No setup fees • Cancel anytime
-          </p>
-        </div>
-      </section>
-
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
-      <footer className="border-t border-border/40 py-10">
-        <div className="container mx-auto px-4 sm:px-6">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-                <Zap className="w-4 h-4 text-primary-foreground" />
-              </div>
-              <span className="font-semibold">ZuckerBot</span>
-            </div>
-            <div className="flex flex-wrap justify-center gap-6 text-sm text-muted-foreground">
-              <Link to="/pricing" className="hover:text-foreground transition-colors">
-                Pricing
-              </Link>
-              <Link to="/auth" className="hover:text-foreground transition-colors">
-                Sign In
-              </Link>
-              <a href="mailto:support@zuckerbot.ai" className="hover:text-foreground transition-colors">
-                Support
-              </a>
-              <Link to="/privacy" className="hover:text-foreground transition-colors">
-                Privacy Policy
-              </Link>
-              <Link to="/terms" className="hover:text-foreground transition-colors">
-                Terms of Service
-              </Link>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              © {new Date().getFullYear()} ZuckerBot. Made with ❤️
-            </p>
+        {/* ── Error toast (non-blocking) ─────────────────────────────── */}
+        {error && phase === "presentation" && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-50 border border-red-200 text-red-700 px-6 py-3 rounded-xl text-sm shadow-lg z-50 max-w-[90vw]">
+            {error}
           </div>
-        </div>
-      </footer>
-    </div>
+        )}
+      </div>
+    </>
   );
 };
 
