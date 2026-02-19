@@ -109,6 +109,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   ]);
 }
 
+/** Quick industry inference from business name/domain. */
+function inferIndustry(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("dental") || n.includes("dentist") || n.includes("teeth") || n.includes("orthodont") || n.includes("smile")) return "dental";
+  if (n.includes("restaurant") || n.includes("food") || n.includes("kitchen") || n.includes("dining") || n.includes("cafe") || n.includes("pizza") || n.includes("sushi") || n.includes("grill")) return "restaurant";
+  if (n.includes("gym") || n.includes("fitness") || n.includes("workout") || n.includes("crossfit") || n.includes("yoga") || n.includes("pilates")) return "fitness";
+  if (n.includes("salon") || n.includes("hair") || n.includes("beauty") || n.includes("spa") || n.includes("nail") || n.includes("lash")) return "beauty";
+  if (n.includes("roof") || n.includes("construction") || n.includes("build") || n.includes("contractor")) return "construction";
+  if (n.includes("plumb") || n.includes("electric") || n.includes("hvac") || n.includes("air con")) return "trades";
+  if (n.includes("law") || n.includes("legal") || n.includes("attorney") || n.includes("solicitor")) return "legal";
+  if (n.includes("real estate") || n.includes("realty") || n.includes("property") || n.includes("homes")) return "real estate";
+  if (n.includes("auto") || n.includes("mechanic") || n.includes("car") || n.includes("motor") || n.includes("tyre") || n.includes("tire")) return "automotive";
+  if (n.includes("clean") || n.includes("maid")) return "cleaning";
+  if (n.includes("vet") || n.includes("animal") || n.includes("pet")) return "veterinary";
+  if (n.includes("physio") || n.includes("chiro") || n.includes("health") || n.includes("medical") || n.includes("clinic")) return "healthcare";
+  if (n.includes("account") || n.includes("tax") || n.includes("bookkeep")) return "accounting";
+  if (n.includes("photo") || n.includes("video") || n.includes("film")) return "photography";
+  return "";
+}
+
 /** Scans competitor ad copy for common marketing hooks. */
 function extractHooksFromCompetitors(data: Partial<BrandAnalysis>): string[] {
   const hooks: string[] = [];
@@ -300,7 +320,7 @@ const Index = () => {
       {
         tag: "p",
         className: "tw-body",
-        text: `I just spent 90 seconds studying ${bizDomain}, analyzing the ${bizIndustry} market, and researching what your competitors are running on Facebook.`,
+        text: `I just spent 90 seconds studying your website, analyzing the ${bizIndustry !== "your space" ? bizIndustry + " " : ""}market, and researching what your competitors are running on Facebook.`,
       },
       {
         tag: "p",
@@ -369,13 +389,17 @@ const Index = () => {
     // Derive basics from URL immediately
     const domain = extractDomain(trimmed);
     const fallbackName = domain
-      .replace(/\.(com|net|org|io|ai|co)$/i, "")
-      .replace(/[-_]/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+      .replace(/^www\./i, "")
+      .replace(/\.(com\.au|co\.uk|co\.nz|com\.br|org\.au|net\.au|co\.in|com|net|org|io|ai|co|app|dev|xyz|me|info|biz|us|uk|au|nz|ca)$/i, "")
+      .replace(/[-_.]/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
 
     setBizName(fallbackName);
     setBizInitials(extractInitials(fallbackName));
     setBizDomain(domain);
+    const earlyIndustry = inferIndustry(fallbackName) || inferIndustry(domain);
+    if (earlyIndustry) setBizIndustry(earlyIndustry);
     setError(null);
     setResult(null);
     setReviewResult(null);
@@ -1187,7 +1211,7 @@ const Index = () => {
                 </h2>
                 <p className="text-gray-500 text-base mb-2">
                   I found active ad campaigns from businesses in{" "}
-                  <span className="text-gray-700 font-medium">{bizIndustry}</span>.
+                  <span className="text-gray-700 font-medium">{bizIndustry !== "your space" ? bizIndustry : "your industry"}</span>.
                 </p>
 
                 <div className="space-y-4 mt-4">
@@ -1391,7 +1415,7 @@ const Index = () => {
                 </h2>
                 <p className="text-gray-500 text-base">
                   Based on industry benchmarks for{" "}
-                  <strong className="text-gray-900">{bizIndustry}</strong> businesses.
+                  <strong className="text-gray-900">{bizIndustry !== "your space" ? bizIndustry : "your"}</strong> businesses.
                   {brand.strategy ? "" : " I will refine this once your campaign is live."}
                 </p>
 
