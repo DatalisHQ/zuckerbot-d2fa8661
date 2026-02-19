@@ -125,8 +125,8 @@
   
   .scroll-card {
     opacity: 0;
-    transform: translateY(60px);
-    transition: opacity 0.8s ease, transform 0.8s ease;
+    transform: translateY(80px);
+    transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1), transform 1s cubic-bezier(0.16, 1, 0.3, 1);
     margin-bottom: 80px;
   }
   
@@ -271,8 +271,8 @@
     max-width: 720px;
     width: 100%;
     opacity: 0;
-    transform: translateY(50px);
-    transition: opacity 0.8s ease, transform 0.8s ease;
+    transform: translateY(60px);
+    transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1), transform 1s cubic-bezier(0.16, 1, 0.3, 1);
   }
   
   .pres-section.visible .inner {
@@ -367,14 +367,18 @@
     border-radius: var(--radius);
     overflow: hidden;
     opacity: 0;
-    transform: translateY(40px) scale(0.95);
-    transition: opacity 0.6s ease, transform 0.6s ease, box-shadow 0.3s;
+    transform: translateY(60px) scale(0.92);
+    transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
   
+  .ad-card:nth-child(2) {
+    transition-delay: 0.15s;
+  }
+  
   .ad-card:hover {
-    box-shadow: 0 12px 40px rgba(0,0,0,0.08);
-    transform: translateY(-2px) scale(1);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.1);
+    transform: translateY(-4px) scale(1.01);
   }
   
   .ad-card.visible {
@@ -471,6 +475,150 @@
   .strategy-item .label { color: var(--gray-500); }
   .strategy-item .value { font-weight: 600; }
   
+  /* Review cards */
+  .review-grid {
+    display: grid;
+    gap: 16px;
+    margin-top: 32px;
+  }
+  
+  .review-card {
+    background: #fff;
+    border: 1px solid var(--gray-100);
+    border-radius: var(--radius);
+    padding: 24px;
+    opacity: 0;
+    transform: translateY(40px) rotate(-1deg);
+    transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  
+  .review-card:nth-child(even) { transform: translateY(40px) rotate(0.5deg); }
+  
+  .review-card.visible {
+    opacity: 1;
+    transform: translateY(0) rotate(0);
+  }
+  
+  .review-card:hover {
+    box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+  }
+  
+  .review-stars {
+    color: #f59e0b;
+    font-size: 16px;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+  }
+  
+  .review-text {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--gray-700);
+    font-style: italic;
+  }
+  
+  .review-author {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--gray-400);
+    font-weight: 500;
+  }
+  
+  .review-highlight {
+    background: linear-gradient(120deg, rgba(37, 99, 235, 0.08) 0%, rgba(37, 99, 235, 0.15) 100%);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-style: normal;
+    font-weight: 500;
+    color: var(--blue);
+  }
+  
+  .reviews-summary {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 32px;
+    padding: 20px 24px;
+    background: var(--gray-50);
+    border-radius: var(--radius);
+    border: 1px solid var(--gray-100);
+  }
+  
+  .reviews-summary .big-rating {
+    font-size: 48px;
+    font-weight: 800;
+    color: var(--gray-900);
+    line-height: 1;
+  }
+  
+  .reviews-summary .rating-detail {
+    font-size: 14px;
+    color: var(--gray-500);
+  }
+  
+  .reviews-summary .rating-detail strong { color: var(--gray-900); }
+  
+  /* Smart question section */
+  .question-card {
+    background: linear-gradient(135deg, var(--blue-bg) 0%, #f5f3ff 100%);
+    border: 2px solid rgba(37, 99, 235, 0.15);
+    border-radius: var(--radius);
+    padding: 40px;
+    margin-top: 40px;
+    text-align: center;
+  }
+  
+  .question-card h3 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: var(--gray-900);
+  }
+  
+  .question-card p {
+    font-size: 16px;
+    color: var(--gray-600);
+    margin-bottom: 24px;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  
+  .question-options {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .question-option {
+    padding: 14px 28px;
+    border: 2px solid var(--gray-200);
+    border-radius: 12px;
+    background: #fff;
+    font-size: 15px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    color: var(--gray-700);
+  }
+  
+  .question-option:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+  }
+  
+  .question-option.selected {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: #fff;
+    transform: scale(1.02);
+  }
+  
   /* Competitor section */
   .competitor-card {
     background: #fff;
@@ -480,7 +628,7 @@
     margin-top: 16px;
     opacity: 0;
     transform: translateX(-30px);
-    transition: opacity 0.5s ease, transform 0.5s ease;
+    transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   }
   
   .competitor-card.visible {
@@ -923,6 +1071,60 @@
     </div>
   </div>
   
+  <!-- Reviews — the "how did it know that?" moment -->
+  <div class="pres-section" data-pres>
+    <div class="inner">
+      <h2 style="font-size: clamp(24px, 4vw, 36px); font-weight: 800; letter-spacing: -1px; margin-bottom: 8px;">I found what your customers love about you.</h2>
+      <p style="color: var(--gray-500); font-size: 16px;">I pulled your Google reviews. Here's what stands out:</p>
+      
+      <div class="reviews-summary" data-review>
+        <div class="big-rating">4.8</div>
+        <div class="rating-detail">
+          <div>★★★★★</div>
+          <strong id="reviewCount">127 reviews</strong> on Google
+        </div>
+      </div>
+      
+      <div class="review-grid">
+        <div class="review-card" data-review>
+          <div class="review-stars">★★★★★</div>
+          <div class="review-text">"<span class="review-highlight">Replaced our entire roof in 2 days</span> — couldn't believe how fast and clean the work was. Best roofing experience we've had."</div>
+          <div class="review-author">— Sarah M. · 3 months ago</div>
+        </div>
+        <div class="review-card" data-review>
+          <div class="review-stars">★★★★★</div>
+          <div class="review-text">"Called them for an emergency leak on a Sunday. <span class="review-highlight">They showed up within 2 hours</span>. Fixed it on the spot. Can't recommend enough."</div>
+          <div class="review-author">— Mike T. · 1 month ago</div>
+        </div>
+        <div class="review-card" data-review>
+          <div class="review-stars">★★★★★</div>
+          <div class="review-text">"<span class="review-highlight">Most honest contractor I've dealt with</span>. Gave us options at different price points. No pressure. Just straight talk."</div>
+          <div class="review-author">— Jennifer L. · 2 weeks ago</div>
+        </div>
+      </div>
+      
+      <p style="color: var(--gray-500); font-size: 15px; margin-top: 24px; text-align: center;">
+        I'll use these real customer stories in your ad copy. <strong style="color: var(--gray-900);">Social proof converts 2-3x better than generic messaging.</strong>
+      </p>
+    </div>
+  </div>
+  
+  <!-- Smart Question — shows deep understanding -->
+  <div class="pres-section" data-pres>
+    <div class="inner">
+      <div class="question-card">
+        <div style="font-size: 32px; margin-bottom: 16px;">🤔</div>
+        <h3 id="smartQuestionTitle">One question before I build your campaign.</h3>
+        <p id="smartQuestionBody">I noticed your customers mention both emergency repairs and full replacements. Which should I focus your ad budget on?</p>
+        <div class="question-options">
+          <button class="question-option" onclick="selectOption(this)">🚨 Emergency repairs<br/><span style="font-size: 12px; color: var(--gray-400);">Higher urgency, faster conversion</span></button>
+          <button class="question-option" onclick="selectOption(this)">🏠 Full replacements<br/><span style="font-size: 12px; color: var(--gray-400);">Higher ticket, better ROI</span></button>
+          <button class="question-option" onclick="selectOption(this)">⚡ Both — let AI optimize<br/><span style="font-size: 12px; color: var(--gray-400);">I'll split-test and find the winner</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
   <!-- Ads -->
   <div class="pres-section" data-pres>
     <div class="inner">
@@ -1186,17 +1388,35 @@
   // ─── Business data (simulated — in production this comes from the pipeline) ──
   const DEMO_BUSINESSES = {
     default: {
-      name: "Sunrise Dental",
-      url: "sunrisedental.com",
-      initials: "SD",
-      type: "dental practice",
-      location: "Pittsburgh, PA",
-      industry: "dental & healthcare",
-      ad1Copy: "Nervous about the dentist? You're not alone. At Sunrise Dental, we specialize in gentle, anxiety-free care. New patients get a free consultation + X-ray. Book online in 30 seconds.",
-      ad1Title: "Gentle Dental Care — Free First Visit",
-      ad2Copy: "4.9 stars from 200+ Pittsburgh families. Same-day emergency appointments. Modern technology, old-fashioned care. Your smile deserves Sunrise.",
-      ad2Title: "Pittsburgh's Most Trusted Dentist →",
-      targetArea: "15km radius around Pittsburgh, PA",
+      name: "STL Roof Rescue",
+      url: "stlroofrescue.com",
+      initials: "SR",
+      type: "roofing company",
+      location: "St Peters, MO",
+      industry: "roofing & home services",
+      ad1Copy: "★★★★★ \"Replaced our entire roof in 2 days\" — Sarah M. Emergency leaks to full replacements, STL Roof Rescue has been trusted by 127 Missouri families. Free inspection — book in 30 seconds.",
+      ad1Title: "Missouri's Most Trusted Roofer — Free Inspection",
+      ad2Copy: "Storm damage? Don't wait. STL Roof Rescue responds within 2 hours for emergencies. Insurance claims handled. 4.8 stars from real customers who've been where you are.",
+      ad2Title: "Emergency Roof Repair — Same Day Response →",
+      targetArea: "25km radius around St Peters, MO",
+      reviews: {
+        rating: 4.8,
+        count: 127,
+        items: [
+          { stars: 5, text: '"<span class=\\"review-highlight\\">Replaced our entire roof in 2 days</span> — couldn\'t believe how fast and clean the work was. Best roofing experience we\'ve had."', author: "Sarah M.", date: "3 months ago" },
+          { stars: 5, text: '"Called them for an emergency leak on a Sunday. <span class=\\"review-highlight\\">They showed up within 2 hours</span>. Fixed it on the spot. Can\'t recommend enough."', author: "Mike T.", date: "1 month ago" },
+          { stars: 5, text: '"<span class=\\"review-highlight\\">Most honest contractor I\'ve dealt with</span>. Gave us options at different price points. No pressure. Just straight talk."', author: "Jennifer L.", date: "2 weeks ago" },
+        ]
+      },
+      question: {
+        title: "One question before I build your campaign.",
+        body: "I noticed your customers mention both emergency repairs and full replacements. Which should I focus your ad budget on?",
+        options: [
+          { emoji: "🚨", label: "Emergency repairs", sub: "Higher urgency, faster conversion" },
+          { emoji: "🏠", label: "Full replacements", sub: "Higher ticket, better ROI" },
+          { emoji: "⚡", label: "Both — let AI optimize", sub: "I'll split-test and find the winner" },
+        ]
+      }
     }
   };
   
@@ -1235,6 +1455,32 @@
     // Competitors
     document.getElementById('compBusinessName').textContent = biz.name + "'s";
     document.getElementById('compIndustry').textContent = biz.industry;
+    
+    // Reviews
+    if (biz.reviews) {
+      document.querySelector('.big-rating').textContent = biz.reviews.rating;
+      document.getElementById('reviewCount').innerHTML = `<strong>${biz.reviews.count} reviews</strong>`;
+      const reviewCards = document.querySelectorAll('.review-card');
+      biz.reviews.items.forEach((rev, i) => {
+        if (reviewCards[i]) {
+          reviewCards[i].querySelector('.review-text').innerHTML = rev.text;
+          reviewCards[i].querySelector('.review-author').textContent = `— ${rev.author} · ${rev.date}`;
+          reviewCards[i].querySelector('.review-stars').textContent = '★'.repeat(rev.stars) + '☆'.repeat(5 - rev.stars);
+        }
+      });
+    }
+    
+    // Smart question
+    if (biz.question) {
+      document.getElementById('smartQuestionTitle').textContent = biz.question.title;
+      document.getElementById('smartQuestionBody').textContent = biz.question.body;
+      const optionBtns = document.querySelectorAll('.question-option');
+      biz.question.options.forEach((opt, i) => {
+        if (optionBtns[i]) {
+          optionBtns[i].innerHTML = `${opt.emoji} ${opt.label}<br/><span style="font-size: 12px; color: var(--gray-400)">${opt.sub}</span>`;
+        }
+      });
+    }
     
     // Dashboard
     document.getElementById('dashBusinessName').textContent = biz.name;
@@ -1475,6 +1721,20 @@
     if (e.key === 'Enter') startThinking();
   });
   
+  // Smart question option selection
+  function selectOption(btn) {
+    document.querySelectorAll('.question-option').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    
+    // Brief pause then auto-scroll to next section
+    setTimeout(() => {
+      const nextSection = btn.closest('.pres-section').nextElementSibling;
+      if (nextSection) {
+        nextSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 600);
+  }
+  
   // ─── Presentation scroll animations ─────────────────────
   function initPresentation() {
     const presObserver = new IntersectionObserver((entries) => {
@@ -1485,13 +1745,19 @@
           // Animate ad cards with stagger
           const ads = entry.target.querySelectorAll('[data-ad]');
           ads.forEach((ad, i) => {
-            setTimeout(() => ad.classList.add('visible'), i * 200);
+            setTimeout(() => ad.classList.add('visible'), 200 + i * 250);
+          });
+          
+          // Animate review cards with stagger — floating in
+          const reviews = entry.target.querySelectorAll('[data-review]');
+          reviews.forEach((rev, i) => {
+            setTimeout(() => rev.classList.add('visible'), 200 + i * 200);
           });
           
           // Animate competitor cards with stagger
           const comps = entry.target.querySelectorAll('[data-comp]');
           comps.forEach((comp, i) => {
-            setTimeout(() => comp.classList.add('visible'), i * 250);
+            setTimeout(() => comp.classList.add('visible'), 200 + i * 300);
           });
           
           // Reveal type-lines with stagger
