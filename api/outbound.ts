@@ -240,6 +240,7 @@ interface Prospect {
   business_name: string;
   phone: string;
   website: string | null;
+  suburb: string | null;
   rating: number | null;
   review_count: number | null;
   tracking_id: string;
@@ -249,12 +250,9 @@ interface Prospect {
 
 function buildSmsBody(p: Prospect): string {
   const trackUrl = `https://zuckerbot.ai/api/outbound?action=track&ref=${p.tracking_id}`;
-  const hasRating = p.rating && p.review_count;
+  const suburb = p.suburb || 'your area';
 
-  if (hasRating) {
-    return `Hey! I found ${p.business_name} on Google Maps. ${p.rating} stars from ${p.review_count} reviews, that's great. But I noticed you're not running Facebook ads. I built an AI that creates ad campaigns specifically for dental practices. Want to see what yours would look like? Free preview, takes 60 seconds: ${trackUrl}\n\nReply STOP to opt out.`;
-  }
-  return `Hey! I found ${p.business_name} on Google Maps but noticed you're not running Facebook ads. I built an AI that creates ad campaigns specifically for dental practices. Want to see what yours would look like? Free preview, takes 60 seconds: ${trackUrl}\n\nReply STOP to opt out.`;
+  return `Hey! I found ${p.business_name} on Google Maps but noticed you're not running Facebook ads. Most dental practices in ${suburb} are getting 10-15 new patient inquiries a month from them. I built an app that creates and manages the whole campaign for you. Want to see what yours would look like? Free preview, 60 seconds: ${trackUrl}\n\nReply STOP to opt out`;
 }
 
 async function handleSendSms(req: VercelRequest, res: VercelResponse) {
@@ -265,13 +263,13 @@ async function handleSendSms(req: VercelRequest, res: VercelResponse) {
 
   if (prospect_id) {
     const { data, error } = await supabase.from('outbound_prospects')
-      .select('id, business_name, phone, website, rating, review_count, tracking_id, sms_count, first_sms_at')
+      .select('id, business_name, phone, website, suburb, rating, review_count, tracking_id, sms_count, first_sms_at')
       .eq('id', prospect_id).single();
     if (error || !data) return res.status(404).json({ error: 'Prospect not found' });
     prospects = [data as Prospect];
   } else {
     const { data } = await supabase.from('outbound_prospects')
-      .select('id, business_name, phone, website, rating, review_count, tracking_id, sms_count, first_sms_at')
+      .select('id, business_name, phone, website, suburb, rating, review_count, tracking_id, sms_count, first_sms_at')
       .eq('status', 'new').order('created_at', { ascending: true }).limit(Math.min(batch_size, 100));
     prospects = (data || []) as Prospect[];
   }
