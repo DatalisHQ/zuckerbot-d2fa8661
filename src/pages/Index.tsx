@@ -371,10 +371,13 @@ const Index = () => {
     }
 
     setTimeout(typeLine, 400);
-  }, [bizName, bizDomain, bizIndustry]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  const typewriterFiredRef = useRef(false);
   useEffect(() => {
-    if (phase === "presentation") {
+    if (phase === "presentation" && !typewriterFiredRef.current) {
+      typewriterFiredRef.current = true;
       window.scrollTo(0, 0);
       runTypewriter();
     }
@@ -504,21 +507,27 @@ const Index = () => {
         setResult(data);
 
         // Update brand with any additional info from generate-preview
+        // BUT don't overwrite Phase 1 data or re-trigger typewriter
         const ba = data.brand_analysis || {};
-        const name = ba.business_name || data.business_name || fallbackName;
-        setBizName(name);
-        setBizInitials(extractInitials(name));
-        setBizIndustry(ba.industry || ba.business_type || "your space");
+
+        // Only update industry if we don't have one yet
+        setBizIndustry((prev) => {
+          if (prev && prev !== "your space") return prev;
+          return ba.industry || ba.business_type || prev;
+        });
 
         setBrand((prev) => ({
           ...prev,
-          ...ba,
-          business_name: name,
-          // Preserve Phase 1 data that may not be in generate-preview response
+          // Only fill in gaps, never overwrite Phase 1 data
+          business_name: prev.business_name || ba.business_name || data.business_name,
           rating: prev.rating || ba.rating,
           review_count: prev.review_count || ba.review_count,
           reviews: prev.reviews || ba.reviews,
           competitors: prev.competitors || ba.competitors,
+          keywords: prev.keywords || ba.keywords,
+          location: prev.location || ba.location,
+          target_area: prev.target_area || ba.target_area,
+          strategy: prev.strategy || ba.strategy,
         }));
 
         // If we got a better business name, re-fire reviews
@@ -1257,23 +1266,44 @@ const Index = () => {
                 </p>
 
                 <div className="space-y-4 mt-4">
-                  {brand.competitors.map((comp, i) => (
+                  {brand.competitors.map((comp, i) => {
+                    const colors = [
+                      { bg: "bg-red-50", text: "text-red-600", border: "border-red-100" },
+                      { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-100" },
+                      { bg: "bg-amber-50", text: "text-amber-600", border: "border-amber-100" },
+                      { bg: "bg-emerald-50", text: "text-emerald-600", border: "border-emerald-100" },
+                      { bg: "bg-purple-50", text: "text-purple-600", border: "border-purple-100" },
+                    ];
+                    const c = colors[i % colors.length];
+                    const initials = comp.name.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
+                    return (
                     <div
                       key={i}
                       data-stagger
-                      className="comp-card-anim bg-white border border-gray-200 rounded-2xl p-6"
+                      className={`comp-card-anim bg-white border border-gray-200 rounded-2xl p-6`}
                     >
-                      <div className="font-semibold text-[15px] mb-2 flex items-center gap-2">
-                        {comp.name}
-                        <span className="text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
-                          {comp.badge}
-                        </span>
-                      </div>
-                      <div className="text-sm text-gray-500 leading-relaxed">
-                        {comp.description}
+                      <div className="flex items-start gap-4">
+                        <div className={`w-12 h-12 rounded-xl ${c.bg} ${c.text} flex items-center justify-center font-bold text-sm shrink-0`}>
+                          {initials}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-[15px] mb-1 flex items-center gap-2 flex-wrap">
+                            {comp.name}
+                            <span className={`text-[11px] ${c.bg} ${c.text} px-2 py-0.5 rounded-full font-medium`}>
+                              {comp.badge}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-500 leading-relaxed">
+                            {comp.description}
+                          </div>
+                          <div className="mt-2 flex items-center gap-1 text-[11px] text-gray-400">
+                            <span>📢</span> Running ads on Facebook
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
