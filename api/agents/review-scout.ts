@@ -13,6 +13,13 @@ const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
 export default async function handler(req: any, res: any) {
+  try { return await _handler(req, res); } catch (e: any) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(500).json({ fatal: e.message, stack: e.stack?.split('\n').slice(0, 5) });
+  }
+}
+
+async function _handler(req: any, res: any) {
   if (handleCors(req, res)) return;
 
   const { business_id, user_id, trigger_type, business_name, location } = req.body || {};
