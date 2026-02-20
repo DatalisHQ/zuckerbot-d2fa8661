@@ -21,10 +21,13 @@ interface Business {
   user_id: string;
   name: string;
   trade: string;
-  suburb: string;
-  postcode: string;
-  state: string;
+  suburb: string | null;
+  postcode: string | null;
+  state: string | null;
   phone: string;
+  country: string | null;
+  target_type: string | null;
+  website_url: string | null;
   facebook_page_id: string | null;
   facebook_ad_account_id: string | null;
 }
@@ -40,24 +43,31 @@ interface AdVariant {
 
 function fallbackAdVariants(business: Business): AdVariant[] {
   const { name, trade, suburb } = business;
+  const area = suburb || "your area";
 
   return [
     {
       id: 1,
-      headline: `${suburb} Locals Love ${name}`,
-      body: `Trusted by ${suburb} locals. Book online or call — new customers get a special intro offer.`,
+      headline: suburb ? `${suburb} Locals Love ${name}` : `Customers Love ${name}`,
+      body: suburb
+        ? `Trusted by ${suburb} locals. Book online or call. New customers get a special intro offer.`
+        : `Trusted by customers everywhere. Book online or call. New customers get a special intro offer.`,
       cta: "Learn More",
     },
     {
       id: 2,
       headline: `Looking for ${name}?`,
-      body: `${name} is now taking bookings in ${suburb} & surrounds. Don't wait — spots fill fast.`,
+      body: suburb
+        ? `${name} is now taking bookings in ${suburb} & surrounds. Don't wait. Spots fill fast.`
+        : `${name} is now taking bookings. Don't wait. Spots fill fast.`,
       cta: "Book Now",
     },
     {
       id: 3,
-      headline: `${name} — ${suburb}'s Best Kept Secret`,
-      body: `Quality service at honest prices. See why customers in ${suburb} keep coming back to ${name}.`,
+      headline: suburb ? `${name} — ${suburb}'s Best Kept Secret` : `${name} — Your Best Kept Secret`,
+      body: suburb
+        ? `Quality service at honest prices. See why customers in ${suburb} keep coming back to ${name}.`
+        : `Quality service at honest prices. See why customers keep coming back to ${name}.`,
       cta: "Learn More",
     },
   ];
@@ -544,7 +554,7 @@ const CampaignCreator = () => {
                       </div>
                       <div>
                         <p className="text-sm font-semibold">{business?.name}</p>
-                        <p className="text-xs text-muted-foreground">Sponsored · 📍 {business?.suburb}</p>
+                        <p className="text-xs text-muted-foreground">Sponsored · {business?.suburb ? `📍 ${business.suburb}` : '🌏'}</p>
                       </div>
                     </div>
                     {/* Ad body */}
@@ -577,7 +587,7 @@ const CampaignCreator = () => {
                     <div className="px-4 py-3 border-t flex items-center justify-between">
                       <div>
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                          {business?.suburb}, {business?.state}
+                          {business?.suburb ? `${business.suburb}, ${business?.state || ''}` : business?.country || 'Online'}
                         </p>
                         <p className="text-sm font-semibold">{selectedAd.headline}</p>
                       </div>
