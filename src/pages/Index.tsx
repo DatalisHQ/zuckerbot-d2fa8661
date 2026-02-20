@@ -531,12 +531,23 @@ const Index = () => {
           strategy: prev.strategy || ba.strategy,
         }));
 
-        // If we got a better business name, re-fire reviews
-        if (name !== fallbackName && !rawReviews) {
-          fetchReviewData(name, domain).then((reviews) => {
-            if (reviews) {
-              setReviewResult(reviews);
-              setBrand((prev) => ({ ...prev, ...reviews }));
+        // If we got a better business name from the API, re-fire reviews with the real name
+        const realName = ba.business_name || data.business_name;
+        if (realName && realName !== fallbackName && !rawReviews) {
+          setBizName(realName);
+          setBizInitials(extractInitials(realName));
+          const realIndustry = inferIndustry(realName);
+          if (realIndustry) setBizIndustry(realIndustry);
+          fetchReviewData(realName, domain).then((retryReviews) => {
+            if (retryReviews) {
+              setReviewResult(retryReviews);
+              setBrand((prev) => ({
+                ...prev,
+                rating: retryReviews.rating ?? prev.rating,
+                review_count: retryReviews.review_count ?? prev.review_count,
+                reviews: retryReviews.reviews?.length ? retryReviews.reviews : prev.reviews,
+                keywords: retryReviews.keywords?.length ? retryReviews.keywords : prev.keywords,
+              }));
             }
           });
         }
