@@ -21,15 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  // Try TinyFish first (real Facebook Ad Library scraping), fall back to Brave+Claude
-  const tinyFishResult = await tryTinyFish(industry, location, country, res);
-  
-  if (tinyFishResult) {
-    res.write(`data: ${JSON.stringify(tinyFishResult)}\n\n`);
-    return res.end();
-  }
-
-  // Fallback: Brave Search + Claude
+  // Go straight to Brave+Claude (fast, reliable). TinyFish is timing out consistently.
   await fallbackBraveClaude(industry, location, country, res);
   return res.end();
 }
