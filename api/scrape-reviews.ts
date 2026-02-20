@@ -99,8 +99,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const lower = snippet.toLowerCase();
           const reviewSignals = ['great', 'excellent', 'friendly', 'recommend', 'best', 'love', 'amazing', 'fantastic', 'wonderful', 'professional', 'helpful', 'outstanding', 'highly recommend', 'so happy', 'thank you'];
           const hasSignal = reviewSignals.some(s => lower.includes(s));
-          // Avoid snippets that are clearly not reviews (contain URLs, meta descriptions etc)
-          const isMetaLike = lower.includes('read reviews') || lower.includes('write a review') || lower.includes('see all reviews') || lower.includes('click here');
+          // Avoid snippets that are clearly directory/meta descriptions
+          const isMetaLike = lower.includes('read reviews') || lower.includes('write a review') || 
+            lower.includes('see all reviews') || lower.includes('click here') ||
+            lower.includes('yelp is a') || lower.includes('real people') ||
+            lower.includes('find, recommend') || lower.includes('fun and easy') ||
+            lower.includes('opening hours') || lower.includes('get directions') ||
+            lower.includes('claim this') || lower.includes('add photos') ||
+            lower.includes('sign up') || lower.includes('log in');
 
           if (hasSignal && !isMetaLike) {
             const cleaned = snippet.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
