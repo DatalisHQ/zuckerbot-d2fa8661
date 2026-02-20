@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 45 };
 
 const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || 'BSA3NLr2aVETRurlr8KaqHN-pBcOEqP';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -13,15 +14,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { business_name, location } = req.body || {};
   if (!business_name) return res.status(400).json({ error: 'business_name required' });
 
-  // SSE headers to match what the frontend expects
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
   try {
-    // Run two searches in parallel for better coverage
+    // Two parallel searches for maximum coverage
     const reviewQuery = `"${business_name}" ${location || ''} reviews`;
-    const googleQuery = `${business_name} ${location || ''} Google reviews site:google.com`;
+    const ratingQuery = `${business_name} ${location || ''} Google reviews rating`;
 
     const [braveRes1, braveRes2] = await Promise.all([
       fetch(
@@ -29,38 +29,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { headers: { 'X-Subscription-Token': BRAVE_API_KEY, Accept: 'application/json' } }
       ),
       fetch(
-        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(googleQuery)}&count=5`,
+        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(ratingQuery)}&count=5`,
         { headers: { 'X-Subscription-Token': BRAVE_API_KEY, Accept: 'application/json' } }
       ),
     ]);
 
-    if (!braveRes1.ok && !braveRes2.ok) {
-      res.write(`data: ${JSON.stringify({ type: 'COMPLETE', reviews: [], rating: 0, total_reviews: 0, keywords: [] })}\n\n`);
+    const results1 = braveRes1.ok ? ((await braveRes1.json()).web?.results || []) : [];
+    const results2 = braveRes2.ok ? ((await braveRes2.json()).web?.results || []) : [];
+
+    // Deduplicate by URL
+    const seenUrls = new Set<string>();
+    const results: any[] = [];
+    for (const r of [...results1, ...results2]) {
+      if (!seenUrls.has(r.url)) { seenUrls.add(r.url); results.push(r); }
+    }
+
+    if (results.length === 0) {
+      res.write(`data: ${JSON.stringify({ type: 'COMPLETE', reviews: [], rating: null, total_reviews: null, keywords: [] })}\n\n`);
       return res.end();
     }
 
-    const results1 = braveRes1.ok ? ((await braveRes1.json()).web?.results || []) : [];
-    const results2 = braveRes2.ok ? ((await braveRes2.json()).web?.results || []) : [];
-    
-    // Deduplicate by URL
-    const seen = new Set<string>();
-    const results: any[] = [];
-    for (const r of [...results1, ...results2]) {
-      if (!seen.has(r.url)) { seen.add(r.url); results.push(r); }
-    }
-
-    // Extract rating info from snippets
+    // First pass: extract rating and review count from snippets (fast, no API call)
     let rating = 0;
     let totalReviews = 0;
-    const reviews: Array<{ text: string; author: string; rating: number; date: string }> = [];
-    const keywords: string[] = [];
 
     for (const r of results) {
-      const snippet = r.description || '';
-      const title = r.title || '';
-      const combined = `${title} ${snippet}`;
+      const combined = `${r.title || ''} ${r.description || ''}`;
 
-      // Try to extract star rating (e.g., "4.8 stars", "Rating: 4.5/5", "4.7 out of 5", "4.8(127)")
       if (rating === 0) {
         const ratingMatch = combined.match(/(\d+\.?\d*)\s*(?:stars?|\/\s*5|out of 5)/i) ||
           combined.match(/rating[:\s]+(\d+\.?\d*)/i) ||
@@ -71,7 +66,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      // Try to extract review count
       if (totalReviews === 0) {
         const countMatch = combined.match(/(\d[\d,]*)\s*(?:reviews?|ratings?|Google reviews?)/i) ||
           combined.match(/\d\.\d\s*\((\d[\d,]*)\)/);
@@ -80,58 +74,93 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (parsed > 0 && parsed < 100000) totalReviews = parsed;
         }
       }
+    }
 
-      // Extract review-like snippets
-      if (snippet.length > 30 && reviews.length < 5) {
-        // Quoted text is highest confidence
-        const quoteMatches = snippet.match(/"([^"]{15,200})"/g);
-        if (quoteMatches) {
-          for (const qm of quoteMatches) {
-            const cleaned = qm.replace(/"/g, '').trim();
-            if (cleaned.length >= 15 && reviews.length < 5) {
-              reviews.push({ text: cleaned, author: 'Customer', rating: 5, date: 'Recently' });
-            }
-          }
+    // Build search context for Claude
+    const searchContext = results.slice(0, 10).map((r: any) =>
+      `${r.title}: ${r.description || ''}`
+    ).join('\n');
+
+    // Use Claude to extract real review content from search results
+    if (ANTHROPIC_API_KEY) {
+      try {
+        const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 800,
+            system: 'You extract customer review data from search results. Respond ONLY with valid JSON. No markdown fences.',
+            messages: [{
+              role: 'user',
+              content: `Extract customer review information for "${business_name}" from these search results:
+
+${searchContext}
+
+Return JSON with ONLY information that appears in the search results. Do not fabricate reviews or ratings.
+
+{
+  "rating": number or null (Google/overall rating if mentioned, e.g. 4.8),
+  "total_reviews": number or null (review count if mentioned),
+  "reviews": [
+    { "text": "actual customer quote or review excerpt from search results", "author": "name if available, otherwise Customer", "stars": 5, "date": "date if available, otherwise Recently" }
+  ],
+  "keywords": ["positive attributes mentioned about this business"]
+}
+
+Rules:
+- Only include reviews that appear as actual customer quotes or review excerpts in the search results
+- If search results mention the business rating (e.g., "4.8 stars"), include it
+- If no real review quotes exist in the results, return empty reviews array
+- Extract 2-4 positive keywords actually used to describe this business
+- Never invent or fabricate review text`
+            }],
+          }),
+        });
+
+        if (claudeRes.ok) {
+          const claudeData = await claudeRes.json();
+          const text = claudeData.content?.[0]?.text || '{}';
+          let parsed: any;
+          try { parsed = JSON.parse(text); } catch { parsed = {}; }
+
+          // Use Claude's extracted data, but only if it found real content
+          const claudeReviews = (parsed.reviews || []).slice(0, 3).map((r: any) => ({
+            text: r.text || '',
+            author: r.author || 'Customer',
+            rating: r.stars || 5,
+            date: r.date || 'Recently',
+          })).filter((r: any) => r.text.length > 10);
+
+          const claudeRating = parsed.rating && parsed.rating >= 1 && parsed.rating <= 5 ? parsed.rating : null;
+          const claudeCount = parsed.total_reviews && parsed.total_reviews > 0 ? parsed.total_reviews : null;
+          const claudeKeywords = (parsed.keywords || []).slice(0, 6);
+
+          res.write(`data: ${JSON.stringify({
+            type: 'COMPLETE',
+            reviews: claudeReviews,
+            rating: claudeRating || rating || null,
+            total_reviews: claudeCount || totalReviews || null,
+            keywords: claudeKeywords.length > 0 ? claudeKeywords : extractKeywords(results),
+          })}\n\n`);
+          return res.end();
         }
-
-        // Also look for review-like language
-        if (reviews.length < 5) {
-          const lower = snippet.toLowerCase();
-          const reviewSignals = ['great', 'excellent', 'friendly', 'recommend', 'best', 'love', 'amazing', 'fantastic', 'wonderful', 'professional', 'helpful', 'outstanding', 'highly recommend', 'so happy', 'thank you'];
-          const hasSignal = reviewSignals.some(s => lower.includes(s));
-          // Avoid snippets that are clearly directory/meta descriptions
-          const isMetaLike = lower.includes('read reviews') || lower.includes('write a review') || 
-            lower.includes('see all reviews') || lower.includes('click here') ||
-            lower.includes('yelp is a') || lower.includes('real people') ||
-            lower.includes('find, recommend') || lower.includes('fun and easy') ||
-            lower.includes('opening hours') || lower.includes('get directions') ||
-            lower.includes('claim this') || lower.includes('add photos') ||
-            lower.includes('sign up') || lower.includes('log in');
-
-          if (hasSignal && !isMetaLike) {
-            const cleaned = snippet.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-            // Only add if it reads like a review (not too short, not a directory listing)
-            if (cleaned.length > 30 && cleaned.length < 300 && !reviews.some(rv => rv.text === cleaned)) {
-              reviews.push({ text: cleaned, author: 'Customer', rating: 5, date: 'Recently' });
-            }
-          }
-        }
+      } catch (err) {
+        console.error('[scrape-reviews] Claude fallback error:', err);
       }
     }
 
-    // Extract keywords from all snippets
-    const allText = results.map((r: any) => `${r.title} ${r.description}`).join(' ').toLowerCase();
-    const keywordCandidates = ['friendly', 'professional', 'clean', 'modern', 'experienced', 'gentle', 'caring', 'affordable', 'quality', 'fast', 'reliable', 'trusted', 'family', 'comfortable', 'painless', 'thorough', 'knowledgeable', 'welcoming', 'expert', 'convenient'];
-    for (const kw of keywordCandidates) {
-      if (allText.includes(kw)) keywords.push(kw);
-    }
-
+    // Pure Brave fallback (no Claude available)
     res.write(`data: ${JSON.stringify({
       type: 'COMPLETE',
-      reviews: reviews.slice(0, 3),
+      reviews: [],
       rating: rating || null,
       total_reviews: totalReviews || null,
-      keywords: keywords.slice(0, 6),
+      keywords: extractKeywords(results),
     })}\n\n`);
   } catch (err) {
     console.error('[scrape-reviews] Error:', err);
@@ -139,4 +168,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return res.end();
+}
+
+function extractKeywords(results: any[]): string[] {
+  const allText = results.map((r: any) => `${r.title} ${r.description}`).join(' ').toLowerCase();
+  const candidates = ['friendly', 'professional', 'clean', 'modern', 'experienced', 'gentle', 'caring', 'affordable', 'quality', 'fast', 'reliable', 'trusted', 'family', 'comfortable', 'painless', 'thorough', 'knowledgeable', 'welcoming', 'expert', 'convenient'];
+  return candidates.filter(kw => allText.includes(kw)).slice(0, 6);
 }
