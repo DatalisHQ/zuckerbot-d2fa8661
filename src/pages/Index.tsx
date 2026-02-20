@@ -218,6 +218,7 @@ const Index = () => {
   const [adsLoading, setAdsLoading] = useState(false);
   const [reviewResult, setReviewResult] = useState<any>(null);
   const [competitorResult, setCompetitorResult] = useState<any>(null);
+  const [competitorStreamUrl, setCompetitorStreamUrl] = useState<string | null>(null);
 
   // Presentation scroll
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -634,21 +635,26 @@ const Index = () => {
           if (!line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6));
+            // Capture TinyFish streaming URL for "Watch agent live" link
+            if (event.type === "STREAMING_URL" && event.streamingUrl) {
+              setCompetitorStreamUrl(event.streamingUrl);
+            }
             if (event.type === "COMPLETE") {
               try { reader.cancel(); } catch {}
-              // Support both new format (competitors array) and old TinyFish format (competitor_ads)
-              let competitors: Array<{ name: string; badge: string; description: string }> = [];
+              let competitors: Array<{ name: string; badge: string; description: string; ad_snapshot_url?: string }> = [];
               if (event.competitors && event.competitors.length > 0) {
                 competitors = event.competitors.slice(0, 5).map((c: any) => ({
                   name: c.name || "Competitor",
                   badge: c.badge || "Active",
                   description: c.description || "Running ads on Facebook.",
+                  ad_snapshot_url: c.ad_snapshot_url || null,
                 }));
               } else if (event.competitor_ads && event.competitor_ads.length > 0) {
                 competitors = event.competitor_ads.slice(0, 3).map((ad: any) => ({
                   name: ad.page_name || "Competitor",
                   badge: ad.started_running_date ? `Running since ${ad.started_running_date}` : "Active",
                   description: ad.ad_body_text ? ad.ad_body_text.slice(0, 200) + (ad.ad_body_text.length > 200 ? "..." : "") : "Running ads on Facebook.",
+                  ad_snapshot_url: ad.ad_snapshot_url || null,
                 }));
               }
               if (competitors.length === 0) return null;
@@ -656,6 +662,8 @@ const Index = () => {
                 competitors,
                 common_hooks: event.common_hooks || [],
                 gaps: event.gaps || [],
+                source: event.source || null,
+                streamingUrl: event.streamingUrl || null,
               };
             }
           } catch {}
@@ -1264,6 +1272,12 @@ const Index = () => {
                   I found active ad campaigns from businesses in{" "}
                   <span className="text-gray-700 font-medium">{bizIndustry !== "your space" ? bizIndustry : "your industry"}</span>.
                 </p>
+                {competitorStreamUrl && (
+                  <a href={competitorStreamUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 mb-2">
+                    <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span></span>
+                    Watch agent live
+                  </a>
+                )}
 
                 <div className="space-y-4 mt-4">
                   {brand.competitors.map((comp, i) => {
@@ -1304,6 +1318,9 @@ const Index = () => {
                     </div>
                     );
                   })}
+                </div>
+                <div className="mt-6 flex items-center justify-center gap-2 text-xs text-gray-400">
+                  <span>🐟</span> Competitor intelligence powered by <a href="https://tinyfish.ai" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600">TinyFish</a>
                 </div>
               </div>
             </div>
