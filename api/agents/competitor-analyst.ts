@@ -1,22 +1,19 @@
 import {
-  supabaseAdmin,
   handleCors,
   createAutomationRun,
   completeAutomationRun,
   failAutomationRun,
   getLastRunForAgent,
   getBusinessWithConfig,
-  parseTinyfishSSE,
-  extractArrayFromResult,
 } from './_utils';
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 45 };
+
+const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
 export default async function handler(req: any, res: any) {
   if (handleCors(req, res)) return;
-
-  const TINYFISH_API_KEY = process.env.TINYFISH_API_KEY;
-  if (!TINYFISH_API_KEY) return res.status(500).json({ error: 'TinyFish API key not configured' });
 
   const { business_id, user_id, trigger_type, industry, location, country } = req.body || {};
   if (!business_id || !user_id) {
@@ -27,14 +24,14 @@ export default async function handler(req: any, res: any) {
   const startTime = Date.now();
 
   try {
-    // Resolve industry and location from business record if not provided
     const { business } = await getBusinessWithConfig(business_id);
-    const resolvedIndustry = industry || business?.trade || business?.industry || '';
-    const resolvedLocation = location || business?.suburb || business?.location || '';
+    const resolvedIndustry = industry || business?.trade || '';
+    const resolvedLocation = location || business?.suburb || '';
     const resolvedCountry = country || business?.country || 'AU';
+    const businessName = business?.name || '';
 
-    if (!resolvedIndustry || !resolvedLocation) {
-      return res.status(400).json({ error: 'Could not determine industry or location for this business' });
+    if (!resolvedIndustry) {
+      return res.status(400).json({ error: 'Could not determine industry for this business' });
     }
 
     runId = await createAutomationRun(
@@ -42,138 +39,113 @@ export default async function handler(req: any, res: any) {
       user_id,
       'competitor_analyst',
       trigger_type || 'manual',
-      `Scanning Facebook Ad Library for ${resolvedIndustry} in ${resolvedLocation}`,
+      `Analyzing competitors for ${resolvedIndustry} in ${resolvedLocation || resolvedCountry}`,
       { industry: resolvedIndustry, location: resolvedLocation, country: resolvedCountry }
     );
 
-    // Build the Facebook Ad Library URL
-    const searchQuery = encodeURIComponent(resolvedIndustry);
-    const countryCode = resolvedCountry === 'AU' ? 'AU' : 'US';
-    const adLibraryUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${searchQuery}`;
+    // Search Brave for competitor info
+    const query = `${resolvedIndustry} ${resolvedLocation || resolvedCountry} Facebook ads advertising competitors`;
+    const braveRes = await fetch(
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=10`,
+      { headers: { 'X-Subscription-Token': BRAVE_API_KEY, Accept: 'application/json' } }
+    );
 
-    // Call TinyFish
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 55000);
-
-    const response = await fetch('https://agent.tinyfish.ai/v1/automation/run-sse', {
-      method: 'POST',
-      headers: {
-        'X-API-Key': TINYFISH_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: adLibraryUrl,
-        goal: `Extract the first 5 active ads. Return JSON: {"data": [{"page_name": str, "ad_body_text": str, "started_running_date": str, "platforms": str}]}. Dismiss any popups quickly.`,
-        browser_profile: 'stealth',
-        proxy_config: { enabled: true, country_code: countryCode },
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      throw new Error(`TinyFish API returned ${response.status}`);
+    let searchContext = '';
+    if (braveRes.ok) {
+      const braveData = await braveRes.json();
+      const results = braveData.web?.results || [];
+      searchContext = results.slice(0, 8).map((r: any) => `${r.title}: ${r.description}`).join('\n');
     }
 
-    // Parse the full SSE stream internally
-    const { replayUrl, resultJson, status } = await parseTinyfishSSE(response);
+    // Use Claude to analyze competitive landscape
+    let competitorData: any = { competitors: [], common_hooks: [], gaps: [] };
 
-    if (status !== 'COMPLETED' || !resultJson) {
-      throw new Error(`TinyFish automation did not complete successfully. Status: ${status}`);
+    if (ANTHROPIC_API_KEY) {
+      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          system: 'You are a competitive intelligence analyst for local business advertising. Respond ONLY with valid JSON.',
+          messages: [{
+            role: 'user',
+            content: `Analyze the competitive advertising landscape:
+
+Industry: ${resolvedIndustry}
+Business: ${businessName}
+Location: ${resolvedLocation || 'N/A'}
+Country: ${resolvedCountry}
+
+Search results:
+${searchContext || 'No search data available.'}
+
+Return JSON:
+{
+  "competitors": [{ "name": "string", "badge": "Top Spender|Rising Star|New Entrant|Established", "description": "what they do and how they advertise", "threat_level": "high|medium|low" }],
+  "common_hooks": ["marketing hooks competitors use"],
+  "gaps": ["things competitors are NOT doing"],
+  "market_insights": "2-3 sentence competitive landscape summary",
+  "recommended_positioning": "how ${businessName || 'this business'} should position against competitors"
+}
+
+List 3-5 competitors. Be specific to the industry and location.`
+          }],
+        }),
+      });
+
+      if (claudeRes.ok) {
+        const claudeData = await claudeRes.json();
+        try {
+          competitorData = JSON.parse(claudeData.content?.[0]?.text || '{}');
+        } catch {}
+      }
     }
 
-    // Extract ads from the result
-    const ads = extractArrayFromResult(resultJson);
+    const competitors = (competitorData.competitors || []).slice(0, 5);
+    const commonHooks = (competitorData.common_hooks || []).slice(0, 5);
+    const gaps = (competitorData.gaps || []).slice(0, 4);
 
-    // Generate insights
-    const insights = generateInsights(ads, resolvedIndustry);
-
-    // Compare against last run to detect new/stopped ads
+    // Compare with last run
     const lastRun = await getLastRunForAgent(business_id, 'competitor_analyst');
-    const diff = compareWithLastRun(ads, lastRun?.output?.ads || []);
+    const previousNames = new Set((lastRun?.output?.competitors || []).map((c: any) => c.name?.toLowerCase()));
+    const currentNames = new Set(competitors.map((c: any) => c.name?.toLowerCase()));
+    const newCompetitors = competitors.filter((c: any) => !previousNames.has(c.name?.toLowerCase()));
+    const droppedCompetitors = (lastRun?.output?.competitors || []).filter((c: any) => !currentNames.has(c.name?.toLowerCase()));
 
     const output = {
-      ads,
-      insights,
-      diff,
-      ad_count: ads.length,
+      competitors,
+      common_hooks: commonHooks,
+      gaps,
+      market_insights: competitorData.market_insights || null,
+      recommended_positioning: competitorData.recommended_positioning || null,
+      diff: {
+        new_competitors: newCompetitors.map((c: any) => c.name),
+        dropped_competitors: droppedCompetitors.map((c: any) => c.name),
+      },
       scanned_at: new Date().toISOString(),
     };
 
     const durationMs = Date.now() - startTime;
-
-    // Build summaries
-    const summary = `Found ${ads.length} active competitor ads for ${resolvedIndustry} in ${resolvedLocation}. ${diff.new_ads.length} new, ${diff.stopped_ads.length} stopped since last scan.`;
+    const summary = `Found ${competitors.length} competitors for ${resolvedIndustry} in ${resolvedLocation || resolvedCountry}. ${commonHooks.length} hooks, ${gaps.length} gaps identified.`;
 
     let firstPersonSummary: string;
-    if (ads.length === 0) {
-      firstPersonSummary = `I checked the Facebook Ad Library for ${resolvedIndustry} businesses near ${resolvedLocation}. No active competitor ads found right now. That could mean less competition, or competitors may be using other channels.`;
-    } else if (diff.new_ads.length > 0) {
-      firstPersonSummary = `I scanned your competitors on Facebook. Found ${ads.length} active ads, ${diff.new_ads.length} are new since last time. ${insights.opportunity || ''}`.trim();
+    if (competitors.length > 0) {
+      const highThreat = competitors.filter((c: any) => c.threat_level === 'high').length;
+      firstPersonSummary = `I analyzed your competitive landscape. ${competitors.length} competitors active${highThreat > 0 ? `, ${highThreat} high-threat` : ''}. ${gaps.length > 0 ? `Found ${gaps.length} gaps they are not exploiting.` : ''} ${competitorData.recommended_positioning ? `My recommendation: ${competitorData.recommended_positioning}` : ''}`.trim();
     } else {
-      firstPersonSummary = `I checked the Facebook Ad Library for ${resolvedIndustry} businesses near ${resolvedLocation}. ${ads.length} competitors are running ads right now. ${insights.opportunity || ''}`.trim();
+      firstPersonSummary = `I searched for competitors in ${resolvedIndustry} near ${resolvedLocation || resolvedCountry} but found limited advertising data. This could mean low competition or competitors using channels other than Facebook.`;
     }
 
-    await completeAutomationRun(runId, output, summary, firstPersonSummary, {
-      replayUrl: replayUrl || undefined,
-      durationMs,
-    });
+    await completeAutomationRun(runId, output, summary, firstPersonSummary, { durationMs });
 
     return res.status(200).json({ run_id: runId, status: 'completed', output });
   } catch (error: any) {
-    if (runId) {
-      await failAutomationRun(runId, error.message || 'Unknown error');
-    }
+    if (runId) await failAutomationRun(runId, error.message || 'Unknown error');
     return res.status(500).json({ error: error.message || 'Competitor analysis failed' });
   }
-}
-
-function generateInsights(ads: any[], industry: string): Record<string, string> {
-  if (!ads.length) return { summary: 'No active competitor ads found.' };
-
-  const avgLen = Math.round(
-    ads.reduce((s: number, a: any) => s + (a.ad_body_text?.length || 0), 0) / ads.length
-  );
-  const multi = ads.filter((a: any) => a.platforms?.includes(',')).length;
-  const longRun = ads.filter((a: any) => {
-    try {
-      return (Date.now() - new Date(a.started_running_date).getTime()) / 86400000 > 90;
-    } catch {
-      return false;
-    }
-  }).length;
-
-  return {
-    summary: `Found ${ads.length} active competitor ads in ${industry}.`,
-    avg_copy_length: `${avgLen} chars avg copy length`,
-    multi_platform: `${multi}/${ads.length} ads on multiple platforms`,
-    long_running: `${longRun}/${ads.length} running 90+ days`,
-    opportunity:
-      longRun > ads.length / 2
-        ? 'Competitors rely on evergreen ads. Fresh creative could stand out.'
-        : 'Active market. Strong differentiation needed.',
-  };
-}
-
-function compareWithLastRun(
-  currentAds: any[],
-  previousAds: any[]
-): { new_ads: string[]; stopped_ads: string[]; unchanged: number } {
-  const currentNames = new Set(currentAds.map((a: any) => a.page_name?.toLowerCase()).filter(Boolean));
-  const previousNames = new Set(previousAds.map((a: any) => a.page_name?.toLowerCase()).filter(Boolean));
-
-  const newAds: string[] = [];
-  for (const name of currentNames) {
-    if (!previousNames.has(name)) newAds.push(name);
-  }
-
-  const stoppedAds: string[] = [];
-  for (const name of previousNames) {
-    if (!currentNames.has(name)) stoppedAds.push(name);
-  }
-
-  const unchanged = currentAds.length - newAds.length;
-
-  return { new_ads: newAds, stopped_ads: stoppedAds, unchanged: Math.max(0, unchanged) };
 }
