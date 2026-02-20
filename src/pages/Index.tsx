@@ -518,12 +518,13 @@ const Index = () => {
         setBrand((prev) => ({
           ...prev,
           // Only fill in gaps, never overwrite Phase 1 data
+          // Use != null checks instead of || to preserve falsy values like 0
           business_name: prev.business_name || ba.business_name || data.business_name,
-          rating: prev.rating || ba.rating,
-          review_count: prev.review_count || ba.review_count,
-          reviews: prev.reviews || ba.reviews,
-          competitors: prev.competitors || ba.competitors,
-          keywords: prev.keywords || ba.keywords,
+          rating: prev.rating != null ? prev.rating : ba.rating,
+          review_count: prev.review_count != null ? prev.review_count : ba.review_count,
+          reviews: prev.reviews?.length ? prev.reviews : ba.reviews,
+          competitors: prev.competitors?.length ? prev.competitors : ba.competitors,
+          keywords: prev.keywords?.length ? prev.keywords : ba.keywords,
           location: prev.location || ba.location,
           target_area: prev.target_area || ba.target_area,
           strategy: prev.strategy || ba.strategy,
@@ -1138,7 +1139,7 @@ const Index = () => {
             {brand.reviews && brand.reviews.length > 0 && (
             <div
               data-pres
-              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20 pres-visible"
             >
               <div className="pres-inner max-w-[720px] w-full">
                 <h2 className="text-[clamp(24px,4vw,36px)] font-extrabold tracking-tight mb-2">
@@ -1149,7 +1150,7 @@ const Index = () => {
                 </p>
 
                 {/* Rating summary */}
-                {brand.rating && (
+                {brand.rating != null && brand.rating > 0 && (
                 <div
                   data-stagger
                   className="review-card-anim flex items-center gap-4 mt-8 p-5 bg-gray-50 rounded-2xl border border-gray-100"
@@ -1253,9 +1254,9 @@ const Index = () => {
             {brand.competitors && brand.competitors.length > 0 && (
             <div
               data-pres
-              className="min-h-screen flex flex-col items-center justify-center px-6 py-20"
+              className="min-h-screen flex flex-col items-center justify-center px-6 py-20 pres-visible"
             >
-              <div className="pres-inner max-w-[720px] w-full">
+              <div className="pres-inner max-w-[720px] w-full" style={{opacity: 1, transform: 'none'}}>
                 <h2 className="text-[clamp(24px,4vw,36px)] font-extrabold tracking-tight mb-2">
                   {bizName}&apos;s competitors are not sleeping.
                 </h2>
