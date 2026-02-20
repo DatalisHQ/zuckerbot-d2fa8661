@@ -1154,8 +1154,8 @@ const Index = () => {
               </div>
             </div>
 
-            {/* ── Reviews (only shown when real data exists) ─────────── */}
-            {brand.reviews && brand.reviews.length > 0 && (
+            {/* ── Reviews (shown when we have reviews, rating, or keywords) ── */}
+            {((brand.reviews && brand.reviews.length > 0) || (brand.rating != null && brand.rating > 0) || (brand.keywords && brand.keywords.length > 0)) && (
             <div
               data-pres
               className="min-h-screen flex flex-col items-center justify-center px-6 py-20 pres-visible"
@@ -1224,11 +1224,22 @@ const Index = () => {
                   ))}
                 </div>
 
+                {/* Keyword pills */}
+                {brand.keywords && brand.keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-6 justify-center">
+                    {brand.keywords.map((kw, i) => (
+                      <span key={i} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-sm font-medium capitalize">
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 <p className="text-gray-500 text-[15px] mt-6 text-center">
-                  I will use these real customer stories in your ad copy.{" "}
-                  <strong className="text-gray-900">
-                    Social proof converts 2-3x better than generic messaging.
-                  </strong>
+                  {brand.reviews && brand.reviews.length > 0
+                    ? <>I will use these customer insights in your ad copy. <strong className="text-gray-900">Social proof converts 2-3x better than generic messaging.</strong></>
+                    : <>I will use what your customers value most to craft targeted ad copy. <strong className="text-gray-900">Ads grounded in real sentiment outperform generic ones every time.</strong></>
+                  }
                 </p>
               </div>
             </div>

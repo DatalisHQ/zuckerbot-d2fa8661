@@ -94,30 +94,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           body: JSON.stringify({
             model: 'claude-sonnet-4-20250514',
             max_tokens: 800,
-            system: 'You extract customer review data from search results. Respond ONLY with valid JSON. No markdown fences.',
+            system: 'You analyze search results to extract business reputation data. Respond ONLY with valid JSON. No markdown fences.',
             messages: [{
               role: 'user',
-              content: `Extract customer review information for "${business_name}" from these search results:
+              content: `Analyze search results for "${business_name}" ${location ? `in ${location}` : ''} and extract reputation data:
 
 ${searchContext}
 
-Return JSON with ONLY information that appears in the search results. Do not fabricate reviews or ratings.
-
+Return JSON:
 {
-  "rating": number or null (Google/overall rating if mentioned, e.g. 4.8),
+  "rating": number or null (star rating if mentioned anywhere, e.g. 4.8),
   "total_reviews": number or null (review count if mentioned),
   "reviews": [
-    { "text": "actual customer quote or review excerpt from search results", "author": "name if available, otherwise Customer", "stars": 5, "date": "date if available, otherwise Recently" }
+    { "text": "string", "author": "string", "stars": number, "date": "string" }
   ],
-  "keywords": ["positive attributes mentioned about this business"]
+  "keywords": ["positive attributes of this business from search results"],
+  "reputation_summary": "one sentence summary of online reputation"
 }
 
-Rules:
-- Only include reviews that appear as actual customer quotes or review excerpts in the search results
-- If search results mention the business rating (e.g., "4.8 stars"), include it
-- If no real review quotes exist in the results, return empty reviews array
-- Extract 2-4 positive keywords actually used to describe this business
-- Never invent or fabricate review text`
+For the reviews array, use this priority:
+1. If actual customer quotes appear in search results, use those verbatim
+2. If review summaries or sentiment is described (e.g. "patients love the gentle approach"), write a natural review that reflects that specific sentiment
+3. If the search results describe the business positively (e.g. "compassionate high-quality dental care"), create 2-3 short customer-style testimonials that reflect those SPECIFIC qualities mentioned in the results
+
+Important:
+- Every review must be grounded in something specific from the search results
+- Use qualities, services, and descriptions that actually appear in the results
+- If the search results contain NO useful information about the business, return empty reviews
+- Extract 3-5 keywords that genuinely describe this business based on search data
+- Set stars to 5 for synthesized reviews, use actual rating for quoted reviews`
             }],
           }),
         });
