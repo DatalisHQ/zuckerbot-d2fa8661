@@ -371,17 +371,16 @@ const Index = () => {
     }
 
     setTimeout(typeLine, 400);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bizName, bizIndustry]);
 
   const typewriterFiredRef = useRef(false);
   useEffect(() => {
-    if (phase === "presentation" && !typewriterFiredRef.current) {
+    if (phase === "presentation" && bizName && !typewriterFiredRef.current) {
       typewriterFiredRef.current = true;
       window.scrollTo(0, 0);
       runTypewriter();
     }
-  }, [phase, runTypewriter]);
+  }, [phase, bizName, runTypewriter]);
 
   // ── Thinking phase (Two-Phase Orchestration) ─────────────────────────
 
