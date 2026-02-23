@@ -1483,18 +1483,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Parse the path segments from the catch-all query
-  const pathSegments: string[] = Array.isArray(req.query.path)
-    ? req.query.path
-    : req.query.path
-      ? [req.query.path]
-      : [];
+  // Parse the path segments. With rewrites, path comes via query param or URL.
+  let segments: string[] = [];
 
-  // Also try parsing from the URL directly as fallback
-  let segments = pathSegments;
+  // Method 1: query.path from rewrite rule (?path=campaigns/preview)
+  const qp = req.query.path;
+  if (Array.isArray(qp)) {
+    segments = qp;
+  } else if (typeof qp === 'string' && qp) {
+    // Could be "campaigns/preview" as a single string
+    segments = qp.split('/').filter(Boolean);
+  }
+
+  // Method 2: Parse from URL if query didn't work
   if (segments.length === 0 && req.url) {
-    const urlPath = new URL(req.url, 'http://localhost').pathname;
-    const match = urlPath.match(/^\/api\/v1\/(.+)/);
+    const match = req.url.match(/\/api\/v1\/(.+?)(?:\?|$)/);
     if (match) {
       segments = match[1].split('/').filter(Boolean);
     }
