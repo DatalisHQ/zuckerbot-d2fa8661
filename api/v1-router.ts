@@ -15,6 +15,7 @@
  *   POST /api/v1/research/reviews         → handleReviews
  *   POST /api/v1/research/competitors     → handleCompetitors
  *   POST /api/v1/research/market          → handleMarket
+ *   POST /api/v1/creatives/generate       → handleCreativesGenerate
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -32,6 +33,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || 'BSA3NLr2aVETRurlr8KaqHN-pBcOEqP';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const GOOGLE_AI_API_KEY = process.env.GOOGLE_AI_API_KEY || '';
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1590,6 +1592,219 @@ Rules:
   }
 }
 
+// -- POST /api/v1/creatives/generate ------------------------------------
+
+async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { url, business_name, description, style, aspect_ratio, count } = req.body || {};
+
+  // Validate style
+  const validStyles = ['photo', 'illustration', 'minimal', 'bold'];
+  const selectedStyle: string = validStyles.includes(style) ? style : 'photo';
+
+  // Validate aspect ratio
+  const validRatios = ['1:1', '9:16', '16:9', '3:4', '4:3'];
+  const selectedRatio: string = validRatios.includes(aspect_ratio) ? aspect_ratio : '1:1';
+
+  // Validate count (1-4)
+  const imageCount = Math.min(Math.max(typeof count === 'number' ? count : 1, 1), 4);
+
+  if (!url && !business_name && !description) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'validation_error', message: 'At least one of `url`, `business_name`, or `description` is required' } });
+  }
+
+  if (!GOOGLE_AI_API_KEY) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
+    return res.status(500).json({ error: { code: 'config_error', message: 'Image generation service not configured' } });
+  }
+
+  if (!ANTHROPIC_API_KEY) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
+    return res.status(500).json({ error: { code: 'config_error', message: 'AI generation service not configured' } });
+  }
+
+  try {
+    // Step 1: Scrape website if URL provided
+    let scrapedData: Record<string, any> | null = null;
+    if (url) {
+      try {
+        let targetUrl = url;
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) targetUrl = 'https://' + targetUrl;
+
+        const scrapeResponse = await fetch(targetUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ZuckerBot/1.0; +https://zuckerbot.ai)' },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (scrapeResponse.ok) {
+          const html = await scrapeResponse.text();
+          const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const metaDescMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+          const ogDescMatch = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i);
+
+          const headingRegex = /<h[1-3][^>]*>([^<]*(?:<[^/][^>]*>[^<]*)*)<\/h[1-3]>/gi;
+          const headings: string[] = [];
+          let hMatch;
+          while ((hMatch = headingRegex.exec(html)) !== null && headings.length < 10) {
+            const cleanText = hMatch[1].replace(/<[^>]+>/g, '').trim();
+            if (cleanText) headings.push(cleanText);
+          }
+
+          const rawText = html
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 2000);
+
+          scrapedData = {
+            title: titleMatch?.[1]?.trim() || '',
+            description: metaDescMatch?.[1] || ogDescMatch?.[1] || '',
+            headings,
+            rawText,
+          };
+        }
+      } catch {
+        // Scraping failed - continue without it
+      }
+    }
+
+    // Step 2: Build context for Claude prompt generation
+    const resolvedName = business_name || scrapedData?.title || url || 'Business';
+    const resolvedDesc = description || scrapedData?.description || '';
+
+    const scrapedSection = scrapedData
+      ? `\nWEBSITE DATA:\n- Title: ${scrapedData.title}\n- Description: ${scrapedData.description}\n- Key headings: ${scrapedData.headings.join(', ')}\n- Content: ${scrapedData.rawText.slice(0, 1200)}\n`
+      : '';
+
+    const styleGuides: Record<string, string> = {
+      photo: 'Photorealistic style. Use natural lighting, real textures, and lifelike compositions. Think stock photography but more compelling.',
+      illustration: 'Modern digital illustration style. Clean lines, stylized elements, vibrant but cohesive color palette. Think premium tech startup aesthetic.',
+      minimal: 'Minimalist design. Lots of negative space, simple shapes, one or two accent colors against a clean white or light background. Less is more.',
+      bold: 'Bold and high-impact. Saturated colors, strong contrast, dynamic compositions. Think attention-grabbing billboard or social media thumb-stopper.',
+    };
+
+    const promptGenerationRequest = `You are an expert at writing image generation prompts for Facebook ad creatives. Generate ${imageCount} distinct image prompt(s) for this business.
+
+BUSINESS:
+- Name: ${resolvedName}
+- Description: ${resolvedDesc}
+${scrapedSection}
+STYLE: ${selectedStyle} - ${styleGuides[selectedStyle]}
+ASPECT RATIO: ${selectedRatio}
+
+Generate a JSON response with this EXACT structure (no markdown fences, pure JSON):
+
+{
+  "prompts": [
+    "<image generation prompt>"
+  ]
+}
+
+RULES FOR EACH PROMPT:
+- Optimized for Facebook/Instagram ads: bright, eye-catching, product-focused
+- Clean backgrounds that work well with text overlays
+- No text, words, letters, numbers, logos, or watermarks in the image
+- Be SPECIFIC about the subject, lighting, composition, and mood
+- Reference the actual product/service from the business info
+- Each prompt should take a different creative angle (different scene, composition, or focus)
+- Keep each prompt under 200 words
+- Do NOT include any em dashes in the prompts
+- The image should make someone stop scrolling and pay attention`;
+
+    const claudeText = await callClaude(
+      'You write image generation prompts for advertising creatives. Respond ONLY with valid JSON. No markdown fences, no explanation.',
+      promptGenerationRequest,
+      1500,
+    );
+
+    const parsed = parseClaudeJson(claudeText);
+    const prompts: string[] = Array.isArray(parsed.prompts) ? parsed.prompts.slice(0, imageCount) : [];
+
+    if (prompts.length === 0) {
+      console.error('[api/creatives] Failed to generate prompts from Claude:', claudeText?.slice(0, 500));
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+      return res.status(502).json({ error: { code: 'parse_error', message: 'Failed to generate image prompts from AI' } });
+    }
+
+    // Step 3: Call Imagen API for each prompt
+    const creatives: Array<{ base64: string; mimeType: string; prompt: string; aspect_ratio: string }> = [];
+
+    for (const imagePrompt of prompts) {
+      const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
+      const imagenBody = {
+        instances: [{ prompt: imagePrompt }],
+        parameters: { sampleCount: 1, aspectRatio: selectedRatio },
+      };
+
+      let imagenResponse = await fetch(imagenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(imagenBody),
+        signal: AbortSignal.timeout(60000),
+      });
+
+      // Fallback to fast model if standard fails
+      if (!imagenResponse.ok) {
+        console.warn('[api/creatives] Standard Imagen model failed, trying fast model');
+        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
+        imagenResponse = await fetch(fallbackUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(imagenBody),
+          signal: AbortSignal.timeout(60000),
+        });
+      }
+
+      if (!imagenResponse.ok) {
+        const errText = await imagenResponse.text();
+        console.error('[api/creatives] Imagen API error:', errText);
+        // Continue to next prompt instead of failing entirely
+        continue;
+      }
+
+      const imagenData = await imagenResponse.json();
+      const predictions = imagenData.predictions || [];
+
+      for (const prediction of predictions) {
+        if (prediction.bytesBase64Encoded) {
+          creatives.push({
+            base64: prediction.bytesBase64Encoded,
+            mimeType: prediction.mimeType || 'image/png',
+            prompt: imagePrompt,
+            aspect_ratio: selectedRatio,
+          });
+        }
+      }
+    }
+
+    if (creatives.length === 0) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+      return res.status(502).json({ error: { code: 'image_generation_failed', message: 'Image generation service failed to produce any images. Try again or use a different description.' } });
+    }
+
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+    return res.status(200).json({ creatives });
+  } catch (err: any) {
+    console.error('[api/creatives] Unexpected error:', err);
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
+    return res.status(500).json({ error: { code: 'internal_error', message: 'An unexpected error occurred while generating creatives', details: err?.message || String(err) } });
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN ROUTER
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1627,6 +1842,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'research/reviews') return handleReviews(req, res);
   if (route === 'research/competitors') return handleCompetitors(req, res);
   if (route === 'research/market') return handleMarket(req, res);
+  if (route === 'creatives/generate') return handleCreativesGenerate(req, res);
 
   // ── Dynamic campaign/:id routes ────────────────────────────────────
   if (segments.length === 3 && segments[0] === 'campaigns') {
@@ -1655,6 +1871,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/research/reviews',
         'POST /api/v1/research/competitors',
         'POST /api/v1/research/market',
+        'POST /api/v1/creatives/generate',
       ],
     },
   });
