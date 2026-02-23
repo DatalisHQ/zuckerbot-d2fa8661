@@ -27,26 +27,19 @@ const AuthCallback = () => {
           return;
         }
 
-        // Check if user has completed onboarding (has a business)
-        const { data: business } = await supabase
-          .from("businesses")
-          .select("id")
-          .eq("user_id", session.user.id)
-          .maybeSingle();
+        // Check for returnTo param in URL
+        const params = new URLSearchParams(window.location.search);
+        const returnTo = params.get("returnTo");
 
-        if (business) {
-          // Existing user with business - go to agency dashboard
-          navigate("/agency");
-        } else {
-          // New user - go to onboarding
-          // Fire pixel event for new signups
-          if (typeof window !== "undefined" && (window as any).fbq) {
-            (window as any).fbq("track", "CompleteRegistration");
-          }
-          // Track GA4 signup completion
-          trackFunnelEvent.completeSignup('google');
-          navigate("/onboarding");
+        // Fire pixel event for new signups
+        if (typeof window !== "undefined" && (window as any).fbq) {
+          (window as any).fbq("track", "CompleteRegistration");
         }
+        // Track GA4 signup completion
+        trackFunnelEvent.completeSignup('google');
+
+        // Always go to developer dashboard (API product)
+        navigate(returnTo || "/developer");
       } catch (error) {
         console.error("Auth callback error:", error);
         navigate("/auth");
