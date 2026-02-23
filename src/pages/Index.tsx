@@ -4,6 +4,56 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+// ── Feature cards data ─────────────────────────────────────────────────────
+
+const features = [
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+      </svg>
+    ),
+    title: "Campaign Generation",
+    description: "Send a URL. Get back a full campaign strategy with ad copy, targeting, and creative recommendations. Powered by deep page analysis.",
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605" />
+      </svg>
+    ),
+    title: "Market Research",
+    description: "Analyze any market or niche. Get audience insights, keyword opportunities, and positioning data your agent can act on.",
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+      </svg>
+    ),
+    title: "Competitor Analysis",
+    description: "See what competitors are running on Meta. Ad spend patterns, creative strategies, and audience targeting decoded for your agent.",
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+      </svg>
+    ),
+    title: "Review Intelligence",
+    description: "Extract customer sentiment from Google reviews. Find the phrases and pain points that make great ad copy, automatically.",
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+      </svg>
+    ),
+    title: "Launch & Manage",
+    description: "Deploy campaigns directly to Meta Ads Manager. Connect your Meta token and let your agent handle the full lifecycle.",
+  },
+];
+
 // ── Endpoint data ──────────────────────────────────────────────────────────
 
 const endpoints = [
@@ -102,6 +152,9 @@ const Index = () => {
             </Badge>
           </div>
           <div className="flex items-center gap-6">
+            <a href="#features" className="text-sm text-gray-400 hover:text-white transition-colors hidden sm:block">
+              Features
+            </a>
             <a href="#endpoints" className="text-sm text-gray-400 hover:text-white transition-colors hidden sm:block">
               API
             </a>
@@ -126,16 +179,16 @@ const Index = () => {
       <section className="pt-32 pb-20 px-6">
         <div className="max-w-4xl mx-auto">
           <Badge className="bg-green-500/10 text-green-400 border-green-500/20 mb-6">
-            Now in public beta
+            v0.1.0 / Early Access
           </Badge>
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-white mb-6">
-            Your AI agent can now
+            Facebook Ads infrastructure
             <br />
-            run Facebook ads.
+            for AI agents.
           </h1>
           <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mb-8 leading-relaxed">
-            REST API and MCP server for AI agents to create, launch, and optimize
-            Meta ad campaigns. Like AgentMail, but for ads.
+            Let your agent run Meta ad campaigns with a single API call.
+            REST API + MCP server. Research, create, launch, and optimize.
           </p>
           <div className="flex flex-wrap gap-3 mb-12">
             <Button
@@ -143,7 +196,7 @@ const Index = () => {
               onClick={() => navigate("/auth")}
               className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20"
             >
-              Get API Key
+              Get Your API Key
             </Button>
             <Button
               size="lg"
@@ -153,7 +206,7 @@ const Index = () => {
               }}
               className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white hover:border-white/20"
             >
-              View Docs
+              View Endpoints
             </Button>
           </div>
 
@@ -204,8 +257,8 @@ const Index = () => {
               {
                 step: "2",
                 title: "Install or call",
-                desc: "Use the MCP server with Claude, OpenClaw, or Cursor. Or call the REST API directly.",
-                code: "npx @zuckerbot/mcp-server",
+                desc: "Use the MCP server with Claude, Cursor, or any agent. Or call the REST API directly.",
+                code: "npx zuckerbot-mcp",
               },
               {
                 step: "3",
@@ -229,13 +282,42 @@ const Index = () => {
         </div>
       </section>
 
+      {/* ── Features ───────────────────────────────────────────────────── */}
+      <section id="features" className="py-20 px-6 border-t border-white/5">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold tracking-tight text-white mb-3">
+            What your agent can do
+          </h2>
+          <p className="text-gray-400 mb-10">
+            Five capabilities. Everything an AI agent needs to run Facebook ads end to end.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((feature) => (
+              <div
+                key={feature.title}
+                className="rounded-lg border border-white/10 bg-white/[0.02] p-5 hover:bg-white/[0.04] hover:border-white/15 transition-all group"
+              >
+                <div className="w-9 h-9 rounded-lg bg-blue-600/10 border border-blue-600/20 flex items-center justify-center text-blue-400 mb-4 group-hover:bg-blue-600/15 transition-colors">
+                  {feature.icon}
+                </div>
+                <h3 className="text-base font-semibold text-white mb-2">{feature.title}</h3>
+                <p className="text-sm text-gray-400 leading-relaxed">{feature.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── API Endpoints ──────────────────────────────────────────────── */}
       <section id="endpoints" className="py-20 px-6 border-t border-white/5">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold tracking-tight text-white mb-3">
             API Endpoints
           </h2>
-          <p className="text-gray-400 mb-10">
+          <p className="text-gray-400 mb-2">
+            Base URL: <code className="text-sm font-mono text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">https://zuckerbot.ai/api/v1/</code>
+          </p>
+          <p className="text-gray-500 text-sm mb-10">
             10 endpoints. Everything an AI agent needs to run a full ad campaign lifecycle.
           </p>
           <div className="grid gap-2">
@@ -332,7 +414,7 @@ const Index = () => {
             MCP Server
           </h2>
           <p className="text-gray-400 mb-10">
-            Works with Claude Desktop, OpenClaw, Cursor, and any MCP-compatible agent.
+            Works with Claude Desktop, Cursor, and any MCP-compatible agent.
             One command to install.
           </p>
 
@@ -349,7 +431,7 @@ const Index = () => {
       "command": "npx",
       "args": [
         "-y",
-        "@zuckerbot/mcp-server"
+        "zuckerbot-mcp"
       ],
       "env": {
         "ZUCKERBOT_API_KEY": "zk_your_key"
@@ -360,19 +442,19 @@ const Index = () => {
               </pre>
             </div>
 
-            {/* OpenClaw config */}
+            {/* Cursor config */}
             <div className="rounded-lg border border-white/10 bg-[#0f0f13] overflow-hidden">
               <div className="px-4 py-3 border-b border-white/5 bg-white/[0.02]">
-                <span className="text-xs text-gray-400 font-mono">openclaw config</span>
+                <span className="text-xs text-gray-400 font-mono">.cursor/mcp.json</span>
               </div>
               <pre className="p-5 text-sm font-mono overflow-x-auto leading-relaxed">
                 <code className="text-gray-300">{`{
-  "skills": {
+  "mcpServers": {
     "zuckerbot": {
       "command": "npx",
       "args": [
         "-y",
-        "@zuckerbot/mcp-server"
+        "zuckerbot-mcp"
       ],
       "env": {
         "ZUCKERBOT_API_KEY": "zk_your_key"
@@ -392,7 +474,7 @@ const Index = () => {
               <code>
                 <span className="text-gray-500">$ </span>
                 <span className="text-green-400">npx</span>
-                <span className="text-gray-300"> @zuckerbot/mcp-server</span>
+                <span className="text-gray-300"> zuckerbot-mcp</span>
               </code>
             </pre>
           </div>
@@ -476,6 +558,38 @@ const Index = () => {
         </div>
       </section>
 
+      {/* ── CTA ────────────────────────────────────────────────────────── */}
+      <section className="py-20 px-6 border-t border-white/5">
+        <div className="max-w-2xl mx-auto text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-white mb-4">
+            Ready to build?
+          </h2>
+          <p className="text-gray-400 mb-8">
+            Get your API key and start generating campaigns in minutes.
+            Free tier, no credit card.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button
+              size="lg"
+              onClick={() => navigate("/auth")}
+              className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20"
+            >
+              Get Your API Key
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              asChild
+              className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white hover:border-white/20"
+            >
+              <a href="https://www.npmjs.com/package/zuckerbot-mcp" target="_blank" rel="noopener noreferrer">
+                View on npm
+              </a>
+            </Button>
+          </div>
+        </div>
+      </section>
+
       {/* ── Footer ─────────────────────────────────────────────────────── */}
       <footer className="py-12 px-6 border-t border-white/5">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
@@ -491,7 +605,7 @@ const Index = () => {
             </a>
           </div>
           <div className="flex items-center gap-6">
-            <a href="#endpoints" className="text-sm text-gray-500 hover:text-white transition-colors">
+            <a href="/docs" className="text-sm text-gray-500 hover:text-white transition-colors">
               Docs
             </a>
             <a
@@ -501,6 +615,14 @@ const Index = () => {
               className="text-sm text-gray-500 hover:text-white transition-colors"
             >
               GitHub
+            </a>
+            <a
+              href="https://www.npmjs.com/package/zuckerbot-mcp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-gray-500 hover:text-white transition-colors"
+            >
+              npm
             </a>
             <a
               href="https://twitter.com/daavsss"
@@ -516,7 +638,7 @@ const Index = () => {
               rel="noopener noreferrer"
               className="text-sm text-gray-500 hover:text-white transition-colors"
             >
-              API Status
+              Status
             </a>
           </div>
         </div>
