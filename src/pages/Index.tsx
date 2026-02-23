@@ -128,12 +128,12 @@ const Index = () => {
   // Redirect logged-in users to dashboard
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) navigate("/agency");
+      if (session?.user) navigate("/developer");
     });
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) navigate("/agency");
+      if (session?.user) navigate("/developer");
     });
     return () => subscription.unsubscribe();
   }, [navigate]);

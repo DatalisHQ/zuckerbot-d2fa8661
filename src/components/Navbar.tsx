@@ -7,7 +7,7 @@ import { useEnhancedAuth } from "@/utils/auth";
 
 const NAV_LINKS = [
   { href: "/workspace", label: "Workspace", icon: Zap },
-  { href: "/agency", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/developer", label: "Dashboard", icon: LayoutDashboard },
   { href: "/campaign/new", label: "New Campaign", icon: Megaphone },
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/profile", label: "Settings", icon: Settings },
@@ -31,7 +31,7 @@ export const Navbar = ({ isAdmin = false }: { isAdmin?: boolean }) => {
       <div className="container mx-auto px-4">
         <div className="flex h-14 items-center justify-between">
           {/* Logo */}
-          <Link to="/agency" className="font-bold text-lg flex items-center gap-2">
+          <Link to="/developer" className="font-bold text-lg flex items-center gap-2">
             <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
               <span className="text-xs font-bold text-primary-foreground">Z</span>
             </div>

@@ -163,10 +163,10 @@ function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Index />} />
-              <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/agency" />} />
+              <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/developer" />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
-              <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
-              <Route path="/dashboard" element={user ? <AgencyDashboard /> : <Navigate to="/auth" />} />
+              <Route path="/onboarding" element={<Navigate to="/developer" />} />
+              <Route path="/dashboard" element={<Navigate to="/developer" />} />
               <Route path="/campaign/new" element={user ? <CampaignCreator /> : <Navigate to="/auth" />} />
               <Route path="/leads" element={user ? <LeadInbox /> : <Navigate to="/auth" />} />
               <Route path="/profile" element={user ? <Profile /> : <Navigate to="/auth" />} />
@@ -178,7 +178,7 @@ function App() {
               <Route path="/agent-console" element={<Navigate to="/workspace" />} />
               <Route path="/brief/:briefId" element={<BriefView />} />
               <Route path="/admin/audit" element={user ? <AdAudit /> : <Navigate to="/auth" />} />
-              <Route path="/agency" element={user ? <AgencyDashboard /> : <Navigate to="/auth" />} />
+              <Route path="/agency" element={<Navigate to="/developer" />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/developer" element={user ? <Developer /> : <Navigate to="/auth?returnTo=/developer" />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

@@ -35,17 +35,7 @@ const Auth = () => {
           .eq("user_id", session.user.id)
           .maybeSingle();
 
-        if (profile?.onboarding_completed) {
-          navigate("/agency");
-        } else {
-          // Fire pixel event for new signups landing on onboarding
-          if (typeof window !== "undefined" && (window as any).fbq) {
-            (window as any).fbq("track", "CompleteRegistration");
-          }
-          // Track GA4 signup completion
-          trackFunnelEvent.completeSignup('google');
-          navigate("/onboarding");
-        }
+        navigate("/developer");
       }
     };
     checkUser();
@@ -85,7 +75,7 @@ const Auth = () => {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/onboarding`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?returnTo=/developer`,
           data: { full_name: fullName },
         },
       });
@@ -140,7 +130,7 @@ const Auth = () => {
       });
 
       // Auto-confirmed — go straight to onboarding
-      navigate("/onboarding");
+      navigate("/developer");
 
     } catch (error: any) {
       toast({
@@ -193,11 +183,11 @@ const Auth = () => {
           full_name: user.user_metadata?.full_name || null,
           onboarding_completed: false,
         });
-        navigate("/onboarding");
+        navigate("/developer");
       } else if (profile.onboarding_completed) {
-        navigate("/agency");
+        navigate("/developer");
       } else {
-        navigate("/onboarding");
+        navigate("/developer");
       }
     } catch (error: any) {
       toast({
