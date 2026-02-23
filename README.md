@@ -1,177 +1,170 @@
-# Supabase CLI
+# 🤖 ZuckerBot
 
-[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main) [![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/supabase-cli/setup-cli/master?style=flat-square&label=Bitbucket%20Canary)](https://bitbucket.org/supabase-cli/setup-cli/pipelines) [![Gitlab Pipeline Status](https://img.shields.io/gitlab/pipeline-status/sweatybridge%2Fsetup-cli?label=Gitlab%20Canary)
-](https://gitlab.com/sweatybridge/setup-cli/-/pipelines)
+**Facebook Ads infrastructure for AI agents.**
 
-[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
+Build, launch, and manage Meta ad campaigns programmatically. ZuckerBot wraps the Meta Marketing API into a clean REST API and MCP server so AI agents and developers can run Facebook and Instagram ads without touching Business Manager.
 
-This repository contains all the functionality for Supabase CLI.
+[![npm version](https://img.shields.io/npm/v/zuckerbot-mcp?style=flat-square&color=blue)](https://www.npmjs.com/package/zuckerbot-mcp)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](./LICENSE)
+[![MCP Registry](https://img.shields.io/badge/MCP-Registry-purple?style=flat-square)](https://github.com/modelcontextprotocol/servers)
 
-- [x] Running Supabase locally
-- [x] Managing database migrations
-- [x] Creating and deploying Supabase Functions
-- [x] Generating types directly from your database schema
-- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
-
-## Getting started
-
-### Install the CLI
-
-Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
+## Quick Start
 
 ```bash
-npm i supabase --save-dev
+npx zuckerbot-mcp
 ```
 
-When installing with yarn 4, you need to disable experimental fetch with the following nodejs config.
+Get your API key at [zuckerbot.ai/developer](https://zuckerbot.ai/developer). Keys use the format `zb_live_` (production) or `zb_test_` (sandbox).
+
+## What It Does
+
+- **Campaign generation** - Give it a URL, get back a full ad strategy with targeting, budget, and copy
+- **Ad creative generation** - AI-generated ad images via Google Imagen 4.0 and copy via Claude
+- **Campaign management** - Launch, pause, and resume campaigns on the Meta Marketing API
+- **Performance tracking** - Real-time metrics from Meta: impressions, clicks, spend, leads, CPL
+- **Conversion feedback** - Feed lead quality back to Meta's algorithm to improve targeting
+- **Market research** - Competitor ad analysis, review intelligence, and market benchmarks
+- **API key provisioning** - Create and manage API keys programmatically
+
+## API Endpoints
+
+Base URL: `https://zuckerbot.ai/api/v1/`
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/campaigns/preview` | Generate ad preview from a URL (no Meta account needed) |
+| `POST` | `/campaigns/create` | Create full campaign with strategy, targeting, and creatives |
+| `POST` | `/campaigns/:id/launch` | Launch a draft campaign on Meta (creates real ads) |
+| `POST` | `/campaigns/:id/pause` | Pause or resume a live campaign |
+| `GET` | `/campaigns/:id/performance` | Get real-time campaign metrics from Meta |
+| `POST` | `/campaigns/:id/conversions` | Send lead quality feedback to Meta's conversion API |
+| `POST` | `/research/reviews` | Get review intelligence for a business |
+| `POST` | `/research/competitors` | Analyze competitor ads in a category and location |
+| `POST` | `/research/market` | Get market size, trends, and ad benchmarks |
+| `POST` | `/creatives/generate` | Generate ad copy and images independently |
+| `POST` | `/keys/create` | Create a new API key |
+
+All endpoints require `Authorization: Bearer zb_live_...` except where noted.
+
+## MCP Server
+
+ZuckerBot ships as an MCP server for AI agents that support the [Model Context Protocol](https://modelcontextprotocol.io). One `npx` command connects any MCP client to the full Facebook Ads API.
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "zuckerbot": {
+      "command": "npx",
+      "args": ["-y", "zuckerbot-mcp"],
+      "env": {
+        "ZUCKERBOT_API_KEY": "zb_live_your_key_here"
+      }
+    }
+  }
+}
+```
+
+### Cursor
+
+Add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "zuckerbot": {
+      "command": "npx",
+      "args": ["-y", "zuckerbot-mcp"],
+      "env": {
+        "ZUCKERBOT_API_KEY": "zb_live_your_key_here"
+      }
+    }
+  }
+}
+```
+
+### OpenClaw
 
 ```
-NODE_OPTIONS=--no-experimental-fetch yarn add supabase
+/skill install zuckerbot
 ```
 
-> **Note**
-For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
+Or add to your OpenClaw MCP config:
 
-<details>
-  <summary><b>macOS</b></summary>
+```json
+{
+  "mcpServers": {
+    "zuckerbot": {
+      "command": "npx",
+      "args": ["-y", "zuckerbot-mcp"],
+      "env": {
+        "ZUCKERBOT_API_KEY": "zb_live_your_key_here"
+      }
+    }
+  }
+}
+```
 
-  Available via [Homebrew](https://brew.sh). To install:
+### Environment Variables
 
-  ```sh
-  brew install supabase/tap/supabase
-  ```
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ZUCKERBOT_API_KEY` | Yes | - | Your API key (`zb_live_` or `zb_test_` prefix) |
+| `ZUCKERBOT_API_URL` | No | `https://zuckerbot.ai/api/v1` | Override for self-hosted or staging |
 
-  To install the beta release channel:
-  
-  ```sh
-  brew install supabase/tap/supabase-beta
-  brew link --overwrite supabase-beta
-  ```
-  
-  To upgrade:
+## Code Examples
 
-  ```sh
-  brew upgrade supabase
-  ```
-</details>
-
-<details>
-  <summary><b>Windows</b></summary>
-
-  Available via [Scoop](https://scoop.sh). To install:
-
-  ```powershell
-  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-  scoop install supabase
-  ```
-
-  To upgrade:
-
-  ```powershell
-  scoop update supabase
-  ```
-</details>
-
-<details>
-  <summary><b>Linux</b></summary>
-
-  Available via [Homebrew](https://brew.sh) and Linux packages.
-
-  #### via Homebrew
-
-  To install:
-
-  ```sh
-  brew install supabase/tap/supabase
-  ```
-
-  To upgrade:
-
-  ```sh
-  brew upgrade supabase
-  ```
-
-  #### via Linux packages
-
-  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
-
-  ```sh
-  sudo apk add --allow-untrusted <...>.apk
-  ```
-
-  ```sh
-  sudo dpkg -i <...>.deb
-  ```
-
-  ```sh
-  sudo rpm -i <...>.rpm
-  ```
-
-  ```sh
-  sudo pacman -U <...>.pkg.tar.zst
-  ```
-</details>
-
-<details>
-  <summary><b>Other Platforms</b></summary>
-
-  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
-
-  ```sh
-  go install github.com/supabase/cli@latest
-  ```
-
-  Add a symlink to the binary in `$PATH` for easier access:
-
-  ```sh
-  ln -s "$(go env GOPATH)/bin/cli" /usr/bin/supabase
-  ```
-
-  This works on other non-standard Linux distros.
-</details>
-
-<details>
-  <summary><b>Community Maintained Packages</b></summary>
-
-  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
-  To install in your working directory:
-
-  ```bash
-  pkgx install supabase
-  ```
-
-  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
-</details>
-
-### Run the CLI
+### Generate a campaign preview
 
 ```bash
-supabase bootstrap
+curl -X POST https://zuckerbot.ai/api/v1/campaigns/preview \
+  -H "Authorization: Bearer zb_live_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example-yoga.com",
+    "ad_count": 2
+  }'
 ```
 
-Or using npx:
+Returns AI-generated ad headlines, copy, and rationale for each variant. No Meta account required.
+
+### Generate ad creatives
 
 ```bash
-npx supabase bootstrap
+curl -X POST https://zuckerbot.ai/api/v1/creatives/generate \
+  -H "Authorization: Bearer zb_live_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "business_name": "Sunrise Yoga Studio",
+    "description": "Hot yoga and meditation classes in Austin, TX",
+    "count": 3,
+    "generate_images": true
+  }'
 ```
 
-The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
+Returns ad copy variants with AI-generated images (powered by Imagen 4.0).
 
-## Docs
+## Pricing
 
-Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
+| Plan | Price | Previews/mo | Rate Limit |
+|------|-------|-------------|------------|
+| **Free** | $0 | 25 | 10 req/min |
+| **Pro** | $49/mo | 500 | 60 req/min |
+| **Enterprise** | Custom | Custom | 300 req/min |
 
-## Breaking changes
+All plans include access to every endpoint. [Get your API key](https://zuckerbot.ai/developer).
 
-We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
+## Links
 
-However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
+- [Website](https://zuckerbot.ai)
+- [Documentation](https://zuckerbot.ai/docs)
+- [npm package](https://www.npmjs.com/package/zuckerbot-mcp)
+- [MCP Registry](https://github.com/modelcontextprotocol/servers)
+- [Issues](https://github.com/DatalisHQ/zuckerbot/issues)
 
-## Developing
+## License
 
-To run from source:
-
-```sh
-# Go >= 1.22
-go run . help
-```
+MIT - see [LICENSE](./LICENSE)
