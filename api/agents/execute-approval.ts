@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { supabaseAdmin, handleCors } from './_utils';
+import { supabaseAdmin, handleCors } from './_utils.js';
 
 export const config = { maxDuration: 60 };
 

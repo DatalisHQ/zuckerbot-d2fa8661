@@ -5,7 +5,7 @@ import {
   failAutomationRun,
   getLastRunForAgent,
   getBusinessWithConfig,
-} from './_utils';
+} from './_utils.js';
 
 export const config = { maxDuration: 60 };
 

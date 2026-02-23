@@ -44,23 +44,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     case 'webhook':
       return handleSmsWebhook(req, res);
     case 'scrape':
-      return requireAdmin(req, res) || handleScrape(req, res);
+      if (requireAdmin(req, res)) return;
+      return handleScrape(req, res);
     case 'send':
-      return requireAdmin(req, res) || handleSendSms(req, res);
+      if (requireAdmin(req, res)) return;
+      return handleSendSms(req, res);
     case 'summary':
-      return requireAdmin(req, res) || handleSummary(req, res);
+      if (requireAdmin(req, res)) return;
+      return handleSummary(req, res);
     default:
       return res.status(400).json({ error: 'Unknown action. Use ?action=scrape|send|track|webhook|summary' });
   }
 }
 
-function requireAdmin(req: VercelRequest, res: VercelResponse): void | null {
+function requireAdmin(req: VercelRequest, res: VercelResponse): boolean {
   const adminKey = req.headers['x-admin-key'] as string;
   if (!adminKey || adminKey !== process.env.ADMIN_SECRET) {
     res.status(401).json({ error: 'Unauthorized' });
-    return;
+    return true; // blocked
   }
-  return null;
+  return false; // allowed
 }
 
 // ── Track Click ────────────────────────────────────────────────────────────

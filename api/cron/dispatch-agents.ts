@@ -1,5 +1,5 @@
-import { supabaseAdmin, shouldRunAgent } from '../agents/_utils';
-import type { AgentType } from '../agents/_utils';
+import { supabaseAdmin, shouldRunAgent } from '../agents/_utils.js';
+import type { AgentType } from '../agents/_utils.js';
 
 export const config = { maxDuration: 300 };
 
