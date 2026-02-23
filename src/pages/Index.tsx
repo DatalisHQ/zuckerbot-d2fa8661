@@ -66,6 +66,7 @@ const endpoints = [
   { method: "POST", path: "research/reviews", desc: "Review intelligence" },
   { method: "POST", path: "research/competitors", desc: "Competitor analysis" },
   { method: "POST", path: "research/market", desc: "Market research" },
+  { method: "POST", path: "creatives/generate", desc: "AI ad image generation" },
   { method: "POST", path: "keys/create", desc: "Generate API keys" },
 ];
 
@@ -115,7 +116,7 @@ const pricingTiers = [
       "Dedicated support",
     ],
     cta: "Contact Us",
-    href: "mailto:davis@zuckerbot.ai",
+    href: "mailto:davis@datalis.app",
     highlighted: false,
   },
 ];
@@ -125,18 +126,7 @@ const pricingTiers = [
 const Index = () => {
   const navigate = useNavigate();
 
-  // Redirect logged-in users to dashboard
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) navigate("/developer");
-    });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) navigate("/developer");
-    });
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+  // No auto-redirect: let logged-in users see the landing page too
 
   return (
     <div className="dark bg-[#09090b] text-gray-100 min-h-screen font-sans antialiased">
@@ -179,7 +169,7 @@ const Index = () => {
       <section className="pt-32 pb-20 px-6">
         <div className="max-w-4xl mx-auto">
           <Badge className="bg-green-500/10 text-green-400 border-green-500/20 mb-6">
-            v0.1.0 / Early Access
+            v0.2.0 / Early Access
           </Badge>
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-white mb-6">
             Facebook Ads infrastructure
@@ -225,7 +215,7 @@ const Index = () => {
                 <span className="text-gray-300"> -X POST https://zuckerbot.ai/api/v1/campaigns/preview \</span>
 {"\n"}
                 <span className="text-gray-300">  -H </span>
-                <span className="text-yellow-300">"Authorization: Bearer zk_your_api_key"</span>
+                <span className="text-yellow-300">"Authorization: Bearer zb_your_api_key"</span>
                 <span className="text-gray-300"> \</span>
 {"\n"}
                 <span className="text-gray-300">  -H </span>
@@ -252,7 +242,7 @@ const Index = () => {
                 step: "1",
                 title: "Get an API key",
                 desc: "Free tier includes 25 preview calls per month. No credit card required.",
-                code: "zk_live_abc123...",
+                code: "zb_live_abc123...",
               },
               {
                 step: "2",

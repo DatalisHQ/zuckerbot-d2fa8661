@@ -18,6 +18,7 @@ const sections = [
   { id: "ep-reviews", label: "POST /research/reviews", indent: true },
   { id: "ep-competitors", label: "POST /research/competitors", indent: true },
   { id: "ep-market", label: "POST /research/market", indent: true },
+  { id: "ep-creatives", label: "POST /creatives/generate", indent: true },
   { id: "ep-keys", label: "POST /keys/create", indent: true },
   { id: "mcp-server", label: "MCP Server" },
   { id: "rate-limits", label: "Rate Limits" },
@@ -709,6 +710,34 @@ const Docs = () => {
   -d '{"industry": "pizza restaurant", "location": "Austin, TX", "country": "US"}'`}
           />
 
+          {/* POST /v1/creatives/generate */}
+          <EndpointSection
+            id="ep-creatives"
+            method="POST"
+            path="/v1/creatives/generate"
+            description="Generate AI-powered ad creative images. Provide a URL or business description and get back Facebook-optimized ad images via Google Imagen 4.0."
+            requestBody={`{
+  "url": "https://joes-pizza.com",
+  "style": "photo",
+  "aspect_ratio": "1:1",
+  "count": 2
+}`}
+            responseBody={`{
+  "creatives": [
+    {
+      "base64": "iVBORw0KGgo...",
+      "mimeType": "image/png",
+      "prompt": "Vibrant overhead shot of fresh pizza...",
+      "aspect_ratio": "1:1"
+    }
+  ]
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/creatives/generate \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"url": "https://joes-pizza.com", "style": "photo", "count": 2}'`}
+          />
+
           {/* POST /v1/keys/create */}
           <EndpointSection
             id="ep-keys"
@@ -782,7 +811,7 @@ const Docs = () => {
                 { name: "zuckerbot_delete_campaign", desc: "Delete a campaign from Meta and ZuckerBot" },
                 { name: "zuckerbot_research_competitors", desc: "Analyze competitor ads" },
                 { name: "zuckerbot_research_reviews", desc: "Get review intelligence for a business" },
-                { name: "zuckerbot_generate_creatives", desc: "Generate ad copy and images" },
+                { name: "zuckerbot_generate_ad_creative", desc: "Generate ad images via Imagen 4.0" },
                 { name: "zuckerbot_sync_conversion", desc: "Send conversion feedback to Meta" },
               ].map((tool) => (
                 <div
