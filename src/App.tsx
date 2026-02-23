@@ -26,6 +26,7 @@ import AdAudit from "./pages/AdAudit";
 import AgentConsole from "./pages/AgentConsole";
 import CampaignWorkspace from "./pages/CampaignWorkspace";
 import AgencyDashboard from "./pages/AgencyDashboard";
+import Docs from "./pages/Docs";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -177,6 +178,7 @@ function App() {
               <Route path="/brief/:briefId" element={<BriefView />} />
               <Route path="/admin/audit" element={user ? <AdAudit /> : <Navigate to="/auth" />} />
               <Route path="/agency" element={user ? <AgencyDashboard /> : <Navigate to="/auth" />} />
+              <Route path="/docs" element={<Docs />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
