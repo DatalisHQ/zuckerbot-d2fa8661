@@ -313,32 +313,145 @@ async function handlePreview(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const edgeResponse = await fetch(`${SUPABASE_URL}/functions/v1/generate-preview`, {
+    // Step 1: Scrape the website
+    let scrapedData: Record<string, any> | null = null;
+    try {
+      let targetUrl = url;
+      if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) targetUrl = 'https://' + targetUrl;
+
+      const scrapeResponse = await fetch(targetUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ZuckerBot/1.0; +https://zuckerbot.ai)' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (scrapeResponse.ok) {
+        const html = await scrapeResponse.text();
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        const metaDescMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+        const ogDescMatch = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i);
+        const ogImageMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+
+        const headingRegex = /<h[1-3][^>]*>([^<]*(?:<[^/][^>]*>[^<]*)*)<\/h[1-3]>/gi;
+        const headings: string[] = [];
+        let hMatch;
+        while ((hMatch = headingRegex.exec(html)) !== null && headings.length < 10) {
+          const cleanText = hMatch[1].replace(/<[^>]+>/g, '').trim();
+          if (cleanText) headings.push(cleanText);
+        }
+
+        const rawText = html
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 2000);
+
+        scrapedData = {
+          title: titleMatch?.[1]?.trim() || '',
+          description: metaDescMatch?.[1] || ogDescMatch?.[1] || '',
+          ogImage: ogImageMatch?.[1] || null,
+          headings,
+          rawText,
+        };
+      }
+    } catch {
+      // Scraping failed — continue without it
+    }
+
+    // Step 2: Generate ad copy via Claude
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicApiKey) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/preview', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
+      return res.status(500).json({ error: { code: 'config_error', message: 'AI generation service not configured' } });
+    }
+
+    const numAds = Math.min(Math.max(ad_count ?? 2, 1), 3);
+    const businessName = scrapedData?.title || url;
+    const scrapedSection = scrapedData
+      ? `\nWEBSITE DATA:\n- Title: ${scrapedData.title}\n- Description: ${scrapedData.description}\n- Key headings: ${scrapedData.headings.join(', ')}\n- Content: ${scrapedData.rawText.slice(0, 1500)}\n`
+      : 'No website content could be scraped. Base analysis on the URL only.';
+
+    const reviewSection = review_data
+      ? `\nREVIEW DATA:\n- Rating: ${review_data.rating || 'N/A'}\n- Review count: ${review_data.review_count || 'N/A'}\n- Themes: ${(review_data.themes || []).join(', ')}\n- Best quotes: ${(review_data.best_quotes || []).join('; ')}\n`
+      : '';
+
+    const competitorSection = competitor_data
+      ? `\nCOMPETITOR DATA:\n- Common hooks: ${(competitor_data.common_hooks || []).join(', ')}\n- Gaps: ${(competitor_data.gaps || []).join(', ')}\n`
+      : '';
+
+    const prompt = `You are a Facebook ad copywriter for ZuckerBot. Generate ${numAds} ad variant(s) for this business.
+
+URL: ${url}
+${scrapedSection}${reviewSection}${competitorSection}
+
+Generate a JSON response with EXACTLY this structure (no markdown, pure JSON):
+
+{
+  "business_name": "string — inferred business name",
+  "description": "string — one line describing the business",
+  "ads": [
+    {
+      "headline": "string — max 40 chars, attention-grabbing",
+      "copy": "string — max 125 chars, compelling primary text",
+      "rationale": "string — why this angle works for this business",
+      "angle": "social_proof|urgency|value|curiosity"
+    }
+  ]
+}
+
+RULES:
+- Each ad should use a DIFFERENT psychological angle
+- Reference SPECIFIC details from the website (not generic copy)
+- If review data is provided, incorporate ratings/quotes as social proof
+- If competitor data is provided, exploit gaps they're missing
+- Headlines must be ≤40 chars. Copy must be ≤125 chars.
+- Respond with ONLY the JSON. No explanation.`;
+
+    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-      body: JSON.stringify({ url, ad_count: ad_count ?? 2, review_data: review_data ?? undefined, competitor_data: competitor_data ?? undefined }),
+      headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] }),
     });
 
-    const data = await edgeResponse.json();
-    const statusCode = edgeResponse.ok ? 200 : edgeResponse.status;
+    if (!claudeResponse.ok) {
+      const errText = await claudeResponse.text();
+      console.error('[api/preview] Claude API error:', errText);
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/preview', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+      return res.status(502).json({ error: { code: 'upstream_error', message: 'AI generation service returned an error' } });
+    }
 
-    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/preview', method: 'POST', statusCode, responseTimeMs: Date.now() - startTime });
+    const claudeData = await claudeResponse.json();
+    const rawText = claudeData.content?.[0]?.type === 'text' ? claudeData.content[0].text : '';
 
-    if (!edgeResponse.ok) {
-      return res.status(statusCode).json({ error: { code: 'upstream_error', message: data?.error || 'The preview generation service returned an error', details: data } });
+    let parsed: Record<string, any>;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      // Try extracting JSON from markdown fences
+      const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[1]);
+      } else {
+        console.error('[api/preview] Failed to parse Claude response:', rawText.slice(0, 500));
+        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/preview', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+        return res.status(502).json({ error: { code: 'parse_error', message: 'Failed to parse AI-generated ad data' } });
+      }
     }
 
     const previewId = `prev_${Date.now().toString(36)}`;
-    const response: Record<string, any> = {
+    const response = {
       id: previewId,
-      business_name: data.business_name || data.businessName || null,
-      description: data.description || null,
-      ads: Array.isArray(data.ads)
-        ? data.ads.map((ad: any) => ({
-            headline: ad.headline || ad.title || '',
-            copy: ad.copy || ad.primary_text || ad.text || '',
-            rationale: ad.rationale || ad.reasoning || '',
-            image_url: ad.image_url || ad.imageUrl || null,
+      business_name: parsed.business_name || businessName,
+      description: parsed.description || scrapedData?.description || null,
+      ads: Array.isArray(parsed.ads)
+        ? parsed.ads.map((ad: any) => ({
+            headline: ad.headline || '',
+            copy: ad.copy || ad.primary_text || '',
+            rationale: ad.rationale || '',
+            angle: ad.angle || 'general',
+            image_url: scrapedData?.ogImage || null,
           }))
         : [],
       enrichment: {
@@ -350,10 +463,12 @@ async function handlePreview(req: VercelRequest, res: VercelResponse) {
       created_at: new Date().toISOString(),
     };
 
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/preview', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
     return res.status(200).json(response);
   } catch (err: any) {
-    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/preview', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
-    return res.status(502).json({ error: { code: 'upstream_error', message: 'Failed to reach the preview generation service', details: err?.message || String(err) } });
+    console.error('[api/preview] Unexpected error:', err);
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/preview', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
+    return res.status(500).json({ error: { code: 'internal_error', message: 'An unexpected error occurred', details: err?.message || String(err) } });
   }
 }
 
