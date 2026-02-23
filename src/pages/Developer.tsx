@@ -25,8 +25,6 @@ interface ApiKey {
   tier: string;
   created_at: string;
   last_used_at: string | null;
-  requests_today: number;
-  requests_this_month: number;
 }
 
 interface ApiUsageRow {
@@ -137,7 +135,7 @@ const Developer = () => {
     try {
       const { data, error } = await (supabase as any)
         .from("api_keys")
-        .select("id, user_id, tier, created_at, last_used_at, requests_today, requests_this_month")
+        .select("id, user_id, tier, created_at, last_used_at")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -472,8 +470,6 @@ const Developer = () => {
                         <TableHead className="text-gray-400">Tier</TableHead>
                         <TableHead className="text-gray-400">Created</TableHead>
                         <TableHead className="text-gray-400">Last Used</TableHead>
-                        <TableHead className="text-gray-400 text-right">Requests Today</TableHead>
-                        <TableHead className="text-gray-400 text-right">Requests This Month</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -497,8 +493,6 @@ const Developer = () => {
                           </TableCell>
                           <TableCell className="text-gray-400 text-sm">{formatDate(key.created_at)}</TableCell>
                           <TableCell className="text-gray-400 text-sm">{formatDate(key.last_used_at)}</TableCell>
-                          <TableCell className="text-gray-300 text-sm text-right">{key.requests_today}</TableCell>
-                          <TableCell className="text-gray-300 text-sm text-right">{key.requests_this_month}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
