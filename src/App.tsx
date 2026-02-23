@@ -27,6 +27,7 @@ import AgentConsole from "./pages/AgentConsole";
 import CampaignWorkspace from "./pages/CampaignWorkspace";
 import AgencyDashboard from "./pages/AgencyDashboard";
 import Docs from "./pages/Docs";
+import Developer from "./pages/Developer";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -179,6 +180,7 @@ function App() {
               <Route path="/admin/audit" element={user ? <AdAudit /> : <Navigate to="/auth" />} />
               <Route path="/agency" element={user ? <AgencyDashboard /> : <Navigate to="/auth" />} />
               <Route path="/docs" element={<Docs />} />
+              <Route path="/developer" element={user ? <Developer /> : <Navigate to="/auth?returnTo=/developer" />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

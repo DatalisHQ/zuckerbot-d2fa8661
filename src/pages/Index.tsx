@@ -83,7 +83,7 @@ const pricingTiers = [
       "Community support",
     ],
     cta: "Get API Key",
-    href: "/auth",
+    href: "/developer",
     highlighted: false,
   },
   {
@@ -99,7 +99,7 @@ const pricingTiers = [
       "Email support",
     ],
     cta: "Start Pro",
-    href: "/auth",
+    href: "/developer",
     highlighted: true,
   },
   {
@@ -166,7 +166,7 @@ const Index = () => {
             </a>
             <Button
               size="sm"
-              onClick={() => navigate("/auth")}
+              onClick={() => navigate("/developer")}
               className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-none"
             >
               Get API Key
@@ -193,7 +193,7 @@ const Index = () => {
           <div className="flex flex-wrap gap-3 mb-12">
             <Button
               size="lg"
-              onClick={() => navigate("/auth")}
+              onClick={() => navigate("/developer")}
               className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20"
             >
               Get Your API Key
@@ -571,7 +571,7 @@ const Index = () => {
           <div className="flex flex-wrap justify-center gap-3">
             <Button
               size="lg"
-              onClick={() => navigate("/auth")}
+              onClick={() => navigate("/developer")}
               className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20"
             >
               Get Your API Key
