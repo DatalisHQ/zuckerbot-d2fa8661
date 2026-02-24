@@ -1787,7 +1787,7 @@ RULES FOR EACH PROMPT:
 
           // Upload to Supabase Storage via raw fetch (most reliable on Vercel)
           let publicUrl = '';
-          let _uploadError = '';
+          let _uploadError = `init:srkLen=${SUPABASE_SERVICE_ROLE_KEY.length},url=${SUPABASE_URL.slice(0,30)}`;
           try {
             const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
             const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
