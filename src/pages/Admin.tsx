@@ -53,6 +53,9 @@ interface ApiUsageRow {
   id: string;
   api_key_id: string;
   endpoint: string;
+  method?: string;
+  status_code?: number | null;
+  response_time_ms?: number | null;
   created_at: string;
 }
 
@@ -197,8 +200,14 @@ const Admin = () => {
     const signupsToday = data.users.filter((u) => isToday(u.created_at)).length;
     const totalKeys = data.apiKeys.length;
     const activeKeys = data.apiKeys.filter((k) => isWithinDays(k.last_used_at, 7)).length;
+    const totalCalls = data.apiUsage.length;
+    const successCalls = data.apiUsage.filter((u) => u.status_code && u.status_code < 400).length;
+    const failedCalls = data.apiUsage.filter((u) => u.status_code && u.status_code >= 400).length;
+    const avgResponseMs = data.apiUsage.length > 0
+      ? Math.round(data.apiUsage.reduce((sum, u) => sum + (u.response_time_ms || 0), 0) / data.apiUsage.filter((u) => u.response_time_ms).length)
+      : 0;
 
-    return { totalUsers, signupsToday, totalKeys, activeKeys };
+    return { totalUsers, signupsToday, totalKeys, activeKeys, totalCalls, successCalls, failedCalls, avgResponseMs };
   }, [data]);
 
   // Build lookup maps
@@ -314,6 +323,8 @@ const Admin = () => {
       endpoint: u.endpoint,
       keyPrefix: keyPrefixMap.get(u.api_key_id) || "unknown",
       timestamp: u.created_at,
+      statusCode: u.status_code,
+      responseTimeMs: u.response_time_ms,
     }));
   }, [data]);
 
@@ -376,13 +387,17 @@ const Admin = () => {
         )}
 
         {/* ── Overview Cards ───────────────────────────────────────────── */}
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-8">
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 mb-8">
           {[
             { label: "Total Users", value: stats?.totalUsers, icon: "👥" },
             { label: "Signups Today", value: stats?.signupsToday, icon: "📈" },
             { label: "Total API Keys", value: stats?.totalKeys, icon: "🔑" },
             { label: "Active Keys (7d)", value: stats?.activeKeys, icon: "⚡" },
-          ].map(({ label, value, icon }) => (
+            { label: "API Calls", value: stats?.totalCalls, icon: "📡" },
+            { label: "Successful", value: stats?.successCalls, icon: "✅", color: "text-green-400" },
+            { label: "Failed", value: stats?.failedCalls, icon: "❌", color: "text-red-400" },
+            { label: "Avg Response", value: stats?.avgResponseMs ? `${stats.avgResponseMs}ms` : "0ms", icon: "⏱️" },
+          ].map(({ label, value, icon, color }) => (
             <Card key={label} className="bg-white/[0.02] border-white/10">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -392,7 +407,7 @@ const Admin = () => {
                 {dataLoading ? (
                   <Skeleton className="h-8 w-16 bg-white/5" />
                 ) : (
-                  <p className="text-3xl font-bold text-white tabular-nums">{value ?? 0}</p>
+                  <p className={`text-2xl font-bold tabular-nums ${(color as string) || "text-white"}`}>{value ?? 0}</p>
                 )}
               </CardContent>
             </Card>
@@ -541,13 +556,26 @@ const Admin = () => {
                 <div className="divide-y divide-white/5 max-h-[420px] overflow-y-auto">
                   {recentActivity.map((a, i) => (
                     <div key={i} className="px-4 py-2.5 flex items-start gap-3">
-                      <div className="shrink-0 mt-0.5 w-1.5 h-1.5 rounded-full bg-blue-500" />
+                      <div className={`shrink-0 mt-0.5 w-1.5 h-1.5 rounded-full ${a.statusCode && a.statusCode >= 400 ? "bg-red-500" : "bg-green-500"}`} />
                       <div className="min-w-0 flex-1">
-                        <code className="text-xs text-gray-300 break-all">{a.endpoint}</code>
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs text-gray-300 break-all">{a.endpoint}</code>
+                          {a.statusCode && (
+                            <Badge className={`text-[9px] px-1.5 py-0 ${a.statusCode < 400 ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+                              {a.statusCode}
+                            </Badge>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[10px] text-gray-600 font-mono">{a.keyPrefix}</span>
                           <span className="text-[10px] text-gray-600">·</span>
                           <span className="text-[10px] text-gray-600">{timeAgo(a.timestamp)}</span>
+                          {a.responseTimeMs != null && (
+                            <>
+                              <span className="text-[10px] text-gray-600">·</span>
+                              <span className="text-[10px] text-gray-600">{a.responseTimeMs >= 1000 ? `${(a.responseTimeMs / 1000).toFixed(1)}s` : `${a.responseTimeMs}ms`}</span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
