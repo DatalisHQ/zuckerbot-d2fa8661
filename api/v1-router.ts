@@ -1785,25 +1785,29 @@ RULES FOR EACH PROMPT:
           const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
           const fileName = `creative-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-          // Upload to Supabase Storage via JS client
+          // Upload to Supabase Storage via raw fetch (most reliable on Vercel)
           let publicUrl = '';
           try {
             const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
-            const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-              .from('ad-previews')
-              .upload(fileName, buf, {
-                contentType: mimeType,
-                upsert: true,
-              });
-
-            if (uploadError) {
-              console.warn('[api/creatives] Storage upload failed:', JSON.stringify(uploadError));
-            } else if (uploadData?.path) {
-              publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${uploadData.path}`;
-              console.log('[api/creatives] Uploaded:', publicUrl);
+            const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
+            const uploadRes = await fetch(storageUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': mimeType,
+                'x-upsert': 'true',
+                'Content-Length': String(buf.length),
+              },
+              body: buf,
+            });
+            if (uploadRes.ok) {
+              publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
+            } else {
+              const errBody = await uploadRes.text();
+              console.error('[api/creatives] Storage upload failed:', uploadRes.status, errBody);
             }
-          } catch (uploadErr) {
-            console.warn('[api/creatives] Storage upload error:', uploadErr);
+          } catch (uploadErr: any) {
+            console.error('[api/creatives] Storage upload error:', uploadErr?.message || uploadErr);
           }
 
           creatives.push({
