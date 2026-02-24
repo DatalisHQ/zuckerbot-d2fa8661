@@ -1785,33 +1785,22 @@ RULES FOR EACH PROMPT:
           const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
           const fileName = `creative-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-          // Upload to Supabase Storage
+          // Upload to Supabase Storage via JS client
           let publicUrl = '';
           try {
-            // Decode base64 to binary using atob + Uint8Array (works in all runtimes)
-            const binaryStr = atob(prediction.bytesBase64Encoded);
-            const bytes = new Uint8Array(binaryStr.length);
-            for (let i = 0; i < binaryStr.length; i++) {
-              bytes[i] = binaryStr.charCodeAt(i);
-            }
+            const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
+            const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+              .from('ad-previews')
+              .upload(fileName, buf, {
+                contentType: mimeType,
+                upsert: true,
+              });
 
-            const uploadRes = await fetch(
-              `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                  'Content-Type': mimeType,
-                  'x-upsert': 'true',
-                },
-                body: bytes,
-              }
-            );
-            if (uploadRes.ok) {
-              publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-            } else {
-              const errText = await uploadRes.text();
-              console.warn('[api/creatives] Storage upload failed:', uploadRes.status, errText);
+            if (uploadError) {
+              console.warn('[api/creatives] Storage upload failed:', JSON.stringify(uploadError));
+            } else if (uploadData?.path) {
+              publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${uploadData.path}`;
+              console.log('[api/creatives] Uploaded:', publicUrl);
             }
           } catch (uploadErr) {
             console.warn('[api/creatives] Storage upload error:', uploadErr);
