@@ -1801,12 +1801,15 @@ RULES FOR EACH PROMPT:
               },
               body: buf,
             });
+            const uploadBody = await uploadRes.text();
             if (uploadRes.ok) {
               publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
             } else {
-              const errBody = await uploadRes.text();
-              _uploadError = `${uploadRes.status}: ${errBody}`;
+              _uploadError = `HTTP ${uploadRes.status}: ${uploadBody}`;
               console.error('[api/creatives] Storage upload failed:', _uploadError);
+            }
+            if (!publicUrl) {
+              _uploadError = _uploadError || `status=${uploadRes.status} body=${uploadBody.slice(0, 200)} bufLen=${buf.length} srkLen=${SUPABASE_SERVICE_ROLE_KEY.length}`;
             }
           } catch (uploadErr: any) {
             _uploadError = `catch: ${uploadErr?.message || String(uploadErr)}`;
