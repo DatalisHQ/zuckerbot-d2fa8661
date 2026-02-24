@@ -338,6 +338,199 @@ const Developer = () => {
           </p>
         </div>
 
+        {/* ── First-run onboarding flow (no keys yet) ────────────────── */}
+        {!keysLoading && keys.length === 0 ? (
+          <div className="space-y-6">
+            {/* Step 1: Generate key */}
+            {!newKey ? (
+              <Card className="bg-white/[0.02] border-white/10">
+                <CardHeader className="text-center pb-4">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/20">
+                    <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                    </svg>
+                  </div>
+                  <CardTitle className="text-white text-2xl">Welcome to the ZuckerBot API</CardTitle>
+                  <CardDescription className="text-gray-400 mt-2 text-base max-w-lg mx-auto">
+                    Generate your API key to start building. It only takes a few seconds, and we will walk you through setup right after.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center pb-8">
+                  <div className="flex items-center gap-2 mb-6 text-sm text-gray-500">
+                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 1 of 3</Badge>
+                    <span>Generate your API key</span>
+                  </div>
+                  <Button
+                    onClick={handleGenerateKey}
+                    disabled={generating}
+                    size="lg"
+                    className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20 text-base px-8 py-6"
+                  >
+                    {generating ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Generate Your API Key
+                      </>
+                    )}
+                  </Button>
+                  <p className="mt-4 text-xs text-gray-600">Free tier: 10 req/min, 100 req/day</p>
+                </CardContent>
+              </Card>
+            ) : (
+              /* Steps 2 & 3: Key generated, show setup instructions */
+              <div className="space-y-6">
+                {/* Key display */}
+                <Card className="bg-white/[0.02] border-white/10 border-green-500/20">
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10">
+                        <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <div>
+                        <CardTitle className="text-white text-lg">API Key Created</CardTitle>
+                        <CardDescription className="text-gray-400">
+                          Save this key now. You will not see it again.
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-3">
+                      <code className="flex-1 bg-black/30 rounded-lg px-4 py-3 font-mono text-sm text-green-400 break-all border border-white/5">
+                        {newKey.key}
+                      </code>
+                      <Button
+                        size="sm"
+                        onClick={handleCopyKey}
+                        className={
+                          keyCopied
+                            ? "bg-green-600 hover:bg-green-500 text-white border-0 shrink-0"
+                            : "bg-white/10 hover:bg-white/20 text-white border-0 shrink-0"
+                        }
+                      >
+                        {keyCopied ? (
+                          <>
+                            <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copy
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">
+                        {newKey.tier}
+                      </Badge>
+                      <span className="text-xs text-gray-500">ID: {newKey.id}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Step 2: MCP config */}
+                <Card className="bg-white/[0.02] border-white/10">
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 2 of 3</Badge>
+                      <CardTitle className="text-white text-lg">Connect to your AI editor</CardTitle>
+                    </div>
+                    <CardDescription className="text-gray-400 mt-1">
+                      Add ZuckerBot as an MCP server in Claude Desktop or Cursor. Your key is already filled in.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white mb-3">Claude Desktop</h3>
+                      <CodeBlock title="claude_desktop_config.json">{`{
+  "mcpServers": {
+    "zuckerbot": {
+      "command": "npx",
+      "args": ["-y", "zuckerbot-mcp"],
+      "env": {
+        "ZUCKERBOT_API_KEY": "${newKey.key}"
+      }
+    }
+  }
+}`}</CodeBlock>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-white mb-3">Cursor</h3>
+                      <CodeBlock title=".cursor/mcp.json">{`{
+  "mcpServers": {
+    "zuckerbot": {
+      "command": "npx",
+      "args": ["-y", "zuckerbot-mcp"],
+      "env": {
+        "ZUCKERBOT_API_KEY": "${newKey.key}"
+      }
+    }
+  }
+}`}</CodeBlock>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Step 3: curl example */}
+                <Card className="bg-white/[0.02] border-white/10">
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 3 of 3</Badge>
+                      <CardTitle className="text-white text-lg">Make your first API call</CardTitle>
+                    </div>
+                    <CardDescription className="text-gray-400 mt-1">
+                      Test the API with a quick curl command. Your key is ready to go.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <CodeBlock title="Generate a campaign preview">{`curl -X POST https://zuckerbot.ai/api/v1/campaigns/preview \\
+  -H "Authorization: Bearer ${newKey.key}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"url": "https://example.com"}'`}</CodeBlock>
+                  </CardContent>
+                </Card>
+
+                {/* Docs link + continue to dashboard */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-5">
+                  <p className="text-sm text-blue-300">
+                    <strong>Want more?</strong> Check the{" "}
+                    <a href="/docs" className="text-blue-400 hover:text-blue-300 underline underline-offset-2">
+                      full documentation
+                    </a>{" "}
+                    for all endpoints, request/response formats, and examples.
+                  </p>
+                  <Button
+                    onClick={() => setNewKey(null)}
+                    variant="outline"
+                    size="sm"
+                    className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white shrink-0"
+                  >
+                    Go to Dashboard
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+
         <Tabs defaultValue="keys" className="w-full">
           <TabsList className="bg-white/5 border border-white/10">
             <TabsTrigger value="keys" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400">
@@ -778,6 +971,7 @@ const Developer = () => {
             </Card>
           </TabsContent>
         </Tabs>
+        )}
       </main>
 
       {/* ── Footer ─────────────────────────────────────────────────────── */}
