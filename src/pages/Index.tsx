@@ -169,63 +169,107 @@ const Index = () => {
       <section className="pt-32 pb-20 px-6">
         <div className="max-w-4xl mx-auto">
           <Badge className="bg-green-500/10 text-green-400 border-green-500/20 mb-6">
-            v0.2.0 / Early Access
+            MCP Server + REST API
           </Badge>
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-white mb-6">
-            Facebook Ads infrastructure
+            MCP Server
             <br />
-            for AI agents.
+            for Meta Ads.
           </h1>
           <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mb-8 leading-relaxed">
-            Let your agent run Meta ad campaigns with a single API call.
-            REST API + MCP server. Research, create, launch, and optimize.
+            Let any AI agent create and manage Facebook ad campaigns programmatically.
+            One command to install. 11 tools. Free tier.
           </p>
+
+          {/* Install snippet - most important thing on the page */}
+          <div className="rounded-lg border border-white/10 bg-[#0f0f13] overflow-hidden mb-8">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+              <div className="w-3 h-3 rounded-full bg-red-500/60" />
+              <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+              <div className="w-3 h-3 rounded-full bg-green-500/60" />
+              <span className="text-xs text-gray-500 ml-2 font-mono">install</span>
+            </div>
+            <pre className="p-5 text-sm font-mono overflow-x-auto leading-relaxed">
+              <code>
+                <span className="text-gray-500">$ </span>
+                <span className="text-green-400">npx</span>
+                <span className="text-gray-300"> zuckerbot-mcp</span>
+              </code>
+            </pre>
+          </div>
+
           <div className="flex flex-wrap gap-3 mb-12">
             <Button
               size="lg"
               onClick={() => navigate("/developer")}
               className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20"
             >
-              Get Your API Key
+              Get Free API Key
             </Button>
             <Button
               size="lg"
               variant="outline"
               onClick={() => {
-                document.getElementById("endpoints")?.scrollIntoView({ behavior: "smooth" });
+                document.getElementById("mcp")?.scrollIntoView({ behavior: "smooth" });
               }}
               className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white hover:border-white/20"
             >
-              View Endpoints
+              MCP Setup Guide
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              asChild
+              className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white hover:border-white/20"
+            >
+              <a href="/docs">API Docs</a>
             </Button>
           </div>
 
-          {/* Terminal snippet */}
-          <div className="rounded-lg border border-white/10 bg-[#0f0f13] overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-white/[0.02]">
-              <div className="w-3 h-3 rounded-full bg-red-500/60" />
-              <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
-              <div className="w-3 h-3 rounded-full bg-green-500/60" />
-              <span className="text-xs text-gray-500 ml-2 font-mono">terminal</span>
+          {/* Works with */}
+          <div className="flex flex-wrap items-center gap-6 text-sm text-gray-500">
+            <span>Works with:</span>
+            <span className="text-gray-300 font-medium">Claude Desktop</span>
+            <span className="text-gray-600">|</span>
+            <span className="text-gray-300 font-medium">Cursor</span>
+            <span className="text-gray-600">|</span>
+            <span className="text-gray-300 font-medium">Windsurf</span>
+            <span className="text-gray-600">|</span>
+            <span className="text-gray-300 font-medium">OpenClaw</span>
+            <span className="text-gray-600">|</span>
+            <span className="text-gray-300 font-medium">Any MCP client</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Use Cases ──────────────────────────────────────────────────── */}
+      <section className="py-16 px-6 border-t border-white/5 bg-white/[0.01]">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold tracking-tight text-white mb-8">
+            What devs are building
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-5">
+              <div className="text-2xl mb-3">🤖</div>
+              <h3 className="text-base font-semibold text-white mb-2">Autonomous lead gen agents</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Agents that research a market, create campaigns, launch ads, and pipe leads into a CRM. No human in the loop.
+              </p>
             </div>
-            <pre className="p-5 text-sm font-mono overflow-x-auto leading-relaxed">
-              <code>
-                <span className="text-gray-500">$ </span>
-                <span className="text-green-400">curl</span>
-                <span className="text-gray-300"> -X POST https://zuckerbot.ai/api/v1/campaigns/preview \</span>
-{"\n"}
-                <span className="text-gray-300">  -H </span>
-                <span className="text-yellow-300">"Authorization: Bearer zb_your_api_key"</span>
-                <span className="text-gray-300"> \</span>
-{"\n"}
-                <span className="text-gray-300">  -H </span>
-                <span className="text-yellow-300">"Content-Type: application/json"</span>
-                <span className="text-gray-300"> \</span>
-{"\n"}
-                <span className="text-gray-300">  -d </span>
-                <span className="text-yellow-300">'{`{"url": "https://joes-pizza.com"}`}'</span>
-              </code>
-            </pre>
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-5">
+              <div className="text-2xl mb-3">🛒</div>
+              <h3 className="text-base font-semibold text-white mb-2">E-commerce ad automation</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Product launch triggers an agent that generates creatives, writes copy, and deploys ads to Meta. Fully automated.
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-5">
+              <div className="text-2xl mb-3">📊</div>
+              <h3 className="text-base font-semibold text-white mb-2">Competitive intelligence</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Agents that monitor competitor ads, analyze their strategy, and adjust your campaigns in response. Real-time.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -308,7 +352,7 @@ const Index = () => {
             Base URL: <code className="text-sm font-mono text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">https://zuckerbot.ai/api/v1/</code>
           </p>
           <p className="text-gray-500 text-sm mb-10">
-            10 endpoints. Everything an AI agent needs to run a full ad campaign lifecycle.
+            11 endpoints. Everything an AI agent needs to run a full ad campaign lifecycle.
           </p>
           <div className="grid gap-2">
             {endpoints.map((ep) => (
