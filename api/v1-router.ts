@@ -1787,6 +1787,7 @@ RULES FOR EACH PROMPT:
 
           // Upload to Supabase Storage via raw fetch (most reliable on Vercel)
           let publicUrl = '';
+          let _uploadError = '';
           try {
             const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
             const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
@@ -1804,10 +1805,12 @@ RULES FOR EACH PROMPT:
               publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
             } else {
               const errBody = await uploadRes.text();
-              console.error('[api/creatives] Storage upload failed:', uploadRes.status, errBody);
+              _uploadError = `${uploadRes.status}: ${errBody}`;
+              console.error('[api/creatives] Storage upload failed:', _uploadError);
             }
           } catch (uploadErr: any) {
-            console.error('[api/creatives] Storage upload error:', uploadErr?.message || uploadErr);
+            _uploadError = `catch: ${uploadErr?.message || String(uploadErr)}`;
+            console.error('[api/creatives] Storage upload error:', _uploadError);
           }
 
           creatives.push({
@@ -1816,6 +1819,7 @@ RULES FOR EACH PROMPT:
             mimeType,
             prompt: imagePrompt,
             aspect_ratio: selectedRatio,
+            ...(!publicUrl && _uploadError ? { _upload_error: _uploadError } : {}),
           });
         }
       }
