@@ -1788,7 +1788,13 @@ RULES FOR EACH PROMPT:
           // Upload to Supabase Storage
           let publicUrl = '';
           try {
-            const buffer = Buffer.from(prediction.bytesBase64Encoded, 'base64');
+            // Decode base64 to binary using atob + Uint8Array (works in all runtimes)
+            const binaryStr = atob(prediction.bytesBase64Encoded);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) {
+              bytes[i] = binaryStr.charCodeAt(i);
+            }
+
             const uploadRes = await fetch(
               `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`,
               {
@@ -1798,21 +1804,22 @@ RULES FOR EACH PROMPT:
                   'Content-Type': mimeType,
                   'x-upsert': 'true',
                 },
-                body: buffer,
+                body: bytes,
               }
             );
             if (uploadRes.ok) {
               publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
             } else {
-              console.warn('[api/creatives] Storage upload failed:', await uploadRes.text());
+              const errText = await uploadRes.text();
+              console.warn('[api/creatives] Storage upload failed:', uploadRes.status, errText);
             }
           } catch (uploadErr) {
             console.warn('[api/creatives] Storage upload error:', uploadErr);
           }
 
           creatives.push({
-            url: publicUrl,
-            ...(publicUrl ? {} : { base64: prediction.bytesBase64Encoded }),
+            url: publicUrl || undefined,
+            base64: prediction.bytesBase64Encoded,
             mimeType,
             prompt: imagePrompt,
             aspect_ratio: selectedRatio,
