@@ -1741,7 +1741,7 @@ RULES FOR EACH PROMPT:
     }
 
     // Step 3: Call Imagen API for each prompt
-    const creatives: Array<{ url: string | null; base64?: string; mimeType: string; prompt: string; aspect_ratio: string; _upload_debug?: string }> = [];
+    const creatives: Array<{ url: string | null; base64?: string; mimeType: string; prompt: string; aspect_ratio: string }> = [];
 
     for (const imagePrompt of prompts) {
       const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
@@ -1787,7 +1787,7 @@ RULES FOR EACH PROMPT:
 
           // Upload to Supabase Storage via raw fetch (most reliable on Vercel)
           let publicUrl = '';
-          let _uploadError = `init:srkLen=${SUPABASE_SERVICE_ROLE_KEY.length},url=${SUPABASE_URL.slice(0,30)}`;
+          let _uploadError = '';
           try {
             const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
             const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
@@ -1822,7 +1822,6 @@ RULES FOR EACH PROMPT:
             mimeType,
             prompt: imagePrompt,
             aspect_ratio: selectedRatio,
-            _upload_debug: _uploadError || 'no error captured',
           });
         }
       }
@@ -1834,7 +1833,7 @@ RULES FOR EACH PROMPT:
     }
 
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
-    return res.status(200).json({ creatives, _v: 'v5-debug' });
+    return res.status(200).json({ creatives });
   } catch (err: any) {
     console.error('[api/creatives] Unexpected error:', err);
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
