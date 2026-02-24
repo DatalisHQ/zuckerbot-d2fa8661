@@ -1806,6 +1806,86 @@ RULES FOR EACH PROMPT:
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ADMIN DATA (routed via /api/admin-data → v1-router?path=admin-data)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ADMIN_EMAILS = ['davisgrainger@gmail.com', 'davis@datalis.app'];
+
+async function handleAdminData(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Extract JWT
+  const authHeader =
+    (req.headers['authorization'] as string) ||
+    (req.headers['Authorization'] as string) ||
+    '';
+
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+
+  // Validate JWT using anon client (admin client can't validate user JWTs)
+  const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(token);
+
+  if (authError || !user) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  // Check admin email
+  if (!user.email || !ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+    return res.status(403).json({ error: 'Forbidden: admin access required' });
+  }
+
+  try {
+    // Fetch auth users via admin API
+    const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers({
+      perPage: 1000,
+    });
+
+    if (usersError) {
+      console.error('Error fetching users:', usersError);
+      return res.status(500).json({ error: 'Failed to fetch users' });
+    }
+
+    // Fetch all API keys
+    const { data: apiKeys, error: keysError } = await supabaseAdmin
+      .from('api_keys')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (keysError) {
+      console.error('Error fetching api_keys:', keysError);
+      return res.status(500).json({ error: 'Failed to fetch API keys' });
+    }
+
+    // Fetch all API usage (last 10k rows, ordered newest first)
+    const { data: apiUsage, error: usageError } = await supabaseAdmin
+      .from('api_usage')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10000);
+
+    if (usageError) {
+      console.error('Error fetching api_usage:', usageError);
+      return res.status(500).json({ error: 'Failed to fetch usage data' });
+    }
+
+    return res.status(200).json({
+      users: usersData.users || [],
+      apiKeys: apiKeys || [],
+      apiUsage: apiUsage || [],
+    });
+  } catch (err: any) {
+    console.error('Admin data error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MAIN ROUTER
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1834,6 +1914,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const route = segments.join('/');
+
+  // ── Admin route (routed here via vercel.json rewrite) ──────────────
+  if (route === 'admin-data') return handleAdminData(req, res);
 
   // ── Static routes ──────────────────────────────────────────────────
   if (route === 'campaigns/preview') return handlePreview(req, res);

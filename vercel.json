@@ -2,6 +2,7 @@
   "rewrites": [
     { "source": "/api/v1/:path*", "destination": "/api/v1-router?path=:path*" },
     { "source": "/api/v1", "destination": "/api/v1-router" },
+    { "source": "/api/admin-data", "destination": "/api/v1-router?path=admin-data" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
