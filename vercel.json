@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/v1-router.ts": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     { "source": "/api/v1/:path*", "destination": "/api/v1-router?path=:path*" },
     { "source": "/api/v1", "destination": "/api/v1-router" },
