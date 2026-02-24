@@ -1817,12 +1817,12 @@ RULES FOR EACH PROMPT:
           }
 
           creatives.push({
-            url: publicUrl || undefined,
+            url: publicUrl || null,
             base64: prediction.bytesBase64Encoded,
             mimeType,
             prompt: imagePrompt,
             aspect_ratio: selectedRatio,
-            ...(!publicUrl && _uploadError ? { _upload_error: _uploadError } : {}),
+            _upload_debug: _uploadError || 'no error captured',
           });
         }
       }
