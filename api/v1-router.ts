@@ -1741,7 +1741,7 @@ RULES FOR EACH PROMPT:
     }
 
     // Step 3: Call Imagen API for each prompt
-    const creatives: Array<{ url: string; base64?: string; mimeType: string; prompt: string; aspect_ratio: string }> = [];
+    const creatives: Array<{ url: string | null; base64?: string; mimeType: string; prompt: string; aspect_ratio: string; _upload_debug?: string }> = [];
 
     for (const imagePrompt of prompts) {
       const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
