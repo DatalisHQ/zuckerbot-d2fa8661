@@ -1834,7 +1834,7 @@ RULES FOR EACH PROMPT:
     }
 
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
-    return res.status(200).json({ creatives });
+    return res.status(200).json({ creatives, _v: 'v5-debug' });
   } catch (err: any) {
     console.error('[api/creatives] Unexpected error:', err);
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
