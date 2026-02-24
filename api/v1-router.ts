@@ -1741,7 +1741,7 @@ RULES FOR EACH PROMPT:
     }
 
     // Step 3: Call Imagen API for each prompt
-    const creatives: Array<{ base64: string; mimeType: string; prompt: string; aspect_ratio: string }> = [];
+    const creatives: Array<{ url: string; base64?: string; mimeType: string; prompt: string; aspect_ratio: string }> = [];
 
     for (const imagePrompt of prompts) {
       const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
@@ -1781,9 +1781,39 @@ RULES FOR EACH PROMPT:
 
       for (const prediction of predictions) {
         if (prediction.bytesBase64Encoded) {
+          const mimeType = prediction.mimeType || 'image/png';
+          const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+          const fileName = `creative-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+          // Upload to Supabase Storage
+          let publicUrl = '';
+          try {
+            const buffer = Buffer.from(prediction.bytesBase64Encoded, 'base64');
+            const uploadRes = await fetch(
+              `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                  'Content-Type': mimeType,
+                  'x-upsert': 'true',
+                },
+                body: buffer,
+              }
+            );
+            if (uploadRes.ok) {
+              publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
+            } else {
+              console.warn('[api/creatives] Storage upload failed:', await uploadRes.text());
+            }
+          } catch (uploadErr) {
+            console.warn('[api/creatives] Storage upload error:', uploadErr);
+          }
+
           creatives.push({
-            base64: prediction.bytesBase64Encoded,
-            mimeType: prediction.mimeType || 'image/png',
+            url: publicUrl,
+            ...(publicUrl ? {} : { base64: prediction.bytesBase64Encoded }),
+            mimeType,
             prompt: imagePrompt,
             aspect_ratio: selectedRatio,
           });
