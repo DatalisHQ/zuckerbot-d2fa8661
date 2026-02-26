@@ -485,6 +485,282 @@ RULES:
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CAMPAIGN LAUNCH HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Helper to make Meta API POST requests
+ */
+async function metaPost(endpoint: string, data: Record<string, any>, accessToken: string): Promise<{ok: boolean, data: any, rawBody: string}> {
+  const url = `${GRAPH_BASE}${endpoint}`;
+  const form = new URLSearchParams();
+  for (const [key, value] of Object.entries(data)) {
+    form.append(key, String(value));
+  }
+  form.append('access_token', accessToken);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    const rawBody = await response.text();
+    const jsonData = JSON.parse(rawBody);
+    return { ok: response.ok, data: jsonData, rawBody };
+  } catch (err) {
+    return { ok: false, data: { error: { message: `Request failed: ${err}` } }, rawBody: String(err) };
+  }
+}
+
+/**
+ * Internal campaign launch logic (used by both /create with auto_launch and /launch)
+ */
+async function launchCampaignInternal(params: {
+  campaignId: string;
+  meta_access_token: string;
+  meta_ad_account_id: string;
+  meta_page_id: string;
+  variant_index: number;
+  daily_budget_cents: number;
+  radius_km: number;
+  campaign: any;
+  auth: any;
+}): Promise<{success: boolean, data?: any, error?: any}> {
+  
+  const {
+    campaignId, meta_access_token, meta_ad_account_id, meta_page_id,
+    variant_index, daily_budget_cents, radius_km, campaign, auth
+  } = params;
+
+  try {
+    const businessName = campaign.business_name || 'Campaign';
+    const variants = campaign.variants || [];
+    const targeting = campaign.targeting || {};
+    const selectedVariant = variants[variant_index] || variants[0] || {};
+
+    const headline = selectedVariant.headline || businessName;
+    const adBody = selectedVariant.copy || `Check out ${businessName}`;
+    const cta = selectedVariant.cta || 'Learn More';
+    const imageUrl = selectedVariant.image_url || null;
+
+    const campaignName = `${businessName} – API – ${new Date().toISOString().slice(0, 10)}`;
+    const adAccountId = meta_ad_account_id.replace(/^act_/, '');
+
+    // Step 1: Create Meta Campaign
+    const campaignResult = await metaPost(`/act_${adAccountId}/campaigns`, {
+      name: campaignName,
+      objective: 'OUTCOME_LEADS',
+      status: 'PAUSED',
+      special_ad_categories: JSON.stringify([])
+    }, meta_access_token);
+
+    if (!campaignResult.ok || !campaignResult.data.id) {
+      return {
+        success: false,
+        error: {
+          code: 'meta_api_error',
+          message: campaignResult.data.error?.message || 'Failed to create campaign on Meta',
+          meta_error: campaignResult.data.error,
+          step: 'campaign'
+        }
+      };
+    }
+    const metaCampaignId = campaignResult.data.id;
+
+    // Step 2: Create Ad Set
+    const geoLocations: Record<string, any> = {};
+    if (targeting?.geo_locations?.custom_locations?.length) {
+      geoLocations.custom_locations = targeting.geo_locations.custom_locations;
+    } else {
+      geoLocations.countries = ['US'];
+    }
+
+    const adSetTargeting: Record<string, any> = {
+      age_min: targeting?.age_min || 25,
+      age_max: targeting?.age_max || 65,
+      geo_locations: geoLocations,
+      publisher_platforms: ['facebook', 'instagram'],
+      facebook_positions: ['feed'],
+      instagram_positions: ['stream'],
+    };
+
+    const adSetResult = await metaPost(`/act_${adAccountId}/adsets`, {
+      name: `${campaignName} – Ad Set`,
+      campaign_id: metaCampaignId,
+      daily_budget: String(daily_budget_cents),
+      billing_event: 'IMPRESSIONS',
+      optimization_goal: 'LEAD_GENERATION',
+      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+      targeting: JSON.stringify(adSetTargeting),
+      promoted_object: JSON.stringify({ page_id: meta_page_id }),
+      destination_type: 'ON_AD',
+      status: 'PAUSED',
+      start_time: new Date().toISOString(),
+    }, meta_access_token);
+
+    if (!adSetResult.ok || !adSetResult.data.id) {
+      // Cleanup: delete campaign
+      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
+      return {
+        success: false,
+        error: {
+          code: 'meta_api_error',
+          message: adSetResult.data.error?.message || 'Failed to create ad set on Meta',
+          meta_error: adSetResult.data.error,
+          step: 'adset'
+        }
+      };
+    }
+    const metaAdSetId = adSetResult.data.id;
+
+    // Step 3: Create Lead Form
+    const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
+      name: `${businessName} Lead Form – ${Date.now()}`,
+      questions: JSON.stringify([
+        { type: 'FULL_NAME' },
+        { type: 'PHONE' },
+        { type: 'EMAIL' },
+        { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }
+      ]),
+      privacy_policy: JSON.stringify({
+        url: 'https://zuckerbot.ai/privacy',
+        link_text: 'Privacy Policy'
+      }),
+      thank_you_page: JSON.stringify({
+        title: 'Thanks for your enquiry!',
+        body: `${businessName} will be in touch shortly.`,
+        button_type: 'NONE'
+      }),
+    }, meta_access_token);
+
+    if (!leadFormResult.ok || !leadFormResult.data.id) {
+      // Cleanup
+      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
+      return {
+        success: false,
+        error: {
+          code: 'meta_api_error',
+          message: leadFormResult.data.error?.message || 'Failed to create lead form on Meta',
+          meta_error: leadFormResult.data.error,
+          step: 'leadform'
+        }
+      };
+    }
+    const leadFormId = leadFormResult.data.id;
+
+    // Step 4: Create Ad Creative
+    let adCreativeId = null;
+    if (imageUrl) {
+      const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, {
+        name: `${campaignName} – Creative`,
+        object_story_spec: JSON.stringify({
+          page_id: meta_page_id,
+          link_data: {
+            image_hash: imageUrl, // Simplified for now
+            name: headline,
+            description: adBody,
+            call_to_action: { type: cta.toUpperCase().replace(/ /g, '_') },
+            link: 'https://facebook.com',
+          }
+        })
+      }, meta_access_token);
+
+      if (creativeResult.ok && creativeResult.data.id) {
+        adCreativeId = creativeResult.data.id;
+      }
+    }
+
+    // Step 5: Create Ad
+    const adParams: Record<string, any> = {
+      name: `${campaignName} – Ad`,
+      adset_id: metaAdSetId,
+      status: 'PAUSED',
+    };
+
+    if (adCreativeId) {
+      adParams.creative = JSON.stringify({ creative_id: adCreativeId });
+    } else {
+      // Fallback: lead ad without custom creative
+      adParams.creative = JSON.stringify({
+        object_story_spec: {
+          page_id: meta_page_id,
+          link_data: {
+            name: headline,
+            description: adBody,
+            call_to_action: { type: 'SIGN_UP' },
+            link: `https://www.facebook.com/tr?id=${meta_page_id}&ev=Lead`,
+          }
+        }
+      });
+    }
+
+    const adResult = await metaPost(`/act_${adAccountId}/ads`, adParams, meta_access_token);
+
+    if (!adResult.ok || !adResult.data.id) {
+      // Cleanup
+      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
+      return {
+        success: false,
+        error: {
+          code: 'meta_api_error',
+          message: adResult.data.error?.message || 'Failed to create ad on Meta',
+          meta_error: adResult.data.error,
+          step: 'ad'
+        }
+      };
+    }
+    const metaAdId = adResult.data.id;
+
+    // Step 6: Activate everything
+    const activationResults = await Promise.allSettled([
+      fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'status=ACTIVE'
+      }),
+      fetch(`${GRAPH_BASE}/${metaAdSetId}?access_token=${meta_access_token}`, {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'status=ACTIVE'
+      }),
+      fetch(`${GRAPH_BASE}/${metaAdId}?access_token=${meta_access_token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'status=ACTIVE'
+      })
+    ]);
+
+    return {
+      success: true,
+      data: {
+        campaign_id: campaignId,
+        meta_campaign_id: metaCampaignId,
+        meta_adset_id: metaAdSetId,
+        meta_ad_id: metaAdId,
+        lead_form_id: leadFormId,
+        ad_creative_id: adCreativeId,
+        selected_variant: selectedVariant,
+        daily_budget_cents: daily_budget_cents,
+        targeting_radius_km: radius_km,
+        launched_at: new Date().toISOString(),
+        status: 'active'
+      }
+    };
+
+  } catch (error: any) {
+    return {
+      success: false,
+      error: {
+        code: 'internal_error',
+        message: error.message || 'Internal launch error',
+        details: String(error)
+      }
+    };
+  }
+}
+
 // ── POST /api/v1/campaigns/create ───────────────────────────────────────
 
 async function handleCreate(req: VercelRequest, res: VercelResponse) {
@@ -499,7 +775,10 @@ async function handleCreate(req: VercelRequest, res: VercelResponse) {
   assertAuth(auth);
   applyRateLimitHeaders(res, auth.rateLimitHeaders);
 
-  const { url, business_name, business_type, location, budget_daily_cents, objective, meta_access_token } = req.body || {};
+  const { 
+    url, business_name, business_type, location, budget_daily_cents, objective, 
+    meta_access_token, auto_launch, meta_ad_account_id, meta_page_id, variant_index = 0, radius_km
+  } = req.body || {};
 
   if (!url || typeof url !== 'string') {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
@@ -681,6 +960,77 @@ RULES:
       created_at: new Date().toISOString(),
     };
 
+    // Auto-launch if requested
+    if (auto_launch === true) {
+      if (!meta_access_token || typeof meta_access_token !== 'string') {
+        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+        return res.status(400).json({ error: { code: 'validation_error', message: 'auto_launch requires meta_access_token' } });
+      }
+      if (!meta_ad_account_id || typeof meta_ad_account_id !== 'string') {
+        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+        return res.status(400).json({ error: { code: 'validation_error', message: 'auto_launch requires meta_ad_account_id (e.g. "act_123456789")' } });
+      }
+      if (!meta_page_id || typeof meta_page_id !== 'string') {
+        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+        return res.status(400).json({ error: { code: 'validation_error', message: 'auto_launch requires meta_page_id (Facebook Page ID for lead form)' } });
+      }
+
+      try {
+        // Launch the campaign immediately
+        const launchResult = await launchCampaignInternal({
+          campaignId,
+          meta_access_token,
+          meta_ad_account_id,
+          meta_page_id,
+          variant_index: variant_index || 0,
+          daily_budget_cents: budgetCents,
+          radius_km: radius_km || response.targeting.radius_km || 25,
+          campaign: response,
+          auth: auth.keyRecord,
+        });
+
+        if (!launchResult.success) {
+          // Launch failed, but campaign was created successfully
+          await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 207, responseTimeMs: Date.now() - startTime });
+          return res.status(207).json({
+            ...response,
+            launch_error: launchResult.error,
+            message: 'Campaign created successfully but launch failed. You can try launching manually with /campaigns/{id}/launch',
+          });
+        }
+
+        // Success - campaign created and launched
+        const combinedResponse = {
+          ...response,
+          status: 'active' as const,
+          launch_result: launchResult.data,
+          meta_campaign_id: launchResult.data.meta_campaign_id,
+          launched_at: new Date().toISOString(),
+          message: 'Campaign created and launched successfully',
+        };
+
+        // Update database with launch info
+        await supabaseAdmin.from('api_campaigns').update({
+          status: 'active',
+          meta_campaign_id: launchResult.data.meta_campaign_id,
+          launched_at: new Date().toISOString(),
+        }).eq('id', campaignId);
+
+        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+        return res.status(200).json(combinedResponse);
+
+      } catch (launchErr: any) {
+        console.error('[api/create] Auto-launch error:', launchErr);
+        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 207, responseTimeMs: Date.now() - startTime });
+        return res.status(207).json({
+          ...response,
+          launch_error: { code: 'launch_failed', message: launchErr.message || 'Launch failed after campaign creation' },
+          message: 'Campaign created successfully but launch failed. You can try launching manually with /campaigns/{id}/launch',
+        });
+      }
+    }
+
+    // Standard response without auto-launch
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
     return res.status(200).json(response);
   } catch (err: any) {
