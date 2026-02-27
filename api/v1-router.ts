@@ -232,7 +232,7 @@ function applyRateLimitHeaders(res: VercelResponse, headers: Record<string, stri
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
 }
 
-async function metaPost(
+async function metaPostLegacy(
   path: string,
   params: Record<string, string>,
   accessToken: string,
