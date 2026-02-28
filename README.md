@@ -157,6 +157,145 @@ Returns ad copy variants with AI-generated images (powered by Imagen 4.0).
 
 All plans include access to every endpoint. [Get your API key](https://zuckerbot.ai/developer).
 
+## Autonomous Mode (MVP)
+
+Autonomous Mode runs a closed-loop policy on your campaigns: **metrics → evaluate → act → log**. The cron dispatcher calls it every 4 hours for any business that has an enabled policy.
+
+### Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CRON_SECRET` | Yes | Shared secret for authenticating the cron dispatcher. Set in Vercel and in your cron schedule trigger. |
+
+Set `CRON_SECRET` in your Vercel project settings (Settings → Environment Variables) and pass it as `Authorization: Bearer <CRON_SECRET>` when calling `/api/cron/dispatch-agents` or `/api/v1/autonomous/run` directly.
+
+### New endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/autonomous/policies/upsert` | API key | Create or update autonomous policy for a business |
+| `GET` | `/autonomous/metrics` | API key | Get normalized campaign metrics |
+| `POST` | `/autonomous/evaluate` | API key | Evaluate policy and return action list (supports `dry_run`) |
+| `POST` | `/autonomous/execute` | API key | Execute a list of actions and log results |
+| `POST` | `/autonomous/run` | CRON_SECRET | Internal: evaluate + execute + log in one call |
+
+### Database migration
+
+Run the migration to create the `autonomous_policies` table:
+
+```bash
+supabase db push
+# or apply manually:
+psql $DATABASE_URL -f supabase/migrations/20260228_autonomous_mode.sql
+```
+
+### 1. Create a policy
+
+```bash
+curl -X POST https://zuckerbot.ai/api/v1/autonomous/policies/upsert \
+  -H "Authorization: Bearer zb_live_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "business_id": "uuid-of-your-business",
+    "target_cpa": 25,
+    "pause_multiplier": 2.5,
+    "scale_multiplier": 0.7,
+    "max_daily_budget": 150,
+    "scale_pct": 0.2,
+    "min_conversions_to_scale": 3
+  }'
+```
+
+Policy fields:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `target_cpa` | required | Target cost-per-acquisition in dollars |
+| `pause_multiplier` | 2.5 | Pause campaign if `cpa > target_cpa × pause_multiplier` |
+| `scale_multiplier` | 0.7 | Scale campaign if `cpa < target_cpa × scale_multiplier` |
+| `frequency_cap` | 3.5 | Pause if ad frequency exceeds this (requires Meta insights) |
+| `max_daily_budget` | 100 | Safety cap — never scale a budget above this dollar amount |
+| `scale_pct` | 0.2 | Increase budget by this fraction on scale (0.2 = +20%) |
+| `min_conversions_to_scale` | 3 | Minimum conversions required before scaling |
+
+### 2. Fetch metrics
+
+```bash
+curl "https://zuckerbot.ai/api/v1/autonomous/metrics?business_id=uuid" \
+  -H "Authorization: Bearer zb_live_your_key_here"
+```
+
+Returns a normalized array with `campaign_id, name, status, daily_budget, spend_today, impressions, clicks, conversions, cpa, ctr, cpc, frequency`.
+
+> **Note:** `spend_today` is the lifetime spend stored in the DB (written when you call `GET /campaigns/:id/performance`). It is used as a proxy for same-day spend. For precise daily numbers, call the performance endpoint to sync from Meta first.
+> `frequency` is always `null` in the MVP — it requires a live Meta Insights API call not currently wired into this endpoint.
+
+### 3. Evaluate (dry run)
+
+```bash
+curl -X POST https://zuckerbot.ai/api/v1/autonomous/evaluate \
+  -H "Authorization: Bearer zb_live_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"business_id": "uuid", "dry_run": true}'
+```
+
+Returns `{ policy, actions[], summary, dry_run: true }`. No changes are made.
+
+### 4. Execute
+
+```bash
+curl -X POST https://zuckerbot.ai/api/v1/autonomous/execute \
+  -H "Authorization: Bearer zb_live_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "business_id": "uuid",
+    "actions": [
+      {
+        "type": "pause",
+        "campaign_id": "internal-uuid",
+        "meta_campaign_id": "23843...",
+        "reason": "CPA $62.50 exceeds pause threshold"
+      }
+    ]
+  }'
+```
+
+Each action result includes `{ ok, status, error?, meta? }`. Results are logged to `automation_runs` with `agent_type = "autonomous_loop"`.
+
+**Supported actions:**
+- `pause` — Sets Meta campaign status to `PAUSED`. Requires `meta_campaign_id`.
+- `scale` — Increases the ad set's `daily_budget` by `scale_pct`, capped at `max_daily_budget`. Requires `meta_adset_id`. If `meta_adset_id` is not stored, returns `status: "not_supported"` with a clear message.
+
+### 5. Cron integration
+
+The cron dispatcher (`POST /api/cron/dispatch-agents`) automatically dispatches `autonomous/run` for every business that has an enabled autonomous policy and at least one active campaign. It fires every 4 hours alongside the existing `performance_monitor` agent.
+
+To trigger manually:
+
+```bash
+curl -X POST https://zuckerbot.ai/api/v1/autonomous/run \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"business_id": "uuid"}'
+```
+
+### Safety guarantees
+
+- **Minimum budget:** Never sets a daily budget below $5.
+- **Maximum budget:** Scales are always capped to `max_daily_budget` from the policy.
+- **Spend threshold:** Pause rules only apply to campaigns with > $5 lifetime spend (to avoid acting on brand-new campaigns).
+- **One rule per campaign per cycle:** A campaign is only evaluated for the first matching rule (pause takes priority over scale).
+- **Idempotent:** Calling execute twice with the same action is safe — Meta ignores status updates that are already in the target state.
+
+### Known gaps / not yet implemented
+
+| Gap | Status |
+|-----|--------|
+| Real-time `spend_today` from Meta Insights | Not implemented. Use stored DB value as proxy. |
+| Ad `frequency` data | Not implemented. Requires `GET /{adset_id}/insights?fields=frequency`. |
+| Creative evolution on pause/scale | Logged as `creative_evolution_not_implemented` in run output. |
+| Per-adset budget update when `meta_adset_id` is missing | Returns `not_supported` with instructions. |
+
 ## Links
 
 - [Website](https://zuckerbot.ai)

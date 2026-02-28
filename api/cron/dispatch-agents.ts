@@ -1,6 +1,9 @@
 import { supabaseAdmin, shouldRunAgent } from '../agents/_utils.js';
 import type { AgentType } from '../agents/_utils.js';
 
+// Autonomous loop frequency: run at most once every 4 hours per business
+const AUTONOMOUS_LOOP_FREQUENCY_HOURS = 4;
+
 export const config = { maxDuration: 300 };
 
 interface DispatchResult {
@@ -156,6 +159,65 @@ export default async function handler(req: any, res: any) {
             agent: agentType,
             status: 'error',
             reason: err.message || 'Unknown error',
+          });
+        }
+      }
+
+      // ── Autonomous loop dispatch ──────────────────────────────────────
+      // If this business has an enabled autonomous policy AND active campaigns,
+      // dispatch the evaluate+execute loop via the v1 router (CRON_SECRET auth).
+      if (hasActiveCampaigns && process.env.CRON_SECRET) {
+        try {
+          const { data: autonomousPolicy } = await supabaseAdmin
+            .from('autonomous_policies')
+            .select('id')
+            .eq('business_id', businessId)
+            .eq('enabled', true)
+            .maybeSingle();
+
+          if (autonomousPolicy) {
+            // Throttle: check the last autonomous_loop run against frequency window
+            const shouldRunLoop = await shouldRunAgent(businessId, 'performance_monitor' as AgentType, AUTONOMOUS_LOOP_FREQUENCY_HOURS);
+            // Note: we reuse shouldRunAgent with performance_monitor frequency as a proxy
+            // for the autonomous loop cadence (also 4 hours). A dedicated check on
+            // automation_runs agent_type='autonomous_loop' would be more precise but
+            // requires extending shouldRunAgent — acceptable for MVP.
+
+            if (shouldRunLoop) {
+              fetch(`${baseUrl}/api/v1/autonomous/run`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+                },
+                body: JSON.stringify({ business_id: businessId }),
+              }).catch(() => {
+                // Swallow dispatch errors
+              });
+
+              results.push({
+                business_id: businessId,
+                business_name: businessName,
+                agent: 'autonomous_loop' as unknown as AgentType,
+                status: 'dispatched',
+              });
+            } else {
+              results.push({
+                business_id: businessId,
+                business_name: businessName,
+                agent: 'autonomous_loop' as unknown as AgentType,
+                status: 'skipped',
+                reason: `Last performance_monitor run within ${AUTONOMOUS_LOOP_FREQUENCY_HOURS}h window`,
+              });
+            }
+          }
+        } catch (err: any) {
+          results.push({
+            business_id: businessId,
+            business_name: businessName,
+            agent: 'autonomous_loop' as unknown as AgentType,
+            status: 'error',
+            reason: `Autonomous policy check failed: ${err.message || 'Unknown error'}`,
           });
         }
       }
