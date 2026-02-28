@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin, handleCors, getLastRunForAgent, getBusinessWithConfig } from './_utils.js';
-import { pauseMetaCampaign, updateAdsetDailyBudget } from './meta.js';
+import { pauseMetaCampaign, updateAdsetDailyBudget } from '../../lib/meta.js';
 import type { OptimizationAction } from './campaign-optimizer.js';
 
 export const config = { maxDuration: 60 };
