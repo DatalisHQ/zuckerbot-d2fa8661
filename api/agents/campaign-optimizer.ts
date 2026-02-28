@@ -43,6 +43,21 @@ interface Recommendation {
   details: string;
   priority: 'high' | 'medium' | 'low';
   estimated_impact: string;
+  pct_change?: number; // fractional budget change, e.g. -0.30 means reduce 30%
+}
+
+/**
+ * Structured action for execution by execute-approval.ts.
+ * Built deterministically from Recommendation[]; no LLM involved.
+ */
+export interface OptimizationAction {
+  type: 'pause_campaign' | 'reduce_budget' | 'increase_budget' | 'refresh_creative' | 'shift_budget' | 'monitor';
+  campaign_id: string;       // internal DB UUID — executor looks up meta IDs
+  campaign_name: string;
+  reason: string;
+  pct_change?: number;       // for budget actions: e.g. -0.30 or +0.30
+  executable: boolean;       // false = human action required, true = can be automated
+  requires_approval: boolean;
 }
 
 export default async function handler(req: any, res: any) {
@@ -86,8 +101,12 @@ export default async function handler(req: any, res: any) {
     // Generate deterministic recommendations based on anomalies and metrics
     const recommendations = generateRecommendations(resolvedAnomalies, resolvedMetrics);
 
+    // Build structured actions array for execution (backward-compat: recommendations still present)
+    const actions = buildActions(recommendations);
+
     const output = {
       recommendations,
+      actions,              // structured list for execute-approval.ts actuator
       recommendation_count: recommendations.length,
       anomalies_analyzed: resolvedAnomalies.length,
       campaigns_analyzed: resolvedMetrics.length,
@@ -176,6 +195,7 @@ function generateRecommendations(anomalies: Anomaly[], metrics: CampaignMetrics[
             details: `Shift budget from ${anomaly.campaign_name} to ${bestCampaign.campaign_name} ($${bestCampaign.cpa.toFixed(2)} CPA vs $${anomaly.current_value.toFixed(2)}).`,
             priority: 'high',
             estimated_impact: `Could generate ${Math.round((campaignMetrics?.daily_budget || 0) / bestCampaign.cpa)} extra leads/day at current CPA`,
+            pct_change: 0.30, // increase winner's budget 30% to absorb shifted spend
           });
         }
       } else {
@@ -188,6 +208,7 @@ function generateRecommendations(anomalies: Anomaly[], metrics: CampaignMetrics[
           details: `Reduce daily budget by 30% and monitor for 24 hours. If CPA does not improve, consider pausing.`,
           priority: 'medium',
           estimated_impact: `Limit exposure while testing if performance recovers`,
+          pct_change: -0.30,
         });
       }
     }
@@ -214,6 +235,7 @@ function generateRecommendations(anomalies: Anomaly[], metrics: CampaignMetrics[
         details: `Campaign spent $${anomaly.current_value.toFixed(2)} against a $${anomaly.previous_value.toFixed(2)} budget. Check if Meta accelerated delivery is enabled and consider switching to standard delivery.`,
         priority: anomaly.severity === 'critical' ? 'high' : 'medium',
         estimated_impact: `Prevent budget overrun of ~$${(anomaly.current_value - anomaly.previous_value).toFixed(2)}/day`,
+        pct_change: -0.20, // reduce 20% to bring spend back within budget
       });
     }
   }
@@ -239,4 +261,75 @@ function generateRecommendations(anomalies: Anomaly[], metrics: CampaignMetrics[
   recommendations.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 
   return recommendations;
+}
+
+/**
+ * Map Recommendation[] → OptimizationAction[] (structured, executable).
+ * Used by execute-approval.ts to perform real Meta API calls on approval.
+ * Pure function — no I/O.
+ */
+function buildActions(recommendations: Recommendation[]): OptimizationAction[] {
+  return recommendations.map((r): OptimizationAction => {
+    switch (r.action) {
+      case 'pause':
+        return {
+          type: 'pause_campaign',
+          campaign_id: r.campaign_id,
+          campaign_name: r.campaign_name,
+          reason: r.reason,
+          executable: true,
+          requires_approval: true,
+        };
+      case 'reduce_budget':
+        return {
+          type: 'reduce_budget',
+          campaign_id: r.campaign_id,
+          campaign_name: r.campaign_name,
+          reason: r.reason,
+          pct_change: r.pct_change ?? -0.30,
+          executable: true,
+          requires_approval: true,
+        };
+      case 'increase_budget':
+        return {
+          type: 'increase_budget',
+          campaign_id: r.campaign_id,
+          campaign_name: r.campaign_name,
+          reason: r.reason,
+          pct_change: r.pct_change ?? 0.20,
+          executable: true,
+          requires_approval: true,
+        };
+      case 'shift_budget':
+        // shift_budget increases the winner's budget; the loser is paused via a separate pause action
+        return {
+          type: 'shift_budget',
+          campaign_id: r.campaign_id,
+          campaign_name: r.campaign_name,
+          reason: r.reason,
+          pct_change: r.pct_change ?? 0.30,
+          executable: true,
+          requires_approval: true,
+        };
+      case 'refresh_creative':
+        return {
+          type: 'refresh_creative',
+          campaign_id: r.campaign_id,
+          campaign_name: r.campaign_name,
+          reason: r.reason,
+          executable: false, // requires human or separate creative agent
+          requires_approval: false,
+        };
+      case 'monitor':
+      default:
+        return {
+          type: 'monitor',
+          campaign_id: r.campaign_id,
+          campaign_name: r.campaign_name,
+          reason: r.reason,
+          executable: false,
+          requires_approval: false,
+        };
+    }
+  });
 }

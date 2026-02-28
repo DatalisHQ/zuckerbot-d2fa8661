@@ -157,6 +157,94 @@ Returns ad copy variants with AI-generated images (powered by Imagen 4.0).
 
 All plans include access to every endpoint. [Get your API key](https://zuckerbot.ai/developer).
 
+## Autonomous Execution (Approval Flow)
+
+When ZuckerBot's `campaign_optimizer` agent detects anomalies, it logs recommended actions to `automation_runs` with `status = "needs_approval"`. Approving a run now **executes the actions** against the Meta Graph API and records results back in `automation_runs.output`.
+
+### Approve a run (triggers real Meta API calls)
+
+```bash
+# Replace <JWT> with the user's Supabase JWT and <RUN_ID> with the automation_runs UUID
+
+curl -X POST https://zuckerbot.ai/api/agents/execute-approval \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "run_id": "a1b2c3d4-...",
+    "action": "approve"
+  }'
+```
+
+**Example response:**
+
+```json
+{
+  "run_id": "a1b2c3d4-...",
+  "action": "approve",
+  "status": "completed",
+  "execution_summary": "2/3 actions succeeded, 1 failed/skipped",
+  "execution_results": [
+    {
+      "action_type": "pause_campaign",
+      "campaign_id": "uuid-of-campaign",
+      "campaign_name": "Spring Promo",
+      "ok": true,
+      "status": "paused",
+      "detail": { "meta_campaign_id": "23843..." }
+    },
+    {
+      "action_type": "reduce_budget",
+      "campaign_id": "uuid-of-another",
+      "campaign_name": "Winter Sale",
+      "ok": true,
+      "status": "budget_updated",
+      "detail": { "previous_budget_cents": 5000, "new_budget_cents": 3500, "pct_change": -0.3 }
+    },
+    {
+      "action_type": "refresh_creative",
+      "campaign_id": "uuid-...",
+      "campaign_name": "Brand Awareness",
+      "ok": false,
+      "status": "unsupported",
+      "error": "\"refresh_creative\" requires human action and cannot be automated"
+    }
+  ]
+}
+```
+
+### Dismiss a run
+
+```bash
+curl -X POST https://zuckerbot.ai/api/agents/execute-approval \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{ "run_id": "a1b2c3d4-...", "action": "dismiss" }'
+```
+
+### What executes vs. what doesn't
+
+| Action type | Executable | What happens |
+|-------------|-----------|--------------|
+| `pause_campaign` | Yes | `POST /{meta_campaign_id}` status=PAUSED; DB status → `paused` |
+| `reduce_budget` | Yes | `POST /{meta_adset_id}` daily_budget=new_cents; DB `daily_budget_cents` updated |
+| `increase_budget` | Yes | Same as reduce_budget with positive `pct_change` |
+| `shift_budget` | Yes | Increases winner's budget by 30%; paired with a pause on the loser |
+| `refresh_creative` | No | Returns `unsupported` — trigger the creative_director agent separately |
+| `monitor` | No | Returns `no_action` — informational only |
+
+### Budget safety
+
+- Floor: **$5 (500 cents)**. No ad set budget will be set below this.
+- Cap: defaults to **$100 (10 000 cents/day)**. Override by adding `max_daily_budget_cents` to the business's `automation_config` row.
+- Formula: `clamp(current_budget × (1 + pct_change), min=500, max=10000)`
+
+### Prerequisites
+
+- Business must have `facebook_access_token` stored in the `businesses` table.
+- Campaigns must have `meta_campaign_id` (for pause) and `meta_adset_id` (for budget) — written automatically on campaign launch via `/api/v1/campaigns/:id/launch`.
+
+---
+
 ## Autonomous Mode (MVP)
 
 Autonomous Mode runs a closed-loop policy on your campaigns: **metrics → evaluate → act → log**. The cron dispatcher calls it every 4 hours for any business that has an enabled policy.
