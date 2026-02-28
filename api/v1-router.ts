@@ -2803,6 +2803,577 @@ async function handleCreativeFeedback(req: VercelRequest, res: VercelResponse, c
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// AUTONOMOUS MODE
+// Routes:
+//   POST /api/v1/autonomous/policies/upsert
+//   GET  /api/v1/autonomous/metrics
+//   POST /api/v1/autonomous/evaluate
+//   POST /api/v1/autonomous/execute
+//   POST /api/v1/autonomous/run   (cron-internal, CRON_SECRET auth)
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface AutonomousPolicy {
+  id: string;
+  business_id: string;
+  user_id: string;
+  enabled: boolean;
+  target_cpa: number;
+  pause_multiplier: number;
+  scale_multiplier: number;
+  frequency_cap: number;
+  max_daily_budget: number;
+  scale_pct: number;
+  min_conversions_to_scale: number;
+}
+
+interface CampaignMetric {
+  campaign_id: string;
+  meta_campaign_id: string | null;
+  meta_adset_id: string | null;
+  name: string;
+  status: string;
+  daily_budget: number;       // dollars
+  spend_today: number | null; // dollars — lifetime spend from DB (see docs)
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  cpa: number | null;         // dollars per conversion
+  ctr: number | null;         // ratio (0–1)
+  cpc: number | null;         // dollars per click
+  frequency: number | null;   // not available without Meta insights call
+}
+
+interface AutonomousAction {
+  type: 'pause' | 'scale';
+  campaign_id: string;
+  meta_campaign_id: string | null;
+  meta_adset_id?: string | null;
+  current_budget?: number;
+  new_budget?: number;
+  reason: string;
+}
+
+/** Load all campaigns for a business and return normalized metrics. */
+async function fetchBusinessCampaignMetrics(businessId: string): Promise<CampaignMetric[]> {
+  const { data: campaigns } = await supabaseAdmin
+    .from('campaigns')
+    .select('id, name, status, daily_budget_cents, spend_cents, impressions, clicks, leads_count, meta_campaign_id, meta_adset_id')
+    .eq('business_id', businessId);
+
+  return (campaigns || []).map((c: any) => {
+    const spendDollars = (c.spend_cents || 0) / 100;
+    const budgetDollars = (c.daily_budget_cents || 0) / 100;
+    const conversions = c.leads_count || 0;
+    const clicks = c.clicks || 0;
+    const impressions = c.impressions || 0;
+    const cpa = conversions > 0 ? spendDollars / conversions : null;
+    const ctr = impressions > 0 ? clicks / impressions : null;
+    const cpc = clicks > 0 ? spendDollars / clicks : null;
+
+    return {
+      campaign_id: c.id,
+      meta_campaign_id: c.meta_campaign_id || null,
+      meta_adset_id: c.meta_adset_id || null,
+      name: c.name,
+      status: c.status,
+      daily_budget: budgetDollars,
+      spend_today: spendDollars, // proxy: lifetime spend from DB; see README for real-time notes
+      impressions,
+      clicks,
+      conversions,
+      cpa,
+      ctr,
+      cpc,
+      frequency: null, // requires Meta Insights API call — not fetched in MVP
+    };
+  });
+}
+
+/** Deterministically generate actions from policy + metrics. Pure function. */
+function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMetric[]): AutonomousAction[] {
+  const actions: AutonomousAction[] = [];
+  const SPEND_MIN_USD = 5; // do not act on campaigns with < $5 lifetime spend
+
+  for (const m of metrics) {
+    const statusNorm = (m.status || '').toLowerCase();
+    if (!['active', 'running'].includes(statusNorm)) continue;
+
+    // Rule 1: PAUSE if CPA exceeds pause threshold
+    if (
+      m.cpa !== null &&
+      (m.spend_today === null || m.spend_today > SPEND_MIN_USD) &&
+      m.cpa > policy.target_cpa * policy.pause_multiplier
+    ) {
+      actions.push({
+        type: 'pause',
+        campaign_id: m.campaign_id,
+        meta_campaign_id: m.meta_campaign_id,
+        reason: `CPA $${m.cpa.toFixed(2)} exceeds pause threshold ($${(policy.target_cpa * policy.pause_multiplier).toFixed(2)} = ${policy.pause_multiplier}× target CPA $${policy.target_cpa})`,
+      });
+      continue; // one rule per campaign
+    }
+
+    // Rule 2: PAUSE if frequency cap exceeded (frequency is null in MVP until Meta insights wired)
+    if (m.frequency !== null && m.frequency > policy.frequency_cap) {
+      actions.push({
+        type: 'pause',
+        campaign_id: m.campaign_id,
+        meta_campaign_id: m.meta_campaign_id,
+        reason: `Frequency ${m.frequency.toFixed(1)} exceeds cap of ${policy.frequency_cap} (frequency fatigue)`,
+      });
+      continue;
+    }
+
+    // Rule 3: SCALE if CPA is excellent and conversions sufficient
+    const spendBelowMax = m.spend_today === null || m.spend_today < policy.max_daily_budget;
+    if (
+      m.cpa !== null &&
+      m.cpa < policy.target_cpa * policy.scale_multiplier &&
+      m.conversions >= policy.min_conversions_to_scale &&
+      spendBelowMax
+    ) {
+      const currentBudget = m.daily_budget;
+      const rawNewBudget = currentBudget * (1 + policy.scale_pct);
+      const newBudget = Math.min(rawNewBudget, policy.max_daily_budget);
+      const MIN_BUDGET_USD = 5;
+
+      if (newBudget > Math.max(currentBudget, MIN_BUDGET_USD)) {
+        actions.push({
+          type: 'scale',
+          campaign_id: m.campaign_id,
+          meta_campaign_id: m.meta_campaign_id,
+          meta_adset_id: m.meta_adset_id,
+          current_budget: currentBudget,
+          new_budget: newBudget,
+          reason: `CPA $${m.cpa.toFixed(2)} is below scale threshold ($${(policy.target_cpa * policy.scale_multiplier).toFixed(2)} = ${policy.scale_multiplier}× target $${policy.target_cpa}); ${m.conversions} conversions. Scaling budget $${currentBudget.toFixed(2)} → $${newBudget.toFixed(2)}`,
+        });
+      }
+    }
+  }
+
+  return actions;
+}
+
+/** Execute a single autonomous action against the Meta Graph API. */
+async function executeAutonomousAction(
+  action: AutonomousAction,
+  accessToken: string,
+): Promise<{ ok: boolean; status: string; error?: string; meta?: any }> {
+
+  if (action.type === 'pause') {
+    if (!action.meta_campaign_id) {
+      return { ok: false, status: 'skipped', error: 'No meta_campaign_id; campaign not launched on Meta yet' };
+    }
+    const form = new URLSearchParams({ status: 'PAUSED', access_token: accessToken });
+    try {
+      const r = await fetch(`${GRAPH_BASE}/${action.meta_campaign_id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) {
+        return { ok: false, status: 'meta_error', error: data.error?.message || `Meta returned ${r.status}`, meta: data.error };
+      }
+      supabaseAdmin.from('campaigns').update({ status: 'paused' }).eq('meta_campaign_id', action.meta_campaign_id).then(() => {});
+      return { ok: true, status: 'paused' };
+    } catch (e: any) {
+      return { ok: false, status: 'error', error: e.message };
+    }
+  }
+
+  if (action.type === 'scale') {
+    if (!action.meta_adset_id) {
+      return {
+        ok: false,
+        status: 'not_supported',
+        error: 'No meta_adset_id stored for this campaign. Budget update requires the ad set ID to be stored at launch time.',
+      };
+    }
+    if (!action.new_budget || action.new_budget < 5) {
+      return { ok: false, status: 'skipped', error: 'Computed new budget would be below the $5 minimum' };
+    }
+    const newBudgetCents = Math.round(action.new_budget * 100);
+    const form = new URLSearchParams({ daily_budget: String(newBudgetCents), access_token: accessToken });
+    try {
+      const r = await fetch(`${GRAPH_BASE}/${action.meta_adset_id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) {
+        return { ok: false, status: 'meta_error', error: data.error?.message || `Meta returned ${r.status}`, meta: data.error };
+      }
+      supabaseAdmin.from('campaigns').update({ daily_budget_cents: newBudgetCents }).eq('meta_adset_id', action.meta_adset_id).then(() => {});
+      return { ok: true, status: 'scaled', meta: { new_daily_budget_usd: action.new_budget } };
+    } catch (e: any) {
+      return { ok: false, status: 'error', error: e.message };
+    }
+  }
+
+  return { ok: false, status: 'unknown_action', error: `Unknown action type: ${(action as any).type}` };
+}
+
+// ── POST /api/v1/autonomous/policies/upsert ──────────────────────────────
+
+async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const {
+    business_id,
+    enabled = true,
+    target_cpa,
+    pause_multiplier = 2.5,
+    scale_multiplier = 0.7,
+    frequency_cap = 3.5,
+    max_daily_budget = 100,
+    scale_pct = 0.2,
+    min_conversions_to_scale = 3,
+  } = req.body || {};
+
+  if (!business_id || typeof business_id !== 'string') {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`business_id` is required' } });
+  }
+  if (typeof target_cpa !== 'number' || target_cpa <= 0) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`target_cpa` is required and must be a positive dollar amount' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('id, user_id')
+    .eq('id', business_id)
+    .single();
+
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+  if (business.user_id !== auth.keyRecord.user_id) {
+    return res.status(403).json({ error: { code: 'forbidden', message: 'You do not own this business' } });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('autonomous_policies')
+    .upsert(
+      {
+        business_id,
+        user_id: business.user_id,
+        enabled,
+        target_cpa,
+        pause_multiplier,
+        scale_multiplier,
+        frequency_cap,
+        max_daily_budget,
+        scale_pct,
+        min_conversions_to_scale,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'business_id' },
+    )
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[autonomous/policies] DB error:', error);
+    return res.status(500).json({ error: { code: 'database_error', message: error.message } });
+  }
+
+  return res.status(200).json({ policy: data });
+}
+
+// ── GET /api/v1/autonomous/metrics ───────────────────────────────────────
+
+async function handleAutonomousMetrics(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const business_id = req.query.business_id as string | undefined;
+  if (!business_id) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`business_id` query parameter is required' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('id, user_id')
+    .eq('id', business_id)
+    .single();
+
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+  if (business.user_id !== auth.keyRecord.user_id) {
+    return res.status(403).json({ error: { code: 'forbidden', message: 'You do not own this business' } });
+  }
+
+  const metrics = await fetchBusinessCampaignMetrics(business_id);
+
+  return res.status(200).json({
+    business_id,
+    metrics,
+    note: '`spend_today` reflects lifetime spend stored in the DB. For real-time daily spend, call GET /campaigns/:id/performance first to sync from Meta.',
+    fetched_at: new Date().toISOString(),
+  });
+}
+
+// ── POST /api/v1/autonomous/evaluate ─────────────────────────────────────
+
+async function handleAutonomousEvaluate(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { business_id, dry_run = false } = req.body || {};
+  if (!business_id || typeof business_id !== 'string') {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`business_id` is required' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('id, user_id')
+    .eq('id', business_id)
+    .single();
+
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+  if (business.user_id !== auth.keyRecord.user_id) {
+    return res.status(403).json({ error: { code: 'forbidden', message: 'You do not own this business' } });
+  }
+
+  const { data: policy } = await supabaseAdmin
+    .from('autonomous_policies')
+    .select('*')
+    .eq('business_id', business_id)
+    .eq('enabled', true)
+    .maybeSingle();
+
+  if (!policy) {
+    return res.status(404).json({ error: { code: 'no_policy', message: 'No enabled autonomous policy found for this business. Create one via POST /autonomous/policies/upsert.' } });
+  }
+
+  const metrics = await fetchBusinessCampaignMetrics(business_id);
+  const actions = generateAutonomousActions(policy as AutonomousPolicy, metrics);
+
+  const pauseCount = actions.filter((a) => a.type === 'pause').length;
+  const scaleCount = actions.filter((a) => a.type === 'scale').length;
+  const summary = actions.length === 0
+    ? 'No actions required. All campaigns are within policy thresholds.'
+    : `${pauseCount} campaign(s) to pause, ${scaleCount} campaign(s) to scale.`;
+
+  return res.status(200).json({
+    business_id,
+    policy,
+    metrics_evaluated: metrics.length,
+    actions,
+    summary,
+    dry_run: !!dry_run,
+    evaluated_at: new Date().toISOString(),
+  });
+}
+
+// ── POST /api/v1/autonomous/execute ──────────────────────────────────────
+
+async function handleAutonomousExecute(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { business_id, actions, meta_access_token } = req.body || {};
+  if (!business_id || typeof business_id !== 'string') {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`business_id` is required' } });
+  }
+  if (!Array.isArray(actions) || actions.length === 0) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`actions` must be a non-empty array' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('id, user_id, facebook_access_token')
+    .eq('id', business_id)
+    .single();
+
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+  if (business.user_id !== auth.keyRecord.user_id) {
+    return res.status(403).json({ error: { code: 'forbidden', message: 'You do not own this business' } });
+  }
+
+  const accessToken = meta_access_token || (business as any).facebook_access_token || process.env.META_SYSTEM_USER_TOKEN;
+  if (!accessToken) {
+    return res.status(400).json({
+      error: {
+        code: 'missing_token',
+        message: 'No Meta access token available. Provide `meta_access_token` in the request body, or store `facebook_access_token` on the business record.',
+      },
+    });
+  }
+
+  const results: Array<{ action: any; ok: boolean; status: string; error?: string; meta?: any }> = [];
+  for (const action of actions) {
+    const result = await executeAutonomousAction(action as AutonomousAction, accessToken);
+    results.push({ action, ...result });
+  }
+
+  const successCount = results.filter((r) => r.ok).length;
+  const summary = `Autonomous execution: ${successCount}/${actions.length} actions succeeded.`;
+
+  supabaseAdmin.from('automation_runs').insert({
+    business_id,
+    user_id: business.user_id,
+    agent_type: 'autonomous_loop',
+    status: 'completed',
+    trigger_type: 'manual',
+    trigger_reason: 'execute endpoint called directly',
+    input: { actions },
+    output: { results },
+    summary,
+    first_person_summary: `I executed ${actions.length} autonomous action(s): ${summary}`,
+    requires_approval: false,
+    started_at: new Date().toISOString(),
+    completed_at: new Date().toISOString(),
+  }).then(() => {});
+
+  return res.status(200).json({
+    business_id,
+    results,
+    summary,
+    executed_at: new Date().toISOString(),
+  });
+}
+
+// ── POST /api/v1/autonomous/run (cron-internal) ──────────────────────────
+// Auth: CRON_SECRET Bearer token (same as dispatch-agents.ts).
+// Evaluates + executes the autonomous policy for one business and logs results.
+
+async function handleAutonomousRun(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = (req.headers['authorization'] as string) || '';
+  const provided = authHeader.replace('Bearer ', '').trim();
+  if (!cronSecret || provided !== cronSecret) {
+    return res.status(401).json({ error: 'Unauthorized. Valid CRON_SECRET required.' });
+  }
+
+  const { business_id } = req.body || {};
+  if (!business_id || typeof business_id !== 'string') {
+    return res.status(400).json({ error: '`business_id` is required' });
+  }
+
+  const startTime = Date.now();
+
+  try {
+    const { data: business } = await supabaseAdmin
+      .from('businesses')
+      .select('id, user_id, facebook_access_token')
+      .eq('id', business_id)
+      .single();
+
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    const { data: policy } = await supabaseAdmin
+      .from('autonomous_policies')
+      .select('*')
+      .eq('business_id', business_id)
+      .eq('enabled', true)
+      .maybeSingle();
+
+    if (!policy) {
+      return res.status(200).json({ skipped: true, reason: 'No enabled autonomous policy for this business' });
+    }
+
+    const metrics = await fetchBusinessCampaignMetrics(business_id);
+    const actions = generateAutonomousActions(policy as AutonomousPolicy, metrics);
+
+    let executionResults: Array<{ action: any; ok: boolean; status: string; error?: string; meta?: any }> = [];
+    let summary: string;
+
+    if (actions.length === 0) {
+      summary = 'No actions required. All campaigns within policy thresholds.';
+    } else {
+      const accessToken = (business as any).facebook_access_token || process.env.META_SYSTEM_USER_TOKEN;
+
+      if (!accessToken) {
+        summary = `${actions.length} action(s) generated but not executed: no Meta access token available on business record.`;
+        executionResults = actions.map((a) => ({ action: a, ok: false, status: 'skipped', error: 'No Meta access token' }));
+      } else {
+        for (const action of actions) {
+          const result = await executeAutonomousAction(action, accessToken);
+          executionResults.push({ action, ...result });
+        }
+        const successCount = executionResults.filter((r) => r.ok).length;
+        summary = `Autonomous loop: ${successCount}/${actions.length} action(s) executed successfully.`;
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    supabaseAdmin.from('automation_runs').insert({
+      business_id,
+      user_id: business.user_id,
+      agent_type: 'autonomous_loop',
+      status: 'completed',
+      trigger_type: 'scheduled',
+      trigger_reason: 'cron autonomous loop via dispatch-agents',
+      input: { policy_id: policy.id, metrics_count: metrics.length },
+      output: { policy, actions, results: executionResults },
+      summary,
+      first_person_summary: `I ran the autonomous policy loop. ${summary}`,
+      requires_approval: false,
+      duration_ms: durationMs,
+      started_at: new Date(startTime).toISOString(),
+      completed_at: new Date().toISOString(),
+    }).then(() => {});
+
+    return res.status(200).json({
+      business_id,
+      policy_id: policy.id,
+      metrics_evaluated: metrics.length,
+      actions_generated: actions.length,
+      actions,
+      results: executionResults,
+      summary,
+      duration_ms: durationMs,
+      // Creative evolution: trigger if any frequency-pause or winner-scale detected
+      creative_evolution: 'creative_evolution_not_implemented',
+    });
+  } catch (err: any) {
+    console.error('[autonomous/run] Error:', err);
+    return res.status(500).json({ error: err.message || 'Internal error during autonomous run' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ADMIN DATA (routed via /api/admin-data → v1-router?path=admin-data)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -2944,6 +3515,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'feedback') return handleCreativeFeedback(req, res, id);
   }
 
+  // ── Autonomous mode routes ──────────────────────────────────────────
+  if (route === 'autonomous/policies/upsert') return handleAutonomousPoliciesUpsert(req, res);
+  if (route === 'autonomous/metrics') return handleAutonomousMetrics(req, res);
+  if (route === 'autonomous/evaluate') return handleAutonomousEvaluate(req, res);
+  if (route === 'autonomous/execute') return handleAutonomousExecute(req, res);
+  if (route === 'autonomous/run') return handleAutonomousRun(req, res);
+
   // ── 404 ────────────────────────────────────────────────────────────
   return res.status(404).json({
     error: {
@@ -2963,6 +3541,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/creatives/generate',
         'POST /api/v1/creatives/:id/variants',
         'POST /api/v1/creatives/:id/feedback',
+        'POST /api/v1/autonomous/policies/upsert',
+        'GET  /api/v1/autonomous/metrics',
+        'POST /api/v1/autonomous/evaluate',
+        'POST /api/v1/autonomous/execute',
+        'POST /api/v1/autonomous/run',
       ],
     },
   });
