@@ -3022,7 +3022,10 @@ interface AutonomousPolicy {
   pause_multiplier: number;
   scale_multiplier: number;
   frequency_cap: number;
+  /** @deprecated Use max_daily_budget_cents (integer cents). Kept for backward compat. */
   max_daily_budget: number;
+  /** Budget safety cap in integer cents (e.g. $100 = 10000). Preferred over max_daily_budget. */
+  max_daily_budget_cents?: number;
   scale_pct: number;
   min_conversions_to_scale: number;
 }
@@ -3095,6 +3098,12 @@ function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMe
   const actions: AutonomousAction[] = [];
   const SPEND_MIN_USD = 5; // do not act on campaigns with < $5 lifetime spend
 
+  // Prefer max_daily_budget_cents (integer cents, added by migration 20260302).
+  // Fall back to legacy max_daily_budget (dollars) for rows not yet backfilled.
+  const maxBudgetDollars = policy.max_daily_budget_cents != null
+    ? policy.max_daily_budget_cents / 100
+    : policy.max_daily_budget;
+
   for (const m of metrics) {
     const statusNorm = (m.status || '').toLowerCase();
     if (!['active', 'running'].includes(statusNorm)) continue;
@@ -3126,7 +3135,7 @@ function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMe
     }
 
     // Rule 3: SCALE if CPA is excellent and conversions sufficient
-    const spendBelowMax = m.spend_today === null || m.spend_today < policy.max_daily_budget;
+    const spendBelowMax = m.spend_today === null || m.spend_today < maxBudgetDollars;
     if (
       m.cpa !== null &&
       m.cpa < policy.target_cpa * policy.scale_multiplier &&
@@ -3135,7 +3144,7 @@ function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMe
     ) {
       const currentBudget = m.daily_budget;
       const rawNewBudget = currentBudget * (1 + policy.scale_pct);
-      const newBudget = Math.min(rawNewBudget, policy.max_daily_budget);
+      const newBudget = Math.min(rawNewBudget, maxBudgetDollars);
       const MIN_BUDGET_USD = 5;
 
       if (newBudget > Math.max(currentBudget, MIN_BUDGET_USD)) {
@@ -3237,6 +3246,7 @@ async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelRes
     scale_multiplier = 0.7,
     frequency_cap = 3.5,
     max_daily_budget = 100,
+    max_daily_budget_cents: rawMaxBudgetCents,
     scale_pct = 0.2,
     min_conversions_to_scale = 3,
   } = req.body || {};
@@ -3247,6 +3257,13 @@ async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelRes
   if (typeof target_cpa !== 'number' || target_cpa <= 0) {
     return res.status(400).json({ error: { code: 'validation_error', message: '`target_cpa` is required and must be a positive dollar amount' } });
   }
+
+  // Standardize to cents. Accept max_daily_budget_cents directly (preferred),
+  // or derive from max_daily_budget dollars if only the legacy field is provided.
+  const max_daily_budget_cents: number =
+    typeof rawMaxBudgetCents === 'number' && rawMaxBudgetCents > 0
+      ? Math.round(rawMaxBudgetCents)
+      : Math.round(max_daily_budget * 100);
 
   const { data: business } = await supabaseAdmin
     .from('businesses')
@@ -3273,6 +3290,7 @@ async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelRes
         scale_multiplier,
         frequency_cap,
         max_daily_budget,
+        max_daily_budget_cents,
         scale_pct,
         min_conversions_to_scale,
         updated_at: new Date().toISOString(),
@@ -3427,7 +3445,14 @@ async function handleAutonomousExecute(req: VercelRequest, res: VercelResponse) 
     return res.status(403).json({ error: { code: 'forbidden', message: 'You do not own this business' } });
   }
 
-  const accessToken = meta_access_token || (business as any).facebook_access_token || process.env.META_SYSTEM_USER_TOKEN;
+  // System token fallback requires ALLOW_SYSTEM_TOKEN_EXECUTION=true AND business in allowlist.
+  const allowSystemToken = process.env.ALLOW_SYSTEM_TOKEN_EXECUTION === 'true';
+  // TODO: add specific business UUIDs here to permit system token execution
+  const SYSTEM_TOKEN_ALLOWLIST: string[] = [];
+  const accessToken = meta_access_token
+    || (business as any).facebook_access_token
+    || (allowSystemToken && SYSTEM_TOKEN_ALLOWLIST.includes(business_id)
+        ? process.env.META_SYSTEM_USER_TOKEN : undefined);
   if (!accessToken) {
     return res.status(400).json({
       error: {
@@ -3519,14 +3544,24 @@ async function handleAutonomousRun(req: VercelRequest, res: VercelResponse) {
     let executionResults: Array<{ action: any; ok: boolean; status: string; error?: string; meta?: any }> = [];
     let summary: string;
 
+    // Track whether the run was blocked by a missing token (used for DB status below)
+    let missingToken = false;
+
     if (actions.length === 0) {
       summary = 'No actions required. All campaigns within policy thresholds.';
     } else {
-      const accessToken = (business as any).facebook_access_token || process.env.META_SYSTEM_USER_TOKEN;
+      // System token fallback requires ALLOW_SYSTEM_TOKEN_EXECUTION=true AND business in allowlist.
+      const allowSystemToken = process.env.ALLOW_SYSTEM_TOKEN_EXECUTION === 'true';
+      // TODO: add specific business UUIDs here to permit system token execution
+      const SYSTEM_TOKEN_ALLOWLIST: string[] = [];
+      const accessToken = (business as any).facebook_access_token
+        || (allowSystemToken && SYSTEM_TOKEN_ALLOWLIST.includes(business_id)
+            ? process.env.META_SYSTEM_USER_TOKEN : undefined);
 
       if (!accessToken) {
-        summary = `${actions.length} action(s) generated but not executed: no Meta access token available on business record.`;
-        executionResults = actions.map((a) => ({ action: a, ok: false, status: 'skipped', error: 'No Meta access token' }));
+        missingToken = true;
+        summary = `${actions.length} action(s) generated but not executed: missing_meta_token. Set facebook_access_token on the business record.`;
+        executionResults = actions.map((a) => ({ action: a, ok: false, status: 'skipped', error: 'missing_meta_token: facebook_access_token required' }));
       } else {
         for (const action of actions) {
           const result = await executeAutonomousAction(action, accessToken);
@@ -3543,7 +3578,9 @@ async function handleAutonomousRun(req: VercelRequest, res: VercelResponse) {
       business_id,
       user_id: business.user_id,
       agent_type: 'autonomous_loop',
-      status: 'completed',
+      // Mark as failed when token was missing so the run is clearly not completed
+      status: missingToken ? 'failed' : 'completed',
+      error_message: missingToken ? 'missing_meta_token' : null,
       trigger_type: 'scheduled',
       trigger_reason: 'cron autonomous loop via dispatch-agents',
       input: { policy_id: policy.id, metrics_count: metrics.length },

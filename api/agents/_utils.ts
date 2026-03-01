@@ -115,6 +115,28 @@ export async function shouldRunAgent(businessId: string, agentType: AgentType, f
   return hoursSinceLastRun >= frequencyHours;
 }
 
+/**
+ * Check if the autonomous loop should run for a business.
+ * Uses agent_type='autonomous_loop' directly — does NOT proxy performance_monitor.
+ * This ensures the autonomous loop is throttled against its own run history.
+ */
+export async function shouldRunAutonomousLoop(businessId: string, frequencyHours: number): Promise<boolean> {
+  const { data: lastRun } = await supabaseAdmin
+    .from('automation_runs')
+    .select('completed_at')
+    .eq('business_id', businessId)
+    .eq('agent_type', 'autonomous_loop')
+    .eq('status', 'completed')
+    .order('completed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!lastRun) return true;
+
+  const hoursSinceLastRun = (Date.now() - new Date(lastRun.completed_at).getTime()) / (1000 * 60 * 60);
+  return hoursSinceLastRun >= frequencyHours;
+}
+
 export async function getBusinessWithConfig(businessId: string) {
   const { data: business } = await supabaseAdmin
     .from('businesses')

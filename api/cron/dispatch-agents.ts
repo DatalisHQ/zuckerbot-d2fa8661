@@ -1,4 +1,4 @@
-import { supabaseAdmin, shouldRunAgent } from '../agents/_utils.js';
+import { supabaseAdmin, shouldRunAgent, shouldRunAutonomousLoop } from '../agents/_utils.js';
 import type { AgentType } from '../agents/_utils.js';
 
 // Autonomous loop frequency: run at most once every 4 hours per business
@@ -176,12 +176,9 @@ export default async function handler(req: any, res: any) {
             .maybeSingle();
 
           if (autonomousPolicy) {
-            // Throttle: check the last autonomous_loop run against frequency window
-            const shouldRunLoop = await shouldRunAgent(businessId, 'performance_monitor' as AgentType, AUTONOMOUS_LOOP_FREQUENCY_HOURS);
-            // Note: we reuse shouldRunAgent with performance_monitor frequency as a proxy
-            // for the autonomous loop cadence (also 4 hours). A dedicated check on
-            // automation_runs agent_type='autonomous_loop' would be more precise but
-            // requires extending shouldRunAgent — acceptable for MVP.
+            // Throttle: check the last autonomous_loop run against frequency window.
+            // Uses agent_type='autonomous_loop' directly — not performance_monitor proxy.
+            const shouldRunLoop = await shouldRunAutonomousLoop(businessId, AUTONOMOUS_LOOP_FREQUENCY_HOURS);
 
             if (shouldRunLoop) {
               fetch(`${baseUrl}/api/v1/autonomous/run`, {
@@ -207,7 +204,7 @@ export default async function handler(req: any, res: any) {
                 business_name: businessName,
                 agent: 'autonomous_loop' as unknown as AgentType,
                 status: 'skipped',
-                reason: `Last performance_monitor run within ${AUTONOMOUS_LOOP_FREQUENCY_HOURS}h window`,
+                reason: `Last autonomous_loop run within ${AUTONOMOUS_LOOP_FREQUENCY_HOURS}h window`,
               });
             }
           }

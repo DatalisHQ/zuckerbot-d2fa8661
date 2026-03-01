@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { supabaseAdmin, handleCors, getLastRunForAgent, getBusinessWithConfig } from './_utils.js';
+import { supabaseAdmin, handleCors, getBusinessWithConfig } from './_utils.js';
 import { pauseMetaCampaign, updateAdsetDailyBudget } from './meta.js';
 import type { OptimizationAction } from './campaign-optimizer.js';
 
@@ -24,10 +24,12 @@ interface ExecutionResult {
 
 /**
  * Resolve the list of OptimizationAction objects for a run.
- * Prefers run.output.actions (structured). Falls back to run.output.recommendations (legacy).
- * If neither, loads the latest campaign_optimizer run for the business.
+ * Only uses actions attached to this specific run — no cross-run fallback.
+ * Preferred: run.output.actions (structured new format).
+ * Legacy fallback: run.output.recommendations mapped to OptimizationAction shape.
+ * If neither exists or is empty, returns an empty array (caller returns 400).
  */
-async function resolveActions(run: any): Promise<OptimizationAction[]> {
+function resolveActions(run: any): OptimizationAction[] {
   // Structured actions from this run (new format)
   if (Array.isArray(run.output?.actions) && run.output.actions.length > 0) {
     return run.output.actions as OptimizationAction[];
@@ -38,19 +40,8 @@ async function resolveActions(run: any): Promise<OptimizationAction[]> {
     return mapLegacyRecommendations(run.output.recommendations);
   }
 
-  // Fallback: fetch the latest campaign_optimizer run for this business
-  if (run.agent_type !== 'campaign_optimizer') {
-    const lastOptimizerRun = await getLastRunForAgent(run.business_id, 'campaign_optimizer');
-    if (lastOptimizerRun) {
-      if (Array.isArray(lastOptimizerRun.output?.actions) && lastOptimizerRun.output.actions.length > 0) {
-        return lastOptimizerRun.output.actions as OptimizationAction[];
-      }
-      if (Array.isArray(lastOptimizerRun.output?.recommendations) && lastOptimizerRun.output.recommendations.length > 0) {
-        return mapLegacyRecommendations(lastOptimizerRun.output.recommendations);
-      }
-    }
-  }
-
+  // No actions found on this run. Do NOT fall back to other runs — approving
+  // run A must only execute actions belonging to run A.
   return [];
 }
 
@@ -219,82 +210,121 @@ export default async function handler(req: any, res: any) {
     }
 
     const now = new Date().toISOString();
-    const newStatus = action === 'approve' ? 'approved' : 'dismissed';
 
-    // Record the approval/dismissal immediately; execution follows below
-    const { error: updateError } = await supabaseAdmin
-      .from('automation_runs')
-      .update({
-        status: newStatus,
-        approved_at: now,
-        approved_action: action,
-        approved_by: userId,
-      })
-      .eq('id', run_id);
-
-    if (updateError) {
-      throw new Error(`Failed to update run: ${updateError.message}`);
-    }
-
-    // ── DISMISS: nothing to execute ──────────────────────────────────────────
+    // ── DISMISS: record and return immediately — nothing to execute ───────────
     if (action === 'dismiss') {
+      const { error: dismissError } = await supabaseAdmin
+        .from('automation_runs')
+        .update({ status: 'dismissed', approved_at: now, approved_action: 'dismiss', approved_by: userId })
+        .eq('id', run_id);
+
+      if (dismissError) throw new Error(`Failed to dismiss run: ${dismissError.message}`);
       return res.status(200).json({ run_id, action, status: 'dismissed', message: 'Dismissed. No action taken.' });
     }
 
-    // ── APPROVE: resolve and execute actions ─────────────────────────────────
-    const actionsToExecute = await resolveActions(run);
+    // ── APPROVE: set executing status before touching Meta ───────────────────
+    // We set 'executing' (not 'approved') immediately so that a crash mid-execution
+    // leaves the run in a clear failed/executing state rather than stuck in 'approved'.
+    const { error: execStartError } = await supabaseAdmin
+      .from('automation_runs')
+      .update({
+        status: 'executing',
+        approved_at: now,
+        approved_action: 'approve',
+        approved_by: userId,
+        executing_started_at: now,
+      })
+      .eq('id', run_id);
+
+    if (execStartError) throw new Error(`Failed to update run to executing: ${execStartError.message}`);
+
+    // ── Resolve actions — only from THIS run, no cross-run fallback (Patch A) ─
+    const actionsToExecute = resolveActions(run);
 
     if (actionsToExecute.length === 0) {
+      // No actions attached to this run_id. Fail clearly rather than silently no-op.
       await supabaseAdmin.from('automation_runs').update({
-        output: { ...(run.output || {}), execution_note: 'No executable actions found in this run', executed_at: now },
+        status: 'failed',
+        error_message: 'no_actions_on_run',
+        output: { ...(run.output || {}), execution_error: 'no_actions_on_run', failed_at: now },
       }).eq('id', run_id);
 
-      return res.status(200).json({
-        run_id,
-        action: 'approve',
-        status: 'approved',
-        message: 'Approved, but no executable actions were found.',
-        execution_results: [],
+      return res.status(400).json({
+        error: {
+          code: 'no_actions_on_run',
+          message: 'No executable actions attached to this run_id',
+        },
       });
     }
 
-    // Resolve Meta access token from the business record
+    // ── Resolve Meta access token — business token required (Patch C) ─────────
+    // System token fallback is gated behind ALLOW_SYSTEM_TOKEN_EXECUTION=true AND
+    // an explicit per-business allowlist to prevent accidental wide access.
     const { business, config } = await getBusinessWithConfig(run.business_id);
-    const accessToken = (business as any)?.facebook_access_token || process.env.META_SYSTEM_USER_TOKEN;
+    const businessToken = (business as any)?.facebook_access_token as string | undefined;
+    const allowSystemToken = process.env.ALLOW_SYSTEM_TOKEN_EXECUTION === 'true';
+    // TODO: add specific business UUIDs here to permit system token execution
+    const SYSTEM_TOKEN_ALLOWLIST: string[] = [];
+    const accessToken = businessToken
+      || (allowSystemToken && SYSTEM_TOKEN_ALLOWLIST.includes(run.business_id)
+          ? process.env.META_SYSTEM_USER_TOKEN : undefined);
 
     if (!accessToken) {
+      // Mark as failed — run is not retryable until the business token is configured.
       await supabaseAdmin.from('automation_runs').update({
+        status: 'failed',
+        error_message: 'missing_meta_token',
         output: {
           ...(run.output || {}),
-          execution_note: 'No Meta access token found on business record; actions not executed',
-          executed_at: now,
+          execution_error: 'missing_meta_token: businesses.facebook_access_token is required for Meta mutations',
+          failed_at: now,
         },
       }).eq('id', run_id);
 
       return res.status(200).json({
         run_id,
         action: 'approve',
-        status: 'approved',
-        warning: 'Approved, but no Meta access token is configured. Set `facebook_access_token` on the business record to enable execution.',
+        status: 'failed',
+        error_code: 'missing_meta_token',
+        warning: 'Execution failed: no Meta access token configured on business record. Set `facebook_access_token` on the business to enable execution.',
         execution_results: [],
       });
     }
 
-    // Budget cap: prefer config field when present, otherwise use default $100
+    // Budget cap: prefer config field when present, otherwise use default $100 (10000 cents)
     const maxBudgetCents = (config as any)?.max_daily_budget_cents ?? DEFAULT_MAX_DAILY_BUDGET_CENTS;
 
-    // Execute each action serially; a single failure does not stop the rest
+    // Execute each action serially; a single action failure does not stop the rest.
+    // Track partial results so they can be persisted even if an unexpected error occurs.
     const executionResults: ExecutionResult[] = [];
-    for (const act of actionsToExecute) {
-      const result = await executeAction(act, accessToken, maxBudgetCents);
-      executionResults.push(result);
+    try {
+      for (const act of actionsToExecute) {
+        const result = await executeAction(act, accessToken, maxBudgetCents);
+        executionResults.push(result);
+      }
+    } catch (execError: any) {
+      // Unexpected error mid-loop — persist partial results and mark as failed.
+      await supabaseAdmin.from('automation_runs').update({
+        status: 'failed',
+        error_message: execError.message || 'Unexpected error during action execution',
+        output: {
+          ...(run.output || {}),
+          executed_actions: actionsToExecute,
+          execution_results: executionResults,
+          execution_error: execError.message || 'Unexpected error during action execution',
+          failed_at: new Date().toISOString(),
+          executed_by: userId,
+        },
+      }).eq('id', run_id);
+
+      return res.status(500).json({ error: execError.message || 'Execution failed unexpectedly' });
     }
 
     const successCount = executionResults.filter((r) => r.ok).length;
     const errorCount = executionResults.filter((r) => !r.ok).length;
     const execSummary = `${successCount}/${actionsToExecute.length} actions succeeded, ${errorCount} failed/skipped`;
 
-    // Write execution results back into the run record
+    // Write execution results back into the run record and mark completed.
     await supabaseAdmin.from('automation_runs').update({
       status: 'completed',
       output: {
@@ -302,7 +332,7 @@ export default async function handler(req: any, res: any) {
         executed_actions: actionsToExecute,
         execution_results: executionResults,
         execution_summary: execSummary,
-        executed_at: now,
+        executed_at: new Date().toISOString(),
         executed_by: userId,
       },
     }).eq('id', run_id);
