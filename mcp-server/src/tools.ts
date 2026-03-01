@@ -134,9 +134,9 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     "Launch a draft campaign on Meta (Facebook/Instagram). This is the money endpoint — it creates real ads on the user's Meta ad account and starts spending their budget. Requires Meta credentials.",
     {
       campaign_id: z.string().describe("ZuckerBot campaign ID from the create step"),
-      meta_access_token: z.string().describe("User's Meta/Facebook access token"),
-      meta_ad_account_id: z.string().describe("Meta ad account ID (format: act_XXXXX)"),
-      meta_page_id: z.string().describe("Facebook Page ID for the lead form"),
+      meta_access_token: z.string().optional().describe("User's Meta/Facebook access token. Optional if Facebook is connected on zuckerbot.ai"),
+      meta_ad_account_id: z.string().optional().describe("Meta ad account ID (format: act_XXXXX). Optional if Facebook is connected on zuckerbot.ai"),
+      meta_page_id: z.string().optional().describe("Facebook Page ID. Optional if Facebook is connected on zuckerbot.ai"),
       variant_index: z
         .number()
         .int()
@@ -159,12 +159,10 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
       radius_km,
     }) => {
       try {
-        const body: Record<string, unknown> = {
-          meta_access_token,
-          meta_ad_account_id,
-          meta_page_id,
-          variant_index,
-        };
+        const body: Record<string, unknown> = { variant_index };
+        if (meta_access_token) body.meta_access_token = meta_access_token;
+        if (meta_ad_account_id) body.meta_ad_account_id = meta_ad_account_id;
+        if (meta_page_id) body.meta_page_id = meta_page_id;
         if (daily_budget_cents !== undefined) body.daily_budget_cents = daily_budget_cents;
         if (radius_km !== undefined) body.radius_km = radius_km;
 
@@ -325,7 +323,22 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 10. Generate Creatives ──────────────────────────────────────
+  // ── 10. Meta Connection Status ─────────────────────────────────
+  server.tool(
+    "zuckerbot_meta_status",
+    "Check if the user has connected their Facebook/Meta account. If not connected, returns a URL where they can connect. Always check this before attempting to launch a campaign.",
+    {},
+    async () => {
+      try {
+        const result = await client.get("/meta/status");
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 11. Generate Creatives ──────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
     "Generate ad creatives (copy + images) independently from campaign creation. Useful for refreshing creatives on an existing campaign or generating options to show a user.",

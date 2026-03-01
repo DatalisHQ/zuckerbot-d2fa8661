@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export const config = { maxDuration: 60 };
 
-const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || 'BSA3NLr2aVETRurlr8KaqHN-pBcOEqP';
+const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const TINYFISH_API_KEY = process.env.TINYFISH_API_KEY || '';
 const TINYFISH_URL = 'https://agent.tinyfish.ai/v1/automation/run-sse';

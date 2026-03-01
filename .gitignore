@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .env
 .vercel
+
+# npm cache
+mcp-server/.npm-cache

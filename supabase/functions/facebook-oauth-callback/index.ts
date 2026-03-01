@@ -268,6 +268,21 @@ serve(async (req: Request) => {
       .update({ facebook_connected: true })
       .eq("user_id", user.id);
 
+    // Auto-link any unlinked API keys to this business
+    const { data: bizRecord } = await supabase
+      .from("businesses")
+      .select("id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (bizRecord) {
+      await supabase
+        .from("api_keys")
+        .update({ business_id: bizRecord.id })
+        .eq("user_id", user.id)
+        .is("business_id", null);
+    }
+
     console.log(`[fb-oauth] ✅ Facebook connected for user ${user.id}`);
     console.log(`[fb-oauth]   Page: ${pageId || "none"}`);
     console.log(`[fb-oauth]   Ad Account: ${adAccountId || "none"}`);

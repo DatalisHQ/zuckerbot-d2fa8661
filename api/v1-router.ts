@@ -18,6 +18,8 @@
  *   POST /api/v1/creatives/generate         → handleCreativesGenerate
  *   POST /api/v1/creatives/:id/variants     → handleCreativeVariants
  *   POST /api/v1/creatives/:id/feedback     → handleCreativeFeedback
+ *   GET  /api/v1/meta/status                → handleMetaStatus
+ *   POST /api/v1/notifications/telegram     → handleSetTelegram
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -33,7 +35,7 @@ export const config = { maxDuration: 120 };
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://bqqmkiocynvlaianwisd.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || 'BSA3NLr2aVETRurlr8KaqHN-pBcOEqP';
+const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const GOOGLE_AI_API_KEY = process.env.GOOGLE_AI_API_KEY || '';
 
@@ -1059,19 +1061,58 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     return res.status(400).json({ error: { code: 'validation_error', message: 'Campaign ID is required in URL path' } });
   }
 
-  const { meta_access_token, meta_ad_account_id, meta_page_id, variant_index = 0, daily_budget_cents, radius_km } = req.body || {};
+  let { meta_access_token, meta_ad_account_id, meta_page_id, variant_index = 0, daily_budget_cents, radius_km } = req.body || {};
 
-  if (!meta_access_token || typeof meta_access_token !== 'string') {
-    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-    return res.status(400).json({ error: { code: 'validation_error', message: '`meta_access_token` is required' } });
+  // If credentials not provided, look up from linked business
+  if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
+    const { data: keyWithBiz } = await supabaseAdmin
+      .from('api_keys')
+      .select('business_id')
+      .eq('id', auth.keyRecord.id)
+      .single();
+
+    let businessId = keyWithBiz?.business_id;
+
+    if (!businessId) {
+      const { data: userBiz } = await supabaseAdmin
+        .from('businesses')
+        .select('id')
+        .eq('user_id', auth.keyRecord.user_id)
+        .limit(1)
+        .single();
+      businessId = userBiz?.id;
+    }
+
+    if (businessId) {
+      const { data: biz } = await supabaseAdmin
+        .from('businesses')
+        .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
+        .eq('id', businessId)
+        .single();
+
+      if (biz) {
+        meta_access_token = meta_access_token || biz.facebook_access_token;
+        meta_ad_account_id = meta_ad_account_id || biz.facebook_ad_account_id;
+        meta_page_id = meta_page_id || biz.facebook_page_id;
+      }
+    }
   }
-  if (!meta_ad_account_id || typeof meta_ad_account_id !== 'string') {
+
+  if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
+    const missing = [
+      !meta_access_token && 'meta_access_token',
+      !meta_ad_account_id && 'meta_ad_account_id',
+      !meta_page_id && 'meta_page_id',
+    ].filter(Boolean).join(', ');
+
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-    return res.status(400).json({ error: { code: 'validation_error', message: '`meta_ad_account_id` is required (e.g. "act_123456789")' } });
-  }
-  if (!meta_page_id || typeof meta_page_id !== 'string') {
-    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-    return res.status(400).json({ error: { code: 'validation_error', message: '`meta_page_id` is required (Facebook Page ID for lead form)' } });
+    return res.status(400).json({
+      error: {
+        code: 'missing_meta_credentials',
+        message: `Missing: ${missing}. Either pass them in the request body, or connect Facebook at https://zuckerbot.ai/profile to store them automatically.`,
+        connect_url: 'https://zuckerbot.ai/profile',
+      }
+    });
   }
 
   try {
@@ -1193,6 +1234,22 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     supabaseAdmin.from('api_campaigns').update({ status: 'active', meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_leadform_id: metaLeadFormId, launched_at: launchedAt }).eq('id', campaignId).then(() => {});
     supabaseAdmin.from('campaigns').insert({ business_id: null, name: campaignName, status: 'active', daily_budget_cents: budgetCents, radius_km: targetRadius, ad_headline: headline, ad_copy: adBody, ad_image_url: imageUrl || null, meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_leadform_id: metaLeadFormId, leads_count: 0, spend_cents: 0, launched_at: launchedAt }).then(() => {});
 
+    // Send launch notification (non-blocking)
+    try {
+      const { data: notifBiz } = await supabaseAdmin
+        .from('businesses')
+        .select('telegram_chat_id, notifications_enabled, name')
+        .eq('user_id', auth.keyRecord.user_id)
+        .single();
+
+      if (notifBiz) {
+        const { notifyCampaignLaunched } = await import('./notifications');
+        await notifyCampaignLaunched(notifBiz, campaignName, budgetCents);
+      }
+    } catch (e) {
+      console.warn('[api/launch] Notification failed (non-fatal):', e);
+    }
+
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
     return res.status(200).json({ id: campaignId, status: 'active', meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_leadform_id: metaLeadFormId, daily_budget_cents: budgetCents, launched_at: launchedAt });
   } catch (err: any) {
@@ -1284,6 +1341,24 @@ async function handlePause(req: VercelRequest, res: VercelResponse, campaignId: 
     const newStatus = action === 'pause' ? 'paused' : 'active';
     if (source === 'api_campaigns' && recordId) supabaseAdmin.from('api_campaigns').update({ status: newStatus }).eq('id', recordId).then(() => {});
     if (source === 'campaigns' && recordId) supabaseAdmin.from('campaigns').update({ status: newStatus }).eq('id', recordId).then(() => {});
+
+    // Send pause/resume notification (non-blocking)
+    if (action === 'pause') {
+      try {
+        const { data: notifBiz } = await supabaseAdmin
+          .from('businesses')
+          .select('telegram_chat_id, notifications_enabled, name')
+          .eq('user_id', auth.keyRecord.user_id)
+          .single();
+
+        if (notifBiz) {
+          const { notifyCampaignPaused } = await import('./notifications');
+          await notifyCampaignPaused(notifBiz, apiCampaign?.business_name || 'Campaign');
+        }
+      } catch (e) {
+        console.warn('[api/pause] Notification failed (non-fatal):', e);
+      }
+    }
 
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/pause', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
     return res.status(200).json({ campaign_id: campaignId, status: newStatus, meta_campaign_id: metaCampaignId });
@@ -1583,6 +1658,21 @@ async function handleKeysCreate(req: VercelRequest, res: VercelResponse) {
   if (insertError) {
     console.error('Failed to create API key:', insertError);
     return res.status(500).json({ error: { code: 'internal_error', message: 'Failed to create API key' } });
+  }
+
+  // Auto-link to user's business if they have one
+  const { data: userBiz } = await supabaseAdmin
+    .from('businesses')
+    .select('id')
+    .eq('user_id', userId)
+    .limit(1)
+    .single();
+
+  if (userBiz) {
+    await supabaseAdmin
+      .from('api_keys')
+      .update({ business_id: userBiz.id })
+      .eq('id', insertedKey.id);
   }
 
   return res.status(201).json({
@@ -1951,6 +2041,117 @@ Rules:
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/research/market', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
     return res.status(500).json({ error: { code: 'internal_error', message: 'Failed to generate market intelligence', details: err?.message || String(err) } });
   }
+}
+
+// ── GET /api/v1/meta/status ──────────────────────────────────────────────
+
+async function handleMetaStatus(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { data: keyRecord } = await supabaseAdmin
+    .from('api_keys')
+    .select('business_id')
+    .eq('id', auth.keyRecord.id)
+    .single();
+
+  let businessId = keyRecord?.business_id;
+  if (!businessId) {
+    const { data: userBiz } = await supabaseAdmin
+      .from('businesses')
+      .select('id')
+      .eq('user_id', auth.keyRecord.user_id)
+      .limit(1)
+      .single();
+    businessId = userBiz?.id;
+  }
+
+  if (!businessId) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/status', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
+    return res.status(200).json({
+      connected: false,
+      has_business: false,
+      message: 'No business profile found. Create one at https://zuckerbot.ai/profile',
+      connect_url: 'https://zuckerbot.ai/profile',
+    });
+  }
+
+  const { data: biz } = await supabaseAdmin
+    .from('businesses')
+    .select('facebook_access_token, facebook_ad_account_id, facebook_page_id, name')
+    .eq('id', businessId)
+    .single();
+
+  const hasToken = !!biz?.facebook_access_token;
+  const hasAdAccount = !!biz?.facebook_ad_account_id;
+  const hasPage = !!biz?.facebook_page_id;
+  const connected = hasToken && hasAdAccount && hasPage;
+
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/status', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
+
+  return res.status(200).json({
+    connected,
+    has_business: true,
+    business_name: biz?.name || null,
+    credentials: {
+      access_token: hasToken,
+      ad_account_id: hasAdAccount,
+      page_id: hasPage,
+    },
+    ...(connected ? {} : {
+      message: 'Facebook not fully connected. Connect at https://zuckerbot.ai/profile',
+      connect_url: 'https://zuckerbot.ai/profile',
+    }),
+  });
+}
+
+// ── POST /api/v1/notifications/telegram ─────────────────────────────────
+
+async function handleSetTelegram(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { chat_id, enabled } = req.body || {};
+
+  if (!chat_id || typeof chat_id !== 'string') {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`chat_id` is required (your Telegram chat ID)' } });
+  }
+
+  const { error } = await supabaseAdmin
+    .from('businesses')
+    .update({
+      telegram_chat_id: chat_id,
+      notifications_enabled: enabled !== false,
+    })
+    .eq('user_id', auth.keyRecord.user_id);
+
+  if (error) {
+    return res.status(500).json({ error: { code: 'internal_error', message: 'Failed to update notification settings' } });
+  }
+
+  const { sendTelegram } = await import('./notifications');
+  const sent = await sendTelegram({ chatId: chat_id, message: '✅ ZuckerBot notifications connected! You\'ll receive campaign updates here.' });
+
+  return res.status(200).json({
+    ok: true,
+    test_message_sent: sent,
+    message: sent ? 'Telegram connected! Test message sent.' : 'Settings saved, but test message failed. Check your chat ID.',
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3494,6 +3695,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'research/competitors') return handleCompetitors(req, res);
   if (route === 'research/market') return handleMarket(req, res);
   if (route === 'creatives/generate') return handleCreativesGenerate(req, res);
+  if (route === 'meta/status') return handleMetaStatus(req, res);
+  if (route === 'notifications/telegram') return handleSetTelegram(req, res);
 
   // ── Dynamic campaign/:id routes ────────────────────────────────────
   if (segments.length === 3 && segments[0] === 'campaigns') {
@@ -3546,6 +3749,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/autonomous/evaluate',
         'POST /api/v1/autonomous/execute',
         'POST /api/v1/autonomous/run',
+        'GET  /api/v1/meta/status',
+        'POST /api/v1/notifications/telegram',
       ],
     },
   });
