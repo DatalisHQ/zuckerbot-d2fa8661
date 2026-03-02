@@ -77,6 +77,17 @@ function CodeBlock({ title, children }: { title?: string; children: string }) {
   );
 }
 
+// ── Facebook OAuth config ──────────────────────────────────────────────────
+
+const META_APP_ID = "1119807469249263";
+const META_REDIRECT_URI = "https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/facebook-oauth-callback";
+const META_SCOPES = "pages_manage_ads,ads_management,leads_retrieval,pages_read_engagement";
+
+function buildFbOAuthUrl(accessToken: string): string {
+  const state = encodeURIComponent(accessToken);
+  return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(META_REDIRECT_URI)}&scope=${META_SCOPES}&state=${state}&response_type=code&auth_type=rerequest`;
+}
+
 // ── Tier config ────────────────────────────────────────────────────────────
 
 const TIER_LIMITS: Record<string, { reqPerMin: number; reqPerDay: number; previewsPerMonth: number }> = {
@@ -102,6 +113,11 @@ const Developer = () => {
   const [generating, setGenerating] = useState(false);
   const [newKey, setNewKey] = useState<NewKeyResponse | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
+
+  // Facebook connection state
+  const [fbConnected, setFbConnected] = useState<boolean | null>(null);
+  const [fbLoading, setFbLoading] = useState(true);
+  const [adAccountId, setAdAccountId] = useState<string | null>(null);
 
   // ── Auth check ─────────────────────────────────────────────────────────
 
@@ -207,6 +223,43 @@ const Developer = () => {
   useEffect(() => {
     fetchUsage();
   }, [keys, fetchUsage]);
+
+  // ── Fetch Facebook connection status ───────────────────────────────────
+
+  const fetchFbStatus = useCallback(async () => {
+    if (!session) return;
+    setFbLoading(true);
+    try {
+      const { data } = await (supabase as any)
+        .from("businesses")
+        .select("facebook_access_token, facebook_ad_account_id")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (data?.facebook_access_token) {
+        setFbConnected(true);
+        setAdAccountId(data.facebook_ad_account_id || null);
+      } else {
+        setFbConnected(false);
+        setAdAccountId(null);
+      }
+    } catch {
+      setFbConnected(false);
+    } finally {
+      setFbLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (session) fetchFbStatus();
+  }, [session, fetchFbStatus]);
+
+  // Re-check when the user returns from the OAuth redirect in another tab/window
+  useEffect(() => {
+    const handleFocus = () => { if (session) fetchFbStatus(); };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [session, fetchFbStatus]);
 
   // ── Generate key ───────────────────────────────────────────────────────
 
@@ -341,195 +394,297 @@ const Developer = () => {
         {/* ── First-run onboarding flow (no keys yet) ────────────────── */}
         {!keysLoading && keys.length === 0 ? (
           <div className="space-y-6">
-            {/* Step 1: Generate key */}
-            {!newKey ? (
-              <Card className="bg-white/[0.02] border-white/10">
-                <CardHeader className="text-center pb-4">
-                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/20">
-                    <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+
+            {/* ── Step 1: Connect Facebook ──────────────────────────────── */}
+            {fbLoading ? (
+              <Skeleton className="h-48 w-full bg-white/5 rounded-xl" />
+            ) : fbConnected ? (
+              /* Facebook already connected — show compact success card */
+              <Card className="bg-white/[0.02] border-green-500/20">
+                <CardContent className="flex items-center gap-4 py-5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-500/10 border border-green-500/20">
+                    <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
-                  <CardTitle className="text-white text-2xl">Welcome to the ZuckerBot API</CardTitle>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Facebook Connected</p>
+                    {adAccountId && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Ad Account: {adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`}
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              /* Not connected — full Step 1 of 4 CTA */
+              <Card className="bg-white/[0.02] border-white/10">
+                <CardHeader className="text-center pb-4">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-[#1877F2]/10">
+                    {/* Facebook "f" logo */}
+                    <svg className="w-8 h-8" viewBox="0 0 24 24" fill="#1877F2">
+                      <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.267h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
+                    </svg>
+                  </div>
+                  <CardTitle className="text-white text-2xl">Connect your Facebook account</CardTitle>
                   <CardDescription className="text-gray-400 mt-2 text-base max-w-lg mx-auto">
-                    Generate your API key to start building. It only takes a few seconds, and we will walk you through setup right after.
+                    Connect Facebook to enable campaign creation, budget management, and ad performance tracking directly from ZuckerBot.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center pb-8">
                   <div className="flex items-center gap-2 mb-6 text-sm text-gray-500">
-                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 1 of 3</Badge>
-                    <span>Generate your API key</span>
+                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 1 of 4</Badge>
+                    <span>Connect your Facebook &amp; Meta Ads account</span>
                   </div>
                   <Button
-                    onClick={handleGenerateKey}
-                    disabled={generating}
                     size="lg"
-                    className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20 text-base px-8 py-6"
+                    style={{ backgroundColor: "#1877F2" }}
+                    className="text-white border-0 shadow-lg text-base px-8 py-6 hover:opacity-90"
+                    onClick={() => {
+                      window.location.href = buildFbOAuthUrl(session!.access_token);
+                    }}
                   >
-                    {generating ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                        </svg>
-                        Generate Your API Key
-                      </>
-                    )}
+                    <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.267h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
+                    </svg>
+                    Connect Facebook
                   </Button>
-                  <p className="mt-4 text-xs text-gray-600">Free tier: 10 req/min, 100 req/day</p>
+                  <p className="mt-4 text-xs text-gray-600">You will be redirected to Facebook to authorise access.</p>
                 </CardContent>
               </Card>
-            ) : (
-              /* Steps 2 & 3: Key generated, show setup instructions */
-              <div className="space-y-6">
-                {/* Key display */}
-                <Card className="bg-white/[0.02] border-white/10 border-green-500/20">
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10">
-                        <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
+            )}
+
+            {/* ── Steps 2–4: only shown once Facebook is connected ─────── */}
+            {fbConnected && (
+              !newKey ? (
+                /* Step 2 of 4: Generate API key */
+                <Card className="bg-white/[0.02] border-white/10">
+                  <CardHeader className="text-center pb-4">
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/20">
+                      <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                      </svg>
+                    </div>
+                    <CardTitle className="text-white text-2xl">Generate your API key</CardTitle>
+                    <CardDescription className="text-gray-400 mt-2 text-base max-w-lg mx-auto">
+                      Your API key authenticates all ZuckerBot API calls. It is shown only once — store it safely.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col items-center pb-8">
+                    <div className="flex items-center gap-2 mb-6 text-sm text-gray-500">
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 2 of 4</Badge>
+                      <span>Generate your API key</span>
+                    </div>
+                    <Button
+                      onClick={handleGenerateKey}
+                      disabled={generating}
+                      size="lg"
+                      className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20 text-base px-8 py-6"
+                    >
+                      {generating ? (
+                        <>
+                          <svg className="animate-spin -ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          Generate Your API Key
+                        </>
+                      )}
+                    </Button>
+                    <p className="mt-4 text-xs text-gray-600">Free tier: 10 req/min, 100 req/day</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                /* Steps 3 & 4: Key generated — show setup instructions */
+                <div className="space-y-6">
+                  {/* Key display */}
+                  <Card className="bg-white/[0.02] border-green-500/20">
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10">
+                          <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                        <div>
+                          <CardTitle className="text-white text-lg">API Key Created</CardTitle>
+                          <CardDescription className="text-gray-400">
+                            Save this key now. You will not see it again.
+                          </CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-3">
+                        <code className="flex-1 bg-black/30 rounded-lg px-4 py-3 font-mono text-sm text-green-400 break-all border border-white/5">
+                          {newKey.key}
+                        </code>
+                        <Button
+                          size="sm"
+                          onClick={handleCopyKey}
+                          className={
+                            keyCopied
+                              ? "bg-green-600 hover:bg-green-500 text-white border-0 shrink-0"
+                              : "bg-white/10 hover:bg-white/20 text-white border-0 shrink-0"
+                          }
+                        >
+                          {keyCopied ? (
+                            <>
+                              <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                              Copy
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">
+                          {newKey.tier}
+                        </Badge>
+                        <span className="text-xs text-gray-500">ID: {newKey.id}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Step 3 of 4: MCP config */}
+                  <Card className="bg-white/[0.02] border-white/10">
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 3 of 4</Badge>
+                        <CardTitle className="text-white text-lg">Connect to your AI editor</CardTitle>
+                      </div>
+                      <CardDescription className="text-gray-400 mt-1">
+                        Add ZuckerBot as an MCP server in Claude Desktop or Cursor. Your key is already filled in.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      <div>
+                        <h3 className="text-sm font-semibold text-white mb-3">Claude Desktop</h3>
+                        <CodeBlock title="claude_desktop_config.json">{`{
+  "mcpServers": {
+    "zuckerbot": {
+      "command": "npx",
+      "args": ["-y", "zuckerbot-mcp"],
+      "env": {
+        "ZUCKERBOT_API_KEY": "${newKey.key}"
+      }
+    }
+  }
+}`}</CodeBlock>
                       </div>
                       <div>
-                        <CardTitle className="text-white text-lg">API Key Created</CardTitle>
-                        <CardDescription className="text-gray-400">
-                          Save this key now. You will not see it again.
-                        </CardDescription>
+                        <h3 className="text-sm font-semibold text-white mb-3">Cursor</h3>
+                        <CodeBlock title=".cursor/mcp.json">{`{
+  "mcpServers": {
+    "zuckerbot": {
+      "command": "npx",
+      "args": ["-y", "zuckerbot-mcp"],
+      "env": {
+        "ZUCKERBOT_API_KEY": "${newKey.key}"
+      }
+    }
+  }
+}`}</CodeBlock>
                       </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-3">
-                      <code className="flex-1 bg-black/30 rounded-lg px-4 py-3 font-mono text-sm text-green-400 break-all border border-white/5">
-                        {newKey.key}
-                      </code>
-                      <Button
-                        size="sm"
-                        onClick={handleCopyKey}
-                        className={
-                          keyCopied
-                            ? "bg-green-600 hover:bg-green-500 text-white border-0 shrink-0"
-                            : "bg-white/10 hover:bg-white/20 text-white border-0 shrink-0"
-                        }
-                      >
-                        {keyCopied ? (
-                          <>
-                            <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                            Copy
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                    <div className="mt-3 flex items-center gap-2">
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">
-                        {newKey.tier}
-                      </Badge>
-                      <span className="text-xs text-gray-500">ID: {newKey.id}</span>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
 
-                {/* Step 2: MCP config */}
-                <Card className="bg-white/[0.02] border-white/10">
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 2 of 3</Badge>
-                      <CardTitle className="text-white text-lg">Connect to your AI editor</CardTitle>
-                    </div>
-                    <CardDescription className="text-gray-400 mt-1">
-                      Add ZuckerBot as an MCP server in Claude Desktop or Cursor. Your key is already filled in.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-5">
-                    <div>
-                      <h3 className="text-sm font-semibold text-white mb-3">Claude Desktop</h3>
-                      <CodeBlock title="claude_desktop_config.json">{`{
-  "mcpServers": {
-    "zuckerbot": {
-      "command": "npx",
-      "args": ["-y", "zuckerbot-mcp"],
-      "env": {
-        "ZUCKERBOT_API_KEY": "${newKey.key}"
-      }
-    }
-  }
-}`}</CodeBlock>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-white mb-3">Cursor</h3>
-                      <CodeBlock title=".cursor/mcp.json">{`{
-  "mcpServers": {
-    "zuckerbot": {
-      "command": "npx",
-      "args": ["-y", "zuckerbot-mcp"],
-      "env": {
-        "ZUCKERBOT_API_KEY": "${newKey.key}"
-      }
-    }
-  }
-}`}</CodeBlock>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Step 3: curl example */}
-                <Card className="bg-white/[0.02] border-white/10">
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 3 of 3</Badge>
-                      <CardTitle className="text-white text-lg">Make your first API call</CardTitle>
-                    </div>
-                    <CardDescription className="text-gray-400 mt-1">
-                      Test the API with a quick curl command. Your key is ready to go.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <CodeBlock title="Generate a campaign preview">{`curl -X POST https://zuckerbot.ai/api/v1/campaigns/preview \\
+                  {/* Step 4 of 4: curl example */}
+                  <Card className="bg-white/[0.02] border-white/10">
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 4 of 4</Badge>
+                        <CardTitle className="text-white text-lg">Make your first API call</CardTitle>
+                      </div>
+                      <CardDescription className="text-gray-400 mt-1">
+                        Test the API with a quick curl command. Your key is ready to go.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <CodeBlock title="Generate a campaign preview">{`curl -X POST https://zuckerbot.ai/api/v1/campaigns/preview \\
   -H "Authorization: Bearer ${newKey.key}" \\
   -H "Content-Type: application/json" \\
   -d '{"url": "https://example.com"}'`}</CodeBlock>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
 
-                {/* Docs link + continue to dashboard */}
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-5">
-                  <p className="text-sm text-blue-300">
-                    <strong>Want more?</strong> Check the{" "}
-                    <a href="/docs" className="text-blue-400 hover:text-blue-300 underline underline-offset-2">
-                      full documentation
-                    </a>{" "}
-                    for all endpoints, request/response formats, and examples.
-                  </p>
-                  <Button
-                    onClick={() => setNewKey(null)}
-                    variant="outline"
-                    size="sm"
-                    className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white shrink-0"
-                  >
-                    Go to Dashboard
-                  </Button>
+                  {/* Docs link + continue to dashboard */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-5">
+                    <p className="text-sm text-blue-300">
+                      <strong>Want more?</strong> Check the{" "}
+                      <a href="/docs" className="text-blue-400 hover:text-blue-300 underline underline-offset-2">
+                        full documentation
+                      </a>{" "}
+                      for all endpoints, request/response formats, and examples.
+                    </p>
+                    <Button
+                      onClick={() => setNewKey(null)}
+                      variant="outline"
+                      size="sm"
+                      className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white shrink-0"
+                    >
+                      Go to Dashboard
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )
             )}
           </div>
         ) : (
+        <>
+          {/* ── Facebook status banner (returning users with keys) ──────── */}
+          {!fbLoading && (
+            fbConnected ? (
+              <p className="mb-6 flex items-center gap-2 text-sm text-green-400">
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Facebook Connected{adAccountId
+                  ? ` — Ad Account: ${adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`}`
+                  : ""}
+              </p>
+            ) : (
+              <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5 shrink-0 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <p className="text-sm text-yellow-300">
+                    Facebook is not connected. Connect it to enable campaign creation and ad execution.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  style={{ backgroundColor: "#1877F2" }}
+                  className="text-white border-0 hover:opacity-90 shrink-0"
+                  onClick={() => {
+                    window.location.href = buildFbOAuthUrl(session!.access_token);
+                  }}
+                >
+                  <svg className="w-4 h-4 mr-1.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.267h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
+                  </svg>
+                  Connect Facebook
+                </Button>
+              </div>
+            )
+          )}
 
         <Tabs defaultValue="keys" className="w-full">
           <TabsList className="bg-white/5 border border-white/10">
@@ -971,6 +1126,7 @@ const Developer = () => {
             </Card>
           </TabsContent>
         </Tabs>
+        </>
         )}
       </main>
 
