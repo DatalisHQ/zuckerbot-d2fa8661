@@ -79,6 +79,14 @@ function CodeBlock({ title, children }: { title?: string; children: string }) {
 
 // ── Tier config ────────────────────────────────────────────────────────────
 
+const META_APP_ID = "1119807469249263";
+const META_REDIRECT_URI = encodeURIComponent("https://bqqmkiocynvlaianwisd.supabase.co/functions/v1/facebook-oauth-callback");
+const META_SCOPES = encodeURIComponent("pages_manage_ads,ads_management,leads_retrieval,pages_read_engagement");
+
+function buildFbOAuthUrl(accessToken: string) {
+  return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${META_REDIRECT_URI}&scope=${META_SCOPES}&state=${encodeURIComponent(accessToken)}&response_type=code&auth_type=rerequest`;
+}
+
 const TIER_LIMITS: Record<string, { reqPerMin: number; reqPerDay: number; previewsPerMonth: number }> = {
   free: { reqPerMin: 10, reqPerDay: 100, previewsPerMonth: 25 },
   pro: { reqPerMin: 60, reqPerDay: 1000, previewsPerMonth: 500 },
@@ -103,6 +111,11 @@ const Developer = () => {
   const [newKey, setNewKey] = useState<NewKeyResponse | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
 
+  // Facebook connection state
+  const [fbConnected, setFbConnected] = useState<boolean | null>(null);
+  const [fbLoading, setFbLoading] = useState(true);
+  const [adAccountId, setAdAccountId] = useState<string | null>(null);
+
   // ── Auth check ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -126,6 +139,33 @@ const Developer = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  // ── Check Facebook connection ──────────────────────────────────────
+
+  const fetchFbStatus = useCallback(async () => {
+    if (!session) return;
+    setFbLoading(true);
+    try {
+      const { data } = await (supabase as any)
+        .from('businesses')
+        .select('facebook_access_token, facebook_ad_account_id')
+        .eq('user_id', session.user.id)
+        .single();
+      setFbConnected(!!data?.facebook_access_token);
+      setAdAccountId(data?.facebook_ad_account_id || null);
+    } catch {
+      setFbConnected(false);
+    } finally {
+      setFbLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (session) fetchFbStatus();
+    const handleFocus = () => { if (session) fetchFbStatus(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [session, fetchFbStatus]);
 
   // ── Fetch keys ─────────────────────────────────────────────────────────
 
@@ -341,8 +381,64 @@ const Developer = () => {
         {/* ── First-run onboarding flow (no keys yet) ────────────────── */}
         {!keysLoading && keys.length === 0 ? (
           <div className="space-y-6">
-            {/* Step 1: Generate key */}
-            {!newKey ? (
+            {/* Facebook connection status */}
+            {fbLoading ? (
+              <Card className="bg-white/[0.02] border-white/10">
+                <CardContent className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+                </CardContent>
+              </Card>
+            ) : !fbConnected ? (
+              <Card className="bg-white/[0.02] border-white/10">
+                <CardHeader className="text-center pb-4">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/20">
+                    <svg className="w-8 h-8 text-blue-400" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    </svg>
+                  </div>
+                  <CardTitle className="text-white text-2xl">Connect Your Facebook Ad Account</CardTitle>
+                  <CardDescription className="text-gray-400 mt-2 text-base max-w-lg mx-auto">
+                    ZuckerBot needs access to your Facebook Ad Account to create and manage campaigns. This is a one-time setup.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center pb-8">
+                  <div className="flex items-center gap-2 mb-6 text-sm text-gray-500">
+                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 1 of 4</Badge>
+                    <span>Connect Facebook</span>
+                  </div>
+                  <Button
+                    size="lg"
+                    onClick={() => {
+                      if (session) window.location.href = buildFbOAuthUrl(session.access_token);
+                    }}
+                    className="bg-[#1877F2] hover:bg-[#166FE5] text-white border-0 shadow-lg shadow-blue-600/20 text-base px-8 py-6"
+                  >
+                    <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    </svg>
+                    Connect Facebook
+                  </Button>
+                  <p className="mt-4 text-xs text-gray-600">We request access to manage your ads and pages</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="bg-white/[0.02] border-green-500/20">
+                <CardContent className="flex items-center gap-3 py-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10">
+                    <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-green-400">Facebook Connected</p>
+                    {adAccountId && <p className="text-xs text-gray-500">Ad Account: {adAccountId}</p>}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Step: Generate key (only when FB is connected) */}
+            {!newKey && fbConnected ? (
               <Card className="bg-white/[0.02] border-white/10">
                 <CardHeader className="text-center pb-4">
                   <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/20">
@@ -357,7 +453,7 @@ const Developer = () => {
                 </CardHeader>
                 <CardContent className="flex flex-col items-center pb-8">
                   <div className="flex items-center gap-2 mb-6 text-sm text-gray-500">
-                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 1 of 3</Badge>
+                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 2 of 4</Badge>
                     <span>Generate your API key</span>
                   </div>
                   <Button
@@ -450,7 +546,7 @@ const Developer = () => {
                 <Card className="bg-white/[0.02] border-white/10">
                   <CardHeader>
                     <div className="flex items-center gap-3">
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 2 of 3</Badge>
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 3 of 4</Badge>
                       <CardTitle className="text-white text-lg">Connect to your AI editor</CardTitle>
                     </div>
                     <CardDescription className="text-gray-400 mt-1">
@@ -493,7 +589,7 @@ const Developer = () => {
                 <Card className="bg-white/[0.02] border-white/10">
                   <CardHeader>
                     <div className="flex items-center gap-3">
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 3 of 3</Badge>
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 4 of 4</Badge>
                       <CardTitle className="text-white text-lg">Make your first API call</CardTitle>
                     </div>
                     <CardDescription className="text-gray-400 mt-1">
@@ -527,9 +623,40 @@ const Developer = () => {
                   </Button>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         ) : (
+
+        {/* Facebook connection status for returning users */}
+        {!fbLoading && (
+          fbConnected ? (
+            <div className="mb-6 flex items-center gap-2 text-sm text-green-400">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Facebook Connected</span>
+              {adAccountId && <span className="text-gray-500">— Ad Account: {adAccountId}</span>}
+            </div>
+          ) : (
+            <div className="mb-6 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-yellow-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <p className="text-sm text-yellow-300">Connect Facebook to enable campaign launching</p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (session) window.location.href = buildFbOAuthUrl(session.access_token);
+                }}
+                className="bg-[#1877F2] hover:bg-[#166FE5] text-white border-0 shrink-0"
+              >
+                Connect Facebook
+              </Button>
+            </div>
+          )
+        )}
 
         <Tabs defaultValue="keys" className="w-full">
           <TabsList className="bg-white/5 border border-white/10">
