@@ -1286,7 +1286,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
         .single();
 
       if (notifBiz) {
-        const { notifyCampaignLaunched } = await import('./notifications');
+        const { notifyCampaignLaunched } = await import('../lib/notifications');
         await notifyCampaignLaunched(notifBiz, campaignName, budgetCents);
       }
     } catch (e) {
@@ -1395,7 +1395,7 @@ async function handlePause(req: VercelRequest, res: VercelResponse, campaignId: 
           .single();
 
         if (notifBiz) {
-          const { notifyCampaignPaused } = await import('./notifications');
+          const { notifyCampaignPaused } = await import('../lib/notifications');
           await notifyCampaignPaused(notifBiz, apiCampaign?.business_name || 'Campaign');
         }
       } catch (e) {
@@ -2187,7 +2187,7 @@ async function handleSetTelegram(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: { code: 'internal_error', message: 'Failed to update notification settings' } });
   }
 
-  const { sendTelegram } = await import('./notifications');
+  const { sendTelegram } = await import('../lib/notifications');
   const sent = await sendTelegram({ chatId: chat_id, message: '✅ ZuckerBot notifications connected! You\'ll receive campaign updates here.' });
 
   return res.status(200).json({
