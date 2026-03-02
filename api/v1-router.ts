@@ -1492,7 +1492,11 @@ async function handlePerformance(req: VercelRequest, res: VercelResponse, campai
       return res.status(404).json({ error: { code: 'not_found', message: 'Campaign not found or has not been launched on Meta yet' } });
     }
 
-    const accessToken = queryToken || storedAccessToken || process.env.META_SYSTEM_USER_TOKEN;
+    let accessToken = queryToken || storedAccessToken || process.env.META_SYSTEM_USER_TOKEN;
+    if (!accessToken) {
+      const { data: bizForToken } = await supabaseAdmin.from('businesses').select('facebook_access_token').eq('user_id', auth.keyRecord.user_id).single();
+      if (bizForToken?.facebook_access_token) accessToken = bizForToken.facebook_access_token;
+    }
     if (!accessToken) {
       await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/performance', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
       return res.status(400).json({ error: { code: 'missing_token', message: 'A Meta access token is required. Pass `meta_access_token` as a query parameter.' } });
