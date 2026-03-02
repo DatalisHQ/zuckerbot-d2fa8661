@@ -595,7 +595,7 @@ async function launchCampaignInternal(params: {
       billing_event: 'IMPRESSIONS',
       optimization_goal: 'LEAD_GENERATION',
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-      targeting: JSON.stringify(adSetTargeting),
+      targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
       promoted_object: JSON.stringify({ page_id: meta_page_id }),
       destination_type: 'ON_AD',
       status: 'PAUSED',
@@ -1203,7 +1203,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       name: `${campaignName} – Ad Set`, campaign_id: metaCampaignId,
       daily_budget: String(budgetCents), billing_event: 'IMPRESSIONS',
       optimization_goal: 'LEAD_GENERATION', bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-      targeting: JSON.stringify(adSetTargeting), promoted_object: JSON.stringify({ page_id: meta_page_id }),
+      targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }), promoted_object: JSON.stringify({ page_id: meta_page_id }),
       destination_type: 'ON_AD', status: 'PAUSED', start_time: new Date().toISOString(),
     }, meta_access_token);
 
