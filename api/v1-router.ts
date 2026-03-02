@@ -586,6 +586,8 @@ async function launchCampaignInternal(params: {
       publisher_platforms: ['facebook', 'instagram'],
       facebook_positions: ['feed'],
       instagram_positions: ['stream'],
+      // Required by Meta API (error_subcode 1870227): explicitly opt out of Advantage Audience
+      targeting_automation: { advantage_audience: 0 },
     };
 
     const adSetResult = await metaPost(`/act_${adAccountId}/adsets`, {
@@ -1154,6 +1156,8 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       age_min: targeting?.age_min || 25, age_max: targeting?.age_max || 65,
       geo_locations: geoLocations, publisher_platforms: ['facebook', 'instagram'],
       facebook_positions: ['feed'], instagram_positions: ['stream'],
+      // Required by Meta API (error_subcode 1870227): explicitly opt out of Advantage Audience
+      targeting_automation: { advantage_audience: 0 },
     };
 
     const adSetResult = await metaPost(`/act_${adAccountId}/adsets`, {
