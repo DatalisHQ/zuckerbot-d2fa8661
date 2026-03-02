@@ -964,17 +964,60 @@ RULES:
 
     // Auto-launch if requested
     if (auto_launch === true) {
-      if (!meta_access_token || typeof meta_access_token !== 'string') {
-        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-        return res.status(400).json({ error: { code: 'validation_error', message: 'auto_launch requires meta_access_token' } });
+      // If credentials not provided, look up from linked business (same logic as /campaigns/:id/launch)
+      if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
+        const { data: keyWithBiz } = await supabaseAdmin
+          .from('api_keys')
+          .select('business_id')
+          .eq('id', auth.keyRecord.id)
+          .single();
+
+        let businessId = keyWithBiz?.business_id;
+
+        if (!businessId) {
+          const { data: userBiz } = await supabaseAdmin
+            .from('businesses')
+            .select('id')
+            .eq('user_id', auth.keyRecord.user_id)
+            .limit(1)
+            .single();
+          businessId = userBiz?.id;
+        }
+
+        if (businessId) {
+          const { data: biz } = await supabaseAdmin
+            .from('businesses')
+            .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
+            .eq('id', businessId)
+            .single();
+
+          if (biz) {
+            meta_access_token = meta_access_token || biz.facebook_access_token;
+            meta_ad_account_id = meta_ad_account_id || biz.facebook_ad_account_id;
+            meta_page_id = meta_page_id || biz.facebook_page_id;
+          }
+        }
       }
-      if (!meta_ad_account_id || typeof meta_ad_account_id !== 'string') {
+
+      const hasToken = typeof meta_access_token === 'string' && meta_access_token.length > 0;
+      const hasAdAccount = typeof meta_ad_account_id === 'string' && meta_ad_account_id.length > 0;
+      const hasPage = typeof meta_page_id === 'string' && meta_page_id.length > 0;
+
+      if (!hasToken || !hasAdAccount || !hasPage) {
+        const missing = [
+          !hasToken && 'meta_access_token',
+          !hasAdAccount && 'meta_ad_account_id',
+          !hasPage && 'meta_page_id',
+        ].filter(Boolean).join(', ');
+
         await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-        return res.status(400).json({ error: { code: 'validation_error', message: 'auto_launch requires meta_ad_account_id (e.g. "act_123456789")' } });
-      }
-      if (!meta_page_id || typeof meta_page_id !== 'string') {
-        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-        return res.status(400).json({ error: { code: 'validation_error', message: 'auto_launch requires meta_page_id (Facebook Page ID for lead form)' } });
+        return res.status(400).json({
+          error: {
+            code: 'missing_meta_credentials',
+            message: `Missing: ${missing}. Either pass them in the request body, or connect Facebook at https://zuckerbot.ai/profile to store them automatically.`,
+            connect_url: 'https://zuckerbot.ai/profile',
+          },
+        });
       }
 
       try {
