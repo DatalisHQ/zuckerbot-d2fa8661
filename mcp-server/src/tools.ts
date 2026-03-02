@@ -142,6 +142,10 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         .int()
         .default(0)
         .describe("Which creative variant to launch (0-indexed)"),
+      launch_all_variants: z
+        .boolean()
+        .optional()
+        .describe("When true, launch all creative variants as separate ads under the same ad set for A/B testing"),
       daily_budget_cents: z
         .number()
         .int()
@@ -155,6 +159,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
       meta_ad_account_id,
       meta_page_id,
       variant_index,
+      launch_all_variants,
       daily_budget_cents,
       radius_km,
     }) => {
@@ -163,6 +168,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         if (meta_access_token) body.meta_access_token = meta_access_token;
         if (meta_ad_account_id) body.meta_ad_account_id = meta_ad_account_id;
         if (meta_page_id) body.meta_page_id = meta_page_id;
+        if (launch_all_variants !== undefined) body.launch_all_variants = launch_all_variants;
         if (daily_budget_cents !== undefined) body.daily_budget_cents = daily_budget_cents;
         if (radius_km !== undefined) body.radius_km = radius_km;
 

@@ -529,11 +529,13 @@ async function launchCampaignInternal(params: {
   radius_km: number;
   campaign: any;
   auth: any;
+  launch_all_variants?: boolean;
 }): Promise<{success: boolean, data?: any, error?: any}> {
-  
+
   const {
     campaignId, meta_access_token, meta_ad_account_id, meta_page_id,
-    variant_index, daily_budget_cents, radius_km, campaign, auth
+    variant_index, daily_budget_cents, radius_km, campaign, auth,
+    launch_all_variants,
   } = params;
 
   try {
@@ -541,11 +543,6 @@ async function launchCampaignInternal(params: {
     const variants = campaign.variants || [];
     const targeting = campaign.targeting || {};
     const selectedVariant = variants[variant_index] || variants[0] || {};
-
-    const headline = selectedVariant.headline || businessName;
-    const adBody = selectedVariant.copy || `Check out ${businessName}`;
-    const cta = selectedVariant.cta || 'Learn More';
-    const imageUrl = selectedVariant.image_url || null;
 
     const campaignName = `${businessName} – API – ${new Date().toISOString().slice(0, 10)}`;
     const adAccountId = meta_ad_account_id.replace(/^act_/, '');
@@ -619,121 +616,144 @@ async function launchCampaignInternal(params: {
     }
     const metaAdSetId = adSetResult.data.id;
 
-    // Step 3: Create Lead Form
-    const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
-      name: `${businessName} Lead Form – ${Date.now()}`,
-      questions: JSON.stringify([
-        { type: 'FULL_NAME' },
-        { type: 'PHONE' },
-        { type: 'EMAIL' },
-        { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }
-      ]),
-      privacy_policy: JSON.stringify({
-        url: 'https://zuckerbot.ai/privacy',
-        link_text: 'Privacy Policy'
-      }),
-      thank_you_page: JSON.stringify({
-        title: 'Thanks for your enquiry!',
-        body: `${businessName} will be in touch shortly.`,
-        button_type: 'NONE'
-      }),
-    }, meta_access_token);
+    // Steps 3–5: Create lead form, creative, and ad — one per variant
+    const variantsToLaunch = (launch_all_variants && variants.length > 0)
+      ? variants
+      : [selectedVariant];
 
-    if (!leadFormResult.ok || !leadFormResult.data.id) {
-      // Cleanup
-      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
-      return {
-        success: false,
-        error: {
-          code: 'meta_api_error',
-          message: leadFormResult.data.error?.message || 'Failed to create lead form on Meta',
-          meta_error: leadFormResult.data.error,
-          step: 'leadform'
+    const metaAdIds: string[] = [];
+    const variantResults: Array<{ variant_index: number; meta_ad_id?: string; error?: string }> = [];
+
+    for (let vi = 0; vi < variantsToLaunch.length; vi++) {
+      const variant = variantsToLaunch[vi];
+      const actualIndex = launch_all_variants ? vi : (variant_index || 0);
+      const variantLabel = (launch_all_variants && variantsToLaunch.length > 1)
+        ? ` (Variant ${actualIndex + 1})`
+        : '';
+      const vHeadline = variant.headline || businessName;
+      const vAdBody = variant.copy || `Check out ${businessName}`;
+      const vCta = variant.cta || 'Learn More';
+      const vImageUrl = variant.image_url || null;
+
+      try {
+        // Step 3: Create Lead Form
+        const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
+          name: `${businessName} Lead Form${variantLabel} – ${Date.now()}`,
+          questions: JSON.stringify([
+            { type: 'FULL_NAME' },
+            { type: 'PHONE' },
+            { type: 'EMAIL' },
+            { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }
+          ]),
+          privacy_policy: JSON.stringify({
+            url: 'https://zuckerbot.ai/privacy',
+            link_text: 'Privacy Policy'
+          }),
+          thank_you_page: JSON.stringify({
+            title: 'Thanks for your enquiry!',
+            body: `${businessName} will be in touch shortly.`,
+            button_type: 'NONE'
+          }),
+        }, meta_access_token);
+
+        if (!leadFormResult.ok || !leadFormResult.data.id) {
+          variantResults.push({ variant_index: actualIndex, error: leadFormResult.data.error?.message || 'Failed to create lead form' });
+          continue;
         }
-      };
-    }
-    const leadFormId = leadFormResult.data.id;
+        const vLeadFormId = leadFormResult.data.id;
 
-    // Step 4: Create Ad Creative
-    let adCreativeId = null;
-    if (imageUrl) {
-      const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, {
-        name: `${campaignName} – Creative`,
-        object_story_spec: JSON.stringify({
-          page_id: meta_page_id,
-          link_data: {
-            image_hash: imageUrl, // Simplified for now
-            name: headline,
-            description: adBody,
-            call_to_action: { type: cta.toUpperCase().replace(/ /g, '_') },
-            link: 'https://facebook.com',
+        // Step 4: Create Ad Creative
+        let vAdCreativeId: string | null = null;
+        if (vImageUrl) {
+          const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, {
+            name: `${campaignName} – Creative${variantLabel}`,
+            object_story_spec: JSON.stringify({
+              page_id: meta_page_id,
+              link_data: {
+                image_hash: vImageUrl,
+                name: vHeadline,
+                description: vAdBody,
+                call_to_action: { type: vCta.toUpperCase().replace(/ /g, '_') },
+                link: 'https://facebook.com',
+              }
+            })
+          }, meta_access_token);
+
+          if (creativeResult.ok && creativeResult.data.id) {
+            vAdCreativeId = creativeResult.data.id;
           }
-        })
-      }, meta_access_token);
+        }
 
-      if (creativeResult.ok && creativeResult.data.id) {
-        adCreativeId = creativeResult.data.id;
+        // Step 5: Create Ad
+        const adParams: Record<string, any> = {
+          name: `${campaignName} – Ad${variantLabel}`,
+          adset_id: metaAdSetId,
+          status: 'PAUSED',
+        };
+
+        if (vAdCreativeId) {
+          adParams.creative = JSON.stringify({ creative_id: vAdCreativeId });
+        } else {
+          adParams.creative = JSON.stringify({
+            object_story_spec: {
+              page_id: meta_page_id,
+              link_data: {
+                name: vHeadline,
+                description: vAdBody,
+                call_to_action: { type: 'SIGN_UP' },
+                link: `https://www.facebook.com/tr?id=${meta_page_id}&ev=Lead`,
+              }
+            }
+          });
+        }
+
+        const adResult = await metaPost(`/act_${adAccountId}/ads`, adParams, meta_access_token);
+
+        if (!adResult.ok || !adResult.data.id) {
+          variantResults.push({ variant_index: actualIndex, error: adResult.data.error?.message || 'Failed to create ad' });
+          continue;
+        }
+
+        metaAdIds.push(adResult.data.id);
+        variantResults.push({ variant_index: actualIndex, meta_ad_id: adResult.data.id });
+      } catch (variantErr: any) {
+        variantResults.push({ variant_index: actualIndex, error: variantErr.message || 'Unknown error' });
       }
     }
 
-    // Step 5: Create Ad
-    const adParams: Record<string, any> = {
-      name: `${campaignName} – Ad`,
-      adset_id: metaAdSetId,
-      status: 'PAUSED',
-    };
-
-    if (adCreativeId) {
-      adParams.creative = JSON.stringify({ creative_id: adCreativeId });
-    } else {
-      // Fallback: lead ad without custom creative
-      adParams.creative = JSON.stringify({
-        object_story_spec: {
-          page_id: meta_page_id,
-          link_data: {
-            name: headline,
-            description: adBody,
-            call_to_action: { type: 'SIGN_UP' },
-            link: `https://www.facebook.com/tr?id=${meta_page_id}&ev=Lead`,
-          }
-        }
-      });
-    }
-
-    const adResult = await metaPost(`/act_${adAccountId}/ads`, adParams, meta_access_token);
-
-    if (!adResult.ok || !adResult.data.id) {
-      // Cleanup
+    if (metaAdIds.length === 0) {
+      // All variants failed — cleanup campaign
       await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
       return {
         success: false,
         error: {
           code: 'meta_api_error',
-          message: adResult.data.error?.message || 'Failed to create ad on Meta',
-          meta_error: adResult.data.error,
+          message: 'All variants failed to create ads on Meta',
+          variant_results: variantResults,
           step: 'ad'
         }
       };
     }
-    const metaAdId = adResult.data.id;
 
-    // Step 6: Activate everything
-    const activationResults = await Promise.allSettled([
+    // Step 6: Activate campaign, ad set, and all successfully created ads
+    await Promise.allSettled([
       fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'status=ACTIVE'
       }),
       fetch(`${GRAPH_BASE}/${metaAdSetId}?access_token=${meta_access_token}`, {
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'status=ACTIVE'
-      }),
-      fetch(`${GRAPH_BASE}/${metaAdId}?access_token=${meta_access_token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'status=ACTIVE'
-      })
+      }),
+      ...metaAdIds.map(adId =>
+        fetch(`${GRAPH_BASE}/${adId}?access_token=${meta_access_token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'status=ACTIVE'
+        })
+      ),
     ]);
 
     return {
@@ -742,9 +762,9 @@ async function launchCampaignInternal(params: {
         campaign_id: campaignId,
         meta_campaign_id: metaCampaignId,
         meta_adset_id: metaAdSetId,
-        meta_ad_id: metaAdId,
-        lead_form_id: leadFormId,
-        ad_creative_id: adCreativeId,
+        meta_ad_id: metaAdIds[0],
+        meta_ad_ids: metaAdIds,
+        variant_results: variantResults,
         selected_variant: selectedVariant,
         daily_budget_cents: daily_budget_cents,
         targeting_radius_km: radius_km,
@@ -779,9 +799,9 @@ async function handleCreate(req: VercelRequest, res: VercelResponse) {
   assertAuth(auth);
   applyRateLimitHeaders(res, auth.rateLimitHeaders);
 
-  const { 
-    url, business_name, business_type, location, budget_daily_cents, objective, 
-    meta_access_token, auto_launch, meta_ad_account_id, meta_page_id, variant_index = 0, radius_km
+  const {
+    url, business_name, business_type, location, budget_daily_cents, objective,
+    meta_access_token, auto_launch, meta_ad_account_id, meta_page_id, variant_index = 0, radius_km, launch_all_variants
   } = req.body || {};
 
   if (!url || typeof url !== 'string') {
@@ -991,6 +1011,7 @@ RULES:
           radius_km: radius_km || response.targeting.radius_km || 25,
           campaign: response,
           auth: auth.keyRecord,
+          launch_all_variants,
         });
 
         if (!launchResult.success) {
@@ -1063,7 +1084,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     return res.status(400).json({ error: { code: 'validation_error', message: 'Campaign ID is required in URL path' } });
   }
 
-  let { meta_access_token, meta_ad_account_id, meta_page_id, variant_index = 0, daily_budget_cents, radius_km } = req.body || {};
+  let { meta_access_token, meta_ad_account_id, meta_page_id, variant_index = 0, daily_budget_cents, radius_km, launch_all_variants } = req.body || {};
 
   // If credentials not provided, look up from linked business
   if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
@@ -1176,61 +1197,88 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     }
     const metaAdSetId = adSetResult.data.id;
 
-    // Step 3: Create Lead Form
-    const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
-      name: `${businessName} Lead Form – ${Date.now()}`,
-      questions: JSON.stringify([{ type: 'FULL_NAME' }, { type: 'PHONE' }, { type: 'EMAIL' }, { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }]),
-      privacy_policy: JSON.stringify({ url: 'https://zuckerbot.ai/privacy', link_text: 'Privacy Policy' }),
-      thank_you_page: JSON.stringify({ title: 'Thanks for your enquiry!', body: `${businessName} will be in touch shortly.`, button_type: 'NONE' }),
-    }, meta_access_token);
-
-    if (!leadFormResult.ok || !leadFormResult.data.id) {
-      console.error('[api/launch] Lead form creation failed:', leadFormResult.rawBody);
-      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
-      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
-      return res.status(502).json({ error: { code: 'meta_api_error', message: leadFormResult.data.error?.message || 'Failed to create lead form', meta_error: leadFormResult.data.error, step: 'leadform' } });
-    }
-    const metaLeadFormId = leadFormResult.data.id;
-
-    // Step 4: Create Ad Creative
+    // Steps 3–5: Create lead form, creative, and ad — one per variant
     const ctaMap: Record<string, string> = { 'Get Quote': 'GET_QUOTE', 'Call Now': 'CALL_NOW', 'Learn More': 'LEARN_MORE', 'Sign Up': 'SIGN_UP', 'Book Now': 'BOOK_NOW', 'Contact Us': 'CONTACT_US' };
-    const ctaType = ctaMap[cta] || 'LEARN_MORE';
+    const variantsToLaunch = (launch_all_variants && variants.length > 0)
+      ? variants
+      : [selectedVariant];
 
-    const objectStorySpec: Record<string, any> = {
-      page_id: meta_page_id,
-      link_data: { message: adBody, name: headline, link: 'https://zuckerbot.ai/', call_to_action: { type: ctaType, value: { lead_gen_form_id: metaLeadFormId } }, ...(imageUrl ? { picture: imageUrl } : {}) },
-    };
+    const metaAdIds: string[] = [];
+    const variantResults: Array<{ variant_index: number; meta_ad_id?: string; error?: string }> = [];
+    let metaLeadFormId: string | null = null;
 
-    const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, { name: `${campaignName} – Creative`, object_story_spec: JSON.stringify(objectStorySpec) }, meta_access_token);
-    if (!creativeResult.ok || !creativeResult.data.id) {
-      console.error('[api/launch] Creative creation failed:', creativeResult.rawBody);
+    for (let vi = 0; vi < variantsToLaunch.length; vi++) {
+      const variant = variantsToLaunch[vi];
+      const actualIndex = launch_all_variants ? vi : variant_index;
+      const variantLabel = (launch_all_variants && variantsToLaunch.length > 1)
+        ? ` (Variant ${actualIndex + 1})`
+        : '';
+      const vHeadline = variant.headline || businessName;
+      const vAdBody = variant.copy || `Check out ${businessName}`;
+      const vCta = variant.cta || cta;
+      const vCtaType = ctaMap[vCta] || 'LEARN_MORE';
+      const vImageUrl = variant.image_url || null;
+
+      try {
+        // Step 3: Create Lead Form
+        const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
+          name: `${businessName} Lead Form${variantLabel} – ${Date.now()}`,
+          questions: JSON.stringify([{ type: 'FULL_NAME' }, { type: 'PHONE' }, { type: 'EMAIL' }, { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }]),
+          privacy_policy: JSON.stringify({ url: 'https://zuckerbot.ai/privacy', link_text: 'Privacy Policy' }),
+          thank_you_page: JSON.stringify({ title: 'Thanks for your enquiry!', body: `${businessName} will be in touch shortly.`, button_type: 'NONE' }),
+        }, meta_access_token);
+
+        if (!leadFormResult.ok || !leadFormResult.data.id) {
+          console.error(`[api/launch] Lead form creation failed (variant ${actualIndex}):`, leadFormResult.rawBody);
+          variantResults.push({ variant_index: actualIndex, error: leadFormResult.data.error?.message || 'Failed to create lead form' });
+          continue;
+        }
+        const vLeadFormId = leadFormResult.data.id;
+        if (vi === 0) metaLeadFormId = vLeadFormId;
+
+        // Step 4: Create Ad Creative
+        const vObjectStorySpec: Record<string, any> = {
+          page_id: meta_page_id,
+          link_data: { message: vAdBody, name: vHeadline, link: 'https://zuckerbot.ai/', call_to_action: { type: vCtaType, value: { lead_gen_form_id: vLeadFormId } }, ...(vImageUrl ? { picture: vImageUrl } : {}) },
+        };
+
+        const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, { name: `${campaignName} – Creative${variantLabel}`, object_story_spec: JSON.stringify(vObjectStorySpec) }, meta_access_token);
+        if (!creativeResult.ok || !creativeResult.data.id) {
+          console.error(`[api/launch] Creative creation failed (variant ${actualIndex}):`, creativeResult.rawBody);
+          variantResults.push({ variant_index: actualIndex, error: creativeResult.data.error?.message || 'Failed to create ad creative' });
+          continue;
+        }
+        const vCreativeId = creativeResult.data.id;
+
+        // Step 5: Create Ad
+        const adResult = await metaPost(`/act_${adAccountId}/ads`, { name: `${campaignName} – Ad${variantLabel}`, adset_id: metaAdSetId, creative: JSON.stringify({ creative_id: vCreativeId }), status: 'PAUSED' }, meta_access_token);
+        if (!adResult.ok || !adResult.data.id) {
+          console.error(`[api/launch] Ad creation failed (variant ${actualIndex}):`, adResult.rawBody);
+          variantResults.push({ variant_index: actualIndex, error: adResult.data.error?.message || 'Failed to create ad' });
+          continue;
+        }
+
+        metaAdIds.push(adResult.data.id);
+        variantResults.push({ variant_index: actualIndex, meta_ad_id: adResult.data.id });
+      } catch (variantErr: any) {
+        variantResults.push({ variant_index: actualIndex, error: variantErr.message || 'Unknown error' });
+      }
+    }
+
+    if (metaAdIds.length === 0) {
+      console.error('[api/launch] All variants failed to create ads');
       await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
       await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
-      return res.status(502).json({ error: { code: 'meta_api_error', message: creativeResult.data.error?.message || 'Failed to create ad creative', meta_error: creativeResult.data.error, step: 'creative' } });
-    }
-    const metaCreativeId = creativeResult.data.id;
-
-    // Step 5: Create Ad
-    const adResult = await metaPost(`/act_${adAccountId}/ads`, { name: `${campaignName} – Ad`, adset_id: metaAdSetId, creative: JSON.stringify({ creative_id: metaCreativeId }), status: 'PAUSED' }, meta_access_token);
-    if (!adResult.ok || !adResult.data.id) {
-      console.error('[api/launch] Ad creation failed:', adResult.rawBody);
-      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
-      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
-      return res.status(502).json({ error: { code: 'meta_api_error', message: adResult.data.error?.message || 'Failed to create ad', meta_error: adResult.data.error, step: 'ad' } });
-    }
-    const metaAdId = adResult.data.id;
-
-    // Step 6: Activate
-    const activateAd = await metaPost(`/${metaAdId}`, { status: 'ACTIVE' }, meta_access_token);
-    if (!activateAd.ok) {
-      console.error('[api/launch] Failed to activate ad:', activateAd.rawBody);
-      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
-      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
-      return res.status(502).json({ error: { code: 'meta_api_error', message: activateAd.data.error?.message || 'Failed to activate ad', meta_error: activateAd.data.error, step: 'activate' } });
+      return res.status(502).json({ error: { code: 'meta_api_error', message: 'All variants failed to create ads on Meta', variant_results: variantResults, step: 'ad' } });
     }
 
+    // Step 6: Activate campaign, ad set, and all successfully created ads
     await metaPost(`/${metaAdSetId}`, { status: 'ACTIVE' }, meta_access_token);
     await metaPost(`/${metaCampaignId}`, { status: 'ACTIVE' }, meta_access_token);
+    for (const adId of metaAdIds) {
+      await metaPost(`/${adId}`, { status: 'ACTIVE' }, meta_access_token);
+    }
+    const metaAdId = metaAdIds[0];
 
     // Step 7: Update DB
     const launchedAt = new Date().toISOString();
@@ -1255,7 +1303,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     }
 
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
-    return res.status(200).json({ id: campaignId, status: 'active', meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_leadform_id: metaLeadFormId, daily_budget_cents: budgetCents, launched_at: launchedAt });
+    return res.status(200).json({ id: campaignId, status: 'active', meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_ad_ids: metaAdIds, meta_leadform_id: metaLeadFormId, variant_results: variantResults, daily_budget_cents: budgetCents, launched_at: launchedAt });
   } catch (err: any) {
     console.error('[api/launch] Unexpected error:', err);
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
