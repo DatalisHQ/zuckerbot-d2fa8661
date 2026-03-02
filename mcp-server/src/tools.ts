@@ -148,6 +148,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         .optional()
         .describe("Override daily budget in cents"),
       radius_km: z.number().int().optional().describe("Override targeting radius in km"),
+      launch_all_variants: z.boolean().optional().describe("Launch all creative variants as separate ads for A/B testing. Meta will auto-optimize for the winner."),
     },
     async ({
       campaign_id,
@@ -155,6 +156,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
       meta_ad_account_id,
       meta_page_id,
       variant_index,
+      launch_all_variants,
       daily_budget_cents,
       radius_km,
     }) => {
@@ -165,6 +167,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         if (meta_page_id) body.meta_page_id = meta_page_id;
         if (daily_budget_cents !== undefined) body.daily_budget_cents = daily_budget_cents;
         if (radius_km !== undefined) body.radius_km = radius_km;
+        if (launch_all_variants) body.launch_all_variants = true;
 
         const result = await client.post(`/campaigns/${campaign_id}/launch`, body);
         return formatResult(result);
