@@ -1502,7 +1502,7 @@ async function handlePerformance(req: VercelRequest, res: VercelResponse, campai
       return res.status(400).json({ error: { code: 'missing_token', message: 'A Meta access token is required. Pass `meta_access_token` as a query parameter.' } });
     }
 
-    const insightsUrl = `${GRAPH_BASE}/${metaCampaignId}/insights?fields=impressions,clicks,spend,actions&date_preset=lifetime&access_token=${accessToken}`;
+    const insightsUrl = `${GRAPH_BASE}/${metaCampaignId}/insights?fields=impressions,clicks,spend,actions&date_preset=maximum&access_token=${accessToken}`;
     const metaResponse = await fetch(insightsUrl);
     const metaData = await metaResponse.json();
 
