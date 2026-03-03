@@ -107,9 +107,9 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         .optional()
         .describe("Daily budget in cents (e.g., 2000 = $20/day)"),
       objective: z
-        .enum(["leads", "traffic", "awareness"])
+        .enum(["leads", "traffic", "conversions", "awareness"])
         .optional()
-        .describe("Campaign objective"),
+        .describe("Campaign objective. 'leads' for lead forms, 'traffic' for website visits, 'conversions' for website actions, 'awareness' for reach. Default: traffic"),
     },
     async ({ url, business_name, business_type, location, budget_daily_cents, objective }) => {
       try {

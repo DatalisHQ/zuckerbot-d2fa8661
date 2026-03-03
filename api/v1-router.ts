@@ -25,6 +25,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'crypto';
+import {
+  type ZuckerObjective,
+  VALID_OBJECTIVES,
+  isValidObjective,
+  getMetaCampaignObjective,
+  getAdsetParams,
+  getPromotedObject,
+  needsLeadForm,
+  needsUrl,
+  needsPixel,
+  buildCreativeLinkData,
+} from '../lib/objective';
 
 export const config = { maxDuration: 120 };
 
@@ -537,6 +549,20 @@ async function launchCampaignInternal(params: {
   } = params;
 
   try {
+    // Read objective from campaign data, default to traffic
+    const objective: ZuckerObjective = isValidObjective(campaign.objective) ? campaign.objective : 'traffic';
+    console.log('[api/launchInternal] Launching campaign with objective:', objective);
+    console.log('[api/launchInternal] Meta objective:', getMetaCampaignObjective(objective));
+
+    // Validation: traffic and conversions require a URL
+    if (needsUrl(objective) && !campaign.url) {
+      return { success: false, error: { code: 'validation_error', message: `The '${objective}' objective requires a campaign URL.` } };
+    }
+    // Validation: conversions requires META_PIXEL_ID
+    if (needsPixel(objective) && !process.env.META_PIXEL_ID) {
+      return { success: false, error: { code: 'validation_error', message: 'Conversions objective requires META_PIXEL_ID configured' } };
+    }
+
     const businessName = campaign.business_name || 'Campaign';
     const variants = campaign.variants || [];
     const targeting = campaign.targeting || {};
@@ -545,15 +571,16 @@ async function launchCampaignInternal(params: {
     const headline = selectedVariant.headline || businessName;
     const adBody = selectedVariant.copy || `Check out ${businessName}`;
     const cta = selectedVariant.cta || 'Learn More';
+    const ctaType = cta.toUpperCase().replace(/ /g, '_');
     const imageUrl = selectedVariant.image_url || null;
 
     const campaignName = `${businessName} – API – ${new Date().toISOString().slice(0, 10)}`;
     const adAccountId = meta_ad_account_id.replace(/^act_/, '');
 
-    // Step 1: Create Meta Campaign
+    // Step 1: Create Meta Campaign (objective-aware)
     const campaignResult = await metaPost(`/act_${adAccountId}/campaigns`, {
       name: campaignName,
-      objective: 'OUTCOME_LEADS',
+      objective: getMetaCampaignObjective(objective),
       status: 'PAUSED',
       special_ad_categories: JSON.stringify([])
     }, meta_access_token);
@@ -571,7 +598,8 @@ async function launchCampaignInternal(params: {
     }
     const metaCampaignId = campaignResult.data.id;
 
-    // Step 2: Create Ad Set
+    // Step 2: Create Ad Set (objective-aware)
+    const adsetParams = getAdsetParams(objective);
     const geoLocations: Record<string, any> = {};
     if (targeting?.geo_locations?.custom_locations?.length) {
       geoLocations.custom_locations = targeting.geo_locations.custom_locations;
@@ -593,11 +621,11 @@ async function launchCampaignInternal(params: {
       campaign_id: metaCampaignId,
       daily_budget: String(daily_budget_cents),
       billing_event: 'IMPRESSIONS',
-      optimization_goal: 'LEAD_GENERATION',
+      optimization_goal: adsetParams.optimization_goal,
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
-      promoted_object: JSON.stringify({ page_id: meta_page_id }),
-      destination_type: 'ON_AD',
+      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id)),
+      ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
       status: 'PAUSED',
       start_time: new Date().toISOString(),
     }, meta_access_token);
@@ -617,62 +645,63 @@ async function launchCampaignInternal(params: {
     }
     const metaAdSetId = adSetResult.data.id;
 
-    // Step 3: Create Lead Form
-    const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
-      name: `${businessName} Lead Form – ${Date.now()}`,
-      questions: JSON.stringify([
-        { type: 'FULL_NAME' },
-        { type: 'PHONE' },
-        { type: 'EMAIL' },
-        { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }
-      ]),
-      privacy_policy: JSON.stringify({
-        url: 'https://zuckerbot.ai/privacy',
-        link_text: 'Privacy Policy'
-      }),
-      thank_you_page: JSON.stringify({
-        title: 'Thanks for your enquiry!',
-        body: `${businessName} will be in touch shortly.`,
-        button_type: 'NONE'
-      }),
-    }, meta_access_token);
-
-    if (!leadFormResult.ok || !leadFormResult.data.id) {
-      // Cleanup
-      await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
-      return {
-        success: false,
-        error: {
-          code: 'meta_api_error',
-          message: leadFormResult.data.error?.message || 'Failed to create lead form on Meta',
-          meta_error: leadFormResult.data.error,
-          step: 'leadform'
-        }
-      };
-    }
-    const leadFormId = leadFormResult.data.id;
-
-    // Step 4: Create Ad Creative
-    let adCreativeId = null;
-    if (imageUrl) {
-      const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, {
-        name: `${campaignName} – Creative`,
-        object_story_spec: JSON.stringify({
-          page_id: meta_page_id,
-          link_data: {
-            image_hash: imageUrl, // Simplified for now
-            name: headline,
-            description: adBody,
-            call_to_action: { type: cta.toUpperCase().replace(/ /g, '_') },
-            link: 'https://facebook.com',
-          }
-        })
+    // Step 3: Create Lead Form (only for leads objective)
+    let leadFormId: string | undefined;
+    if (needsLeadForm(objective)) {
+      const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
+        name: `${businessName} Lead Form – ${Date.now()}`,
+        questions: JSON.stringify([
+          { type: 'FULL_NAME' },
+          { type: 'PHONE' },
+          { type: 'EMAIL' },
+          { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }
+        ]),
+        privacy_policy: JSON.stringify({
+          url: 'https://zuckerbot.ai/privacy',
+          link_text: 'Privacy Policy'
+        }),
+        thank_you_page: JSON.stringify({
+          title: 'Thanks for your enquiry!',
+          body: `${businessName} will be in touch shortly.`,
+          button_type: 'NONE'
+        }),
       }, meta_access_token);
 
-      if (creativeResult.ok && creativeResult.data.id) {
-        adCreativeId = creativeResult.data.id;
+      if (!leadFormResult.ok || !leadFormResult.data.id) {
+        // Cleanup
+        await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
+        return {
+          success: false,
+          error: {
+            code: 'meta_api_error',
+            message: leadFormResult.data.error?.message || 'Failed to create lead form on Meta',
+            meta_error: leadFormResult.data.error,
+            step: 'leadform'
+          }
+        };
       }
+      leadFormId = leadFormResult.data.id;
     }
+
+    // Step 4: Create Ad Creative (objective-aware link_data)
+    const linkData = buildCreativeLinkData(objective, {
+      headline,
+      body: adBody,
+      ctaType,
+      imageUrl,
+      leadFormId,
+      campaignUrl: campaign.url,
+    });
+
+    const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, {
+      name: `${campaignName} – Creative`,
+      object_story_spec: JSON.stringify({
+        page_id: meta_page_id,
+        link_data: linkData,
+      })
+    }, meta_access_token);
+
+    let adCreativeId = creativeResult.ok && creativeResult.data.id ? creativeResult.data.id : null;
 
     // Step 5: Create Ad
     const adParams: Record<string, any> = {
@@ -684,16 +713,20 @@ async function launchCampaignInternal(params: {
     if (adCreativeId) {
       adParams.creative = JSON.stringify({ creative_id: adCreativeId });
     } else {
-      // Fallback: lead ad without custom creative
+      // Fallback: inline creative
+      const fallbackLinkData = buildCreativeLinkData(objective, {
+        headline,
+        body: adBody,
+        ctaType: 'LEARN_MORE',
+        imageUrl: null,
+        leadFormId,
+        campaignUrl: campaign.url,
+      });
+
       adParams.creative = JSON.stringify({
         object_story_spec: {
           page_id: meta_page_id,
-          link_data: {
-            name: headline,
-            description: adBody,
-            call_to_action: { type: 'SIGN_UP' },
-            link: `https://www.facebook.com/tr?id=${meta_page_id}&ev=Lead`,
-          }
+          link_data: fallbackLinkData,
         }
       });
     }
@@ -723,7 +756,7 @@ async function launchCampaignInternal(params: {
         body: 'status=ACTIVE'
       }),
       fetch(`${GRAPH_BASE}/${metaAdSetId}?access_token=${meta_access_token}`, {
-        method: 'POST', 
+        method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'status=ACTIVE'
       }),
@@ -741,7 +774,7 @@ async function launchCampaignInternal(params: {
         meta_campaign_id: metaCampaignId,
         meta_adset_id: metaAdSetId,
         meta_ad_id: metaAdId,
-        lead_form_id: leadFormId,
+        ...(leadFormId ? { lead_form_id: leadFormId } : {}),
         ad_creative_id: adCreativeId,
         selected_variant: selectedVariant,
         daily_budget_cents: daily_budget_cents,
@@ -838,7 +871,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse) {
     const resolvedType = business_type || 'business';
     const locationStr = location ? [location.city, location.state, location.country].filter(Boolean).join(', ') : '';
     const budgetCents = budget_daily_cents || 2000;
-    const obj = objective || 'leads';
+    const obj: ZuckerObjective = isValidObjective(objective) ? objective : 'traffic';
 
     const scrapedSection = scrapedData
       ? `\nWEBSITE ANALYSIS:\n- Title: ${scrapedData.title}\n- Description: ${scrapedData.description}\n- Key headings: ${scrapedData.headings.join(', ')}\n- Page content preview: ${scrapedData.rawText.slice(0, 1500)}\n`
@@ -862,7 +895,7 @@ Generate a JSON response with this EXACT structure (no markdown fences, pure JSO
   "business_name": "string",
   "business_type": "string",
   "strategy": {
-    "objective": "leads|traffic|awareness",
+    "objective": "leads|traffic|conversions|awareness",
     "summary": "string — 1-2 sentence strategy summary",
     "strengths": ["string"],
     "opportunities": ["string"],
@@ -1164,6 +1197,23 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       .from('api_campaigns').select('*').eq('id', campaignId).eq('api_key_id', auth.keyRecord.id).single();
     if (apiCampaign) campaign = apiCampaign;
 
+    // Read objective from DB record (set during create), default to traffic
+    const objective: ZuckerObjective = isValidObjective(campaign?.objective) ? campaign.objective : 'traffic';
+    console.log('[api/launch] Launching campaign with objective:', objective);
+    console.log('[api/launch] Meta objective:', getMetaCampaignObjective(objective));
+
+    // Validation: traffic and conversions require a URL
+    if (needsUrl(objective) && !campaign?.url) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+      return res.status(400).json({ error: { code: 'validation_error', message: `The '${objective}' objective requires a campaign URL. Set it during campaign creation.` } });
+    }
+
+    // Validation: conversions requires META_PIXEL_ID
+    if (needsPixel(objective) && !process.env.META_PIXEL_ID) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+      return res.status(400).json({ error: { code: 'validation_error', message: 'Conversions objective requires META_PIXEL_ID configured' } });
+    }
+
     const businessName = campaign?.business_name || 'Campaign';
     const variants = campaign?.variants || [];
     const targeting = campaign?.targeting || {};
@@ -1179,8 +1229,8 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     const campaignName = `${businessName} – API – ${new Date().toISOString().slice(0, 10)}`;
     const adAccountId = meta_ad_account_id.replace(/^act_/, '');
 
-    // Step 1: Create Meta Campaign
-    const campaignResult = await metaPost(`/act_${adAccountId}/campaigns`, { name: campaignName, objective: 'OUTCOME_LEADS', status: 'PAUSED', special_ad_categories: JSON.stringify([]) }, meta_access_token);
+    // Step 1: Create Meta Campaign (objective-aware)
+    const campaignResult = await metaPost(`/act_${adAccountId}/campaigns`, { name: campaignName, objective: getMetaCampaignObjective(objective), status: 'PAUSED', special_ad_categories: JSON.stringify([]) }, meta_access_token);
     if (!campaignResult.ok || !campaignResult.data.id) {
       console.error('[api/launch] Campaign creation failed:', campaignResult.rawBody);
       await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
@@ -1188,7 +1238,8 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     }
     const metaCampaignId = campaignResult.data.id;
 
-    // Step 2: Create Ad Set
+    // Step 2: Create Ad Set (objective-aware)
+    const adsetParams = getAdsetParams(objective);
     const geoLocations: Record<string, any> = {};
     if (targeting?.geo_locations?.custom_locations?.length) geoLocations.custom_locations = targeting.geo_locations.custom_locations;
     else geoLocations.countries = ['US'];
@@ -1202,9 +1253,11 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     const adSetResult = await metaPost(`/act_${adAccountId}/adsets`, {
       name: `${campaignName} – Ad Set`, campaign_id: metaCampaignId,
       daily_budget: String(budgetCents), billing_event: 'IMPRESSIONS',
-      optimization_goal: 'LEAD_GENERATION', bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-      targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }), promoted_object: JSON.stringify({ page_id: meta_page_id }),
-      destination_type: 'ON_AD', status: 'PAUSED', start_time: new Date().toISOString(),
+      optimization_goal: adsetParams.optimization_goal, bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+      targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
+      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id)),
+      ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
+      status: 'PAUSED', start_time: new Date().toISOString(),
     }, meta_access_token);
 
     if (!adSetResult.ok || !adSetResult.data.id) {
@@ -1230,25 +1283,38 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       const vImage = v.image_url || null;
       const vCtaType = ctaMap[vCta] || 'LEARN_MORE';
 
-      // Create lead form per variant
-      const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
-        name: `${businessName} Lead Form ${vi + 1} \u2013 ${Date.now()}`,
-        questions: JSON.stringify([{ type: 'FULL_NAME' }, { type: 'PHONE' }, { type: 'EMAIL' }, { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }]),
-        privacy_policy: JSON.stringify({ url: 'https://zuckerbot.ai/privacy', link_text: 'Privacy Policy' }),
-        thank_you_page: JSON.stringify({ title: 'Thanks for your enquiry!', body: `${businessName} will be in touch shortly.`, button_type: 'NONE' }),
-      }, meta_access_token);
+      // Step 3: Create lead form ONLY for leads objective
+      let variantLeadFormId: string | undefined;
+      if (needsLeadForm(objective)) {
+        const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
+          name: `${businessName} Lead Form ${vi + 1} \u2013 ${Date.now()}`,
+          questions: JSON.stringify([{ type: 'FULL_NAME' }, { type: 'PHONE' }, { type: 'EMAIL' }, { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }]),
+          privacy_policy: JSON.stringify({ url: 'https://zuckerbot.ai/privacy', link_text: 'Privacy Policy' }),
+          thank_you_page: JSON.stringify({ title: 'Thanks for your enquiry!', body: `${businessName} will be in touch shortly.`, button_type: 'NONE' }),
+        }, meta_access_token);
 
-      if (!leadFormResult.ok || !leadFormResult.data.id) {
-        console.error(`[api/launch] Lead form creation failed for variant ${vi}:`, leadFormResult.rawBody);
-        variantResults.push({ variant_index: vi, headline: vHeadline, meta_ad_id: '', status: 'failed_leadform' });
-        continue;
+        if (!leadFormResult.ok || !leadFormResult.data.id) {
+          console.error(`[api/launch] Lead form creation failed for variant ${vi}:`, leadFormResult.rawBody);
+          variantResults.push({ variant_index: vi, headline: vHeadline, meta_ad_id: '', status: 'failed_leadform' });
+          continue;
+        }
+        variantLeadFormId = leadFormResult.data.id;
+        if (vi === 0) metaLeadFormId = leadFormResult.data.id;
       }
-      if (vi === 0) metaLeadFormId = leadFormResult.data.id;
 
-      // Create creative
+      // Step 4: Create creative (objective-aware link_data)
+      const linkData = buildCreativeLinkData(objective, {
+        headline: vHeadline,
+        body: vBody,
+        ctaType: vCtaType,
+        imageUrl: vImage,
+        leadFormId: variantLeadFormId,
+        campaignUrl: campaign?.url,
+      });
+
       const objectStorySpec: Record<string, any> = {
         page_id: meta_page_id,
-        link_data: { message: vBody, name: vHeadline, link: 'https://zuckerbot.ai/', call_to_action: { type: vCtaType, value: { lead_gen_form_id: leadFormResult.data.id } }, ...(vImage ? { picture: vImage } : {}) },
+        link_data: linkData,
       };
 
       const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, { name: `${campaignName} \u2013 Creative ${vi + 1}`, object_story_spec: JSON.stringify(objectStorySpec) }, meta_access_token);
@@ -1258,7 +1324,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
         continue;
       }
 
-      // Create ad
+      // Step 5: Create ad
       const adResult = await metaPost(`/act_${adAccountId}/ads`, { name: `${campaignName} \u2013 Ad ${vi + 1}: ${vHeadline.slice(0, 40)}`, adset_id: metaAdSetId, creative: JSON.stringify({ creative_id: creativeResult.data.id }), status: 'PAUSED' }, meta_access_token);
       if (!adResult.ok || !adResult.data.id) {
         console.error(`[api/launch] Ad creation failed for variant ${vi}:`, adResult.rawBody);
@@ -1288,8 +1354,8 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     // Step 7: Update DB
     const launchedAt = new Date().toISOString();
 
-    supabaseAdmin.from('api_campaigns').update({ status: 'active', meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_leadform_id: metaLeadFormId, launched_at: launchedAt }).eq('id', campaignId).then(() => {});
-    supabaseAdmin.from('campaigns').insert({ business_id: null, name: campaignName, status: 'active', daily_budget_cents: budgetCents, radius_km: targetRadius, ad_headline: headline, ad_copy: adBody, ad_image_url: imageUrl || null, meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_leadform_id: metaLeadFormId, leads_count: 0, spend_cents: 0, launched_at: launchedAt }).then(() => {});
+    supabaseAdmin.from('api_campaigns').update({ status: 'active', meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, ...(metaLeadFormId ? { meta_leadform_id: metaLeadFormId } : {}), launched_at: launchedAt }).eq('id', campaignId).then(() => {});
+    supabaseAdmin.from('campaigns').insert({ business_id: null, name: campaignName, status: 'active', daily_budget_cents: budgetCents, radius_km: targetRadius, ad_headline: headline, ad_copy: adBody, ad_image_url: imageUrl || null, meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, ...(metaLeadFormId ? { meta_leadform_id: metaLeadFormId } : {}), leads_count: 0, spend_cents: 0, launched_at: launchedAt }).then(() => {});
 
     // Send launch notification (non-blocking)
     try {
@@ -1308,7 +1374,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     }
 
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
-    return res.status(200).json({ id: campaignId, status: 'active', meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_ad_ids: metaAdIds, variants_launched: metaAdIds.length, variant_results: launch_all_variants ? variantResults : undefined, meta_leadform_id: metaLeadFormId, daily_budget_cents: budgetCents, launched_at: launchedAt });
+    return res.status(200).json({ id: campaignId, status: 'active', objective, meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_ad_ids: metaAdIds, variants_launched: metaAdIds.length, variant_results: launch_all_variants ? variantResults : undefined, ...(metaLeadFormId ? { meta_leadform_id: metaLeadFormId } : {}), daily_budget_cents: budgetCents, launched_at: launchedAt });
   } catch (err: any) {
     console.error('[api/launch] Unexpected error:', err);
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });

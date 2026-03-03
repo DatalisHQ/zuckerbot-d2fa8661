@@ -27,3 +27,4 @@ dist-ssr
 
 # npm cache
 mcp-server/.npm-cache
+.npm-cache/
