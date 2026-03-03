@@ -558,9 +558,9 @@ async function launchCampaignInternal(params: {
     if (needsUrl(objective) && !campaign.url) {
       return { success: false, error: { code: 'validation_error', message: `The '${objective}' objective requires a campaign URL.` } };
     }
-    // Validation: conversions requires META_PIXEL_ID
-    if (needsPixel(objective) && !process.env.META_PIXEL_ID) {
-      return { success: false, error: { code: 'validation_error', message: 'Conversions objective requires META_PIXEL_ID configured' } };
+    // Validation: conversions requires pixel_id (no env fallback)
+    if (needsPixel(objective)) {
+      return { success: false, error: { code: 'META_NEEDS_PIXEL_ID', message: 'Conversions objective requires a pixel_id. Call POST /meta/set-pixel first.', details: { missing: ['pixel_id'] } } };
     }
 
     const businessName = campaign.business_name || 'Campaign';
@@ -1137,58 +1137,64 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     return res.status(400).json({ error: { code: 'validation_error', message: 'Campaign ID is required in URL path' } });
   }
 
-  let { meta_access_token, meta_ad_account_id, meta_page_id, variant_index = 0, daily_budget_cents, radius_km, launch_all_variants = false } = req.body || {};
+  const {
+    meta_access_token: reqToken,
+    meta_ad_account_id: reqAdAccount,
+    meta_page_id: reqPageId,
+    pixel_id: reqPixelId,
+    variant_index = 0,
+    daily_budget_cents,
+    radius_km,
+    launch_all_variants = false,
+  } = req.body || {};
 
-  // If credentials not provided, look up from linked business
-  if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
+  // ── Resolution layer ────────────────────────────────────────────────────
+  // Priority: 1) request body  2) meta_profiles  3) businesses (legacy)
+
+  const metaProfile = await loadMetaProfile(auth.keyRecord.user_id);
+
+  // Fallback to businesses table for token/adAccount/page if not in profile
+  let bizToken: string | null = null;
+  let bizAdAccount: string | null = null;
+  let bizPage: string | null = null;
+  if (!metaProfile?.meta_access_token || !metaProfile?.ad_account_id || !metaProfile?.page_id) {
     const { data: keyWithBiz } = await supabaseAdmin
-      .from('api_keys')
-      .select('business_id')
-      .eq('id', auth.keyRecord.id)
-      .single();
-
+      .from('api_keys').select('business_id').eq('id', auth.keyRecord.id).single();
     let businessId = keyWithBiz?.business_id;
-
     if (!businessId) {
       const { data: userBiz } = await supabaseAdmin
-        .from('businesses')
-        .select('id')
-        .eq('user_id', auth.keyRecord.user_id)
-        .limit(1)
-        .single();
+        .from('businesses').select('id').eq('user_id', auth.keyRecord.user_id).limit(1).single();
       businessId = userBiz?.id;
     }
-
     if (businessId) {
       const { data: biz } = await supabaseAdmin
-        .from('businesses')
-        .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
-        .eq('id', businessId)
-        .single();
-
+        .from('businesses').select('facebook_access_token, facebook_ad_account_id, facebook_page_id').eq('id', businessId).single();
       if (biz) {
-        meta_access_token = meta_access_token || biz.facebook_access_token;
-        meta_ad_account_id = meta_ad_account_id || biz.facebook_ad_account_id;
-        meta_page_id = meta_page_id || biz.facebook_page_id;
+        bizToken = biz.facebook_access_token;
+        bizAdAccount = biz.facebook_ad_account_id;
+        bizPage = biz.facebook_page_id;
       }
     }
   }
 
-  if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
-    const missing = [
-      !meta_access_token && 'meta_access_token',
-      !meta_ad_account_id && 'meta_ad_account_id',
-      !meta_page_id && 'meta_page_id',
-    ].filter(Boolean).join(', ');
+  const meta_access_token: string = reqToken || metaProfile?.meta_access_token || bizToken || '';
+  const meta_ad_account_id: string = reqAdAccount || metaProfile?.ad_account_id || bizAdAccount || '';
+  const meta_page_id: string = reqPageId || metaProfile?.page_id || bizPage || '';
+  const resolvedPixelId: string = reqPixelId || metaProfile?.pixel_id || '';
 
+  if (!meta_access_token) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-    return res.status(400).json({
-      error: {
-        code: 'missing_meta_credentials',
-        message: `Missing: ${missing}. Either pass them in the request body, or connect Facebook at https://zuckerbot.ai/profile to store them automatically.`,
-        connect_url: 'https://zuckerbot.ai/profile',
-      }
-    });
+    return res.status(400).json({ error: { code: 'META_NOT_CONNECTED', message: 'Meta account not connected. Call POST /meta/connect first.', details: { missing: ['meta_access_token'] } } });
+  }
+
+  if (!meta_ad_account_id) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'META_MISSING_AD_ACCOUNT', message: 'No ad account selected. Call POST /meta/select-ad-account first.', details: { missing: ['ad_account_id'] } } });
+  }
+
+  if (!meta_page_id) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'META_MISSING_PAGE', message: 'No Facebook page selected. Call POST /meta/select-page first.', details: { missing: ['page_id'] } } });
   }
 
   try {
@@ -1208,10 +1214,10 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       return res.status(400).json({ error: { code: 'validation_error', message: `The '${objective}' objective requires a campaign URL. Set it during campaign creation.` } });
     }
 
-    // Validation: conversions requires META_PIXEL_ID
-    if (needsPixel(objective) && !process.env.META_PIXEL_ID) {
+    // Validation: conversions requires pixel_id from profile or request override
+    if (needsPixel(objective) && !resolvedPixelId) {
       await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-      return res.status(400).json({ error: { code: 'validation_error', message: 'Conversions objective requires META_PIXEL_ID configured' } });
+      return res.status(400).json({ error: { code: 'META_NEEDS_PIXEL_ID', message: 'Conversions objective requires a pixel_id. Call POST /meta/set-pixel first.', details: { missing: ['pixel_id'] } } });
     }
 
     const businessName = campaign?.business_name || 'Campaign';
@@ -1255,7 +1261,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       daily_budget: String(budgetCents), billing_event: 'IMPRESSIONS',
       optimization_goal: adsetParams.optimization_goal, bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
-      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id)),
+      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id, resolvedPixelId)),
       ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
       status: 'PAUSED', start_time: new Date().toISOString(),
     }, meta_access_token);
@@ -1374,7 +1380,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     }
 
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
-    return res.status(200).json({ id: campaignId, status: 'active', objective, meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_ad_ids: metaAdIds, variants_launched: metaAdIds.length, variant_results: launch_all_variants ? variantResults : undefined, ...(metaLeadFormId ? { meta_leadform_id: metaLeadFormId } : {}), daily_budget_cents: budgetCents, launched_at: launchedAt });
+    return res.status(200).json({ id: campaignId, status: 'active', objective, meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, meta_ad_ids: metaAdIds, variants_launched: metaAdIds.length, variant_results: launch_all_variants ? variantResults : undefined, ...(metaLeadFormId ? { meta_leadform_id: metaLeadFormId } : {}), daily_budget_cents: budgetCents, launched_at: launchedAt, resolved: { ad_account_id: meta_ad_account_id, page_id: meta_page_id, pixel_id: resolvedPixelId || null } });
   } catch (err: any) {
     console.error('[api/launch] Unexpected error:', err);
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
@@ -2242,6 +2248,216 @@ async function handleMetaStatus(req: VercelRequest, res: VercelResponse) {
       connect_url: 'https://zuckerbot.ai/profile',
     }),
   });
+}
+
+// ── meta_profiles helper ─────────────────────────────────────────────────
+
+async function loadMetaProfile(userId: string): Promise<{
+  meta_access_token: string | null;
+  meta_user_id: string | null;
+  ad_account_id: string | null;
+  page_id: string | null;
+  pixel_id: string | null;
+} | null> {
+  const { data } = await supabaseAdmin
+    .from('meta_profiles')
+    .select('meta_access_token, meta_user_id, ad_account_id, page_id, pixel_id')
+    .eq('user_id', userId)
+    .single();
+  return data ?? null;
+}
+
+async function upsertMetaProfile(userId: string, fields: Record<string, unknown>): Promise<void> {
+  await supabaseAdmin
+    .from('meta_profiles')
+    .upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' });
+}
+
+// ── POST /api/v1/meta/connect ────────────────────────────────────────────
+
+async function handleMetaConnect(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { meta_access_token } = req.body || {};
+  if (!meta_access_token || typeof meta_access_token !== 'string') {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/connect', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'META_AUTH_INVALID', message: '`meta_access_token` is required', details: { missing: ['meta_access_token'] } } });
+  }
+
+  // Validate token by calling Meta /me
+  let metaUserId: string;
+  try {
+    const meResp = await fetch(`${GRAPH_BASE}/me?fields=id&access_token=${encodeURIComponent(meta_access_token)}`);
+    const meData = await meResp.json();
+    if (!meResp.ok || !meData.id) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/connect', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+      return res.status(400).json({ error: { code: 'META_AUTH_INVALID', message: meData.error?.message || 'Invalid Meta access token', details: { meta_error: meData.error } } });
+    }
+    metaUserId = meData.id;
+  } catch (err: any) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/connect', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({ error: { code: 'META_API_ERROR', message: 'Failed to validate token with Meta API', details: { cause: err?.message } } });
+  }
+
+  await upsertMetaProfile(auth.keyRecord.user_id, { meta_access_token, meta_user_id: metaUserId });
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/connect', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({ success: true, meta_user_id: metaUserId });
+}
+
+// ── GET /api/v1/meta/ad-accounts ─────────────────────────────────────────
+
+async function handleMetaAdAccounts(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const profile = await loadMetaProfile(auth.keyRecord.user_id);
+  if (!profile?.meta_access_token) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/ad-accounts', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'META_NOT_CONNECTED', message: 'Meta account not connected. Call POST /meta/connect first.' } });
+  }
+
+  try {
+    const r = await fetch(`${GRAPH_BASE}/me/adaccounts?fields=id,name,account_status&access_token=${encodeURIComponent(profile.meta_access_token)}`);
+    const data = await r.json();
+    if (!r.ok) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/ad-accounts', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
+      return res.status(502).json({ error: { code: 'META_API_ERROR', message: data.error?.message || 'Failed to fetch ad accounts', details: { meta_error: data.error } } });
+    }
+    const accounts = (data.data || []).map((a: any) => ({ id: a.id, name: a.name }));
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/ad-accounts', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
+    return res.status(200).json({ accounts });
+  } catch (err: any) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/ad-accounts', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({ error: { code: 'META_API_ERROR', message: 'Failed to reach Meta API', details: { cause: err?.message } } });
+  }
+}
+
+// ── POST /api/v1/meta/select-ad-account ──────────────────────────────────
+
+async function handleMetaSelectAdAccount(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { ad_account_id } = req.body || {};
+  if (!ad_account_id || typeof ad_account_id !== 'string') {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-ad-account', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'META_MISSING_AD_ACCOUNT', message: '`ad_account_id` is required', details: { missing: ['ad_account_id'] } } });
+  }
+
+  await upsertMetaProfile(auth.keyRecord.user_id, { ad_account_id });
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-ad-account', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({ success: true });
+}
+
+// ── GET /api/v1/meta/pages ───────────────────────────────────────────────
+
+async function handleMetaPages(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const profile = await loadMetaProfile(auth.keyRecord.user_id);
+  if (!profile?.meta_access_token) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/pages', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'META_NOT_CONNECTED', message: 'Meta account not connected. Call POST /meta/connect first.' } });
+  }
+
+  try {
+    const r = await fetch(`${GRAPH_BASE}/me/accounts?fields=id,name&access_token=${encodeURIComponent(profile.meta_access_token)}`);
+    const data = await r.json();
+    if (!r.ok) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/pages', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
+      return res.status(502).json({ error: { code: 'META_API_ERROR', message: data.error?.message || 'Failed to fetch pages', details: { meta_error: data.error } } });
+    }
+    const pages = (data.data || []).map((p: any) => ({ id: p.id, name: p.name }));
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/pages', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
+    return res.status(200).json({ pages });
+  } catch (err: any) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/pages', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({ error: { code: 'META_API_ERROR', message: 'Failed to reach Meta API', details: { cause: err?.message } } });
+  }
+}
+
+// ── POST /api/v1/meta/select-page ────────────────────────────────────────
+
+async function handleMetaSelectPage(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { page_id } = req.body || {};
+  if (!page_id || typeof page_id !== 'string') {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-page', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'META_MISSING_PAGE', message: '`page_id` is required', details: { missing: ['page_id'] } } });
+  }
+
+  await upsertMetaProfile(auth.keyRecord.user_id, { page_id });
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-page', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({ success: true });
+}
+
+// ── POST /api/v1/meta/set-pixel ──────────────────────────────────────────
+
+async function handleMetaSetPixel(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const { pixel_id } = req.body || {};
+  if (!pixel_id || typeof pixel_id !== 'string') {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/set-pixel', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({ error: { code: 'META_NEEDS_PIXEL_ID', message: '`pixel_id` is required', details: { missing: ['pixel_id'] } } });
+  }
+
+  await upsertMetaProfile(auth.keyRecord.user_id, { pixel_id });
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/set-pixel', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({ success: true });
 }
 
 // ── POST /api/v1/notifications/telegram ─────────────────────────────────
@@ -3864,6 +4080,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'research/market') return handleMarket(req, res);
   if (route === 'creatives/generate') return handleCreativesGenerate(req, res);
   if (route === 'meta/status') return handleMetaStatus(req, res);
+  if (route === 'meta/connect') return handleMetaConnect(req, res);
+  if (route === 'meta/ad-accounts') return handleMetaAdAccounts(req, res);
+  if (route === 'meta/select-ad-account') return handleMetaSelectAdAccount(req, res);
+  if (route === 'meta/pages') return handleMetaPages(req, res);
+  if (route === 'meta/select-page') return handleMetaSelectPage(req, res);
+  if (route === 'meta/set-pixel') return handleMetaSetPixel(req, res);
   if (route === 'notifications/telegram') return handleSetTelegram(req, res);
 
   // ── Dynamic campaign/:id routes ────────────────────────────────────
@@ -3918,6 +4140,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/autonomous/execute',
         'POST /api/v1/autonomous/run',
         'GET  /api/v1/meta/status',
+        'POST /api/v1/meta/connect',
+        'GET  /api/v1/meta/ad-accounts',
+        'POST /api/v1/meta/select-ad-account',
+        'GET  /api/v1/meta/pages',
+        'POST /api/v1/meta/select-page',
+        'POST /api/v1/meta/set-pixel',
         'POST /api/v1/notifications/telegram',
       ],
     },

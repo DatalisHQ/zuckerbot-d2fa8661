@@ -341,6 +341,145 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
+  // ── 11a. Meta Connect ───────────────────────────────────────────
+  server.tool(
+    "meta_connect",
+    "Connect a Meta (Facebook) account by validating the user's access token and saving it to their profile. Must be called before listing ad accounts or pages.",
+    {
+      meta_access_token: z.string().describe("User's Meta/Facebook access token (e.g. EAAB...)"),
+    },
+    async ({ meta_access_token }) => {
+      try {
+        const result = await client.post("/meta/connect", { meta_access_token });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 11b. List Ad Accounts ───────────────────────────────────────
+  server.tool(
+    "meta_list_ad_accounts",
+    "List all Meta ad accounts accessible to the connected user. Returns id and name for each account. Call meta_connect first.",
+    {},
+    async () => {
+      try {
+        const result = await client.get("/meta/ad-accounts");
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 11c. Select Ad Account ─────────────────────────────────────
+  server.tool(
+    "meta_select_ad_account",
+    "Persist the chosen Meta ad account to the user's profile so it is used automatically on campaign launch.",
+    {
+      ad_account_id: z.string().describe("Meta ad account ID (e.g. act_123456)"),
+    },
+    async ({ ad_account_id }) => {
+      try {
+        const result = await client.post("/meta/select-ad-account", { ad_account_id });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 11d. List Pages ─────────────────────────────────────────────
+  server.tool(
+    "meta_list_pages",
+    "List all Facebook Pages managed by the connected user. Returns id and name for each page. Call meta_connect first.",
+    {},
+    async () => {
+      try {
+        const result = await client.get("/meta/pages");
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 11e. Select Page ────────────────────────────────────────────
+  server.tool(
+    "meta_select_page",
+    "Persist the chosen Facebook Page to the user's profile so it is used automatically on campaign launch.",
+    {
+      page_id: z.string().describe("Facebook Page ID"),
+    },
+    async ({ page_id }) => {
+      try {
+        const result = await client.post("/meta/select-page", { page_id });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 11f. Set Pixel ──────────────────────────────────────────────
+  server.tool(
+    "meta_set_pixel",
+    "Persist a Meta Pixel ID to the user's profile. Required before launching campaigns with the 'conversions' objective.",
+    {
+      pixel_id: z.string().describe("Meta Pixel ID"),
+    },
+    async ({ pixel_id }) => {
+      try {
+        const result = await client.post("/meta/set-pixel", { pixel_id });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 11g. Campaign Launch (named alias) ─────────────────────────
+  server.tool(
+    "campaign_launch",
+    "Launch a draft campaign on Meta (Facebook/Instagram). Resolves ad account, page, and pixel from the user's profile if not passed as overrides. For 'conversions' objective, pixel_id must be set in the profile or passed as override.",
+    {
+      campaign_id: z.string().describe("ZuckerBot campaign ID from the create step"),
+      objective: z.enum(["leads", "traffic", "conversions", "awareness"]).optional().describe("Campaign objective (uses the campaign's stored objective if omitted)"),
+      overrides: z
+        .object({
+          ad_account_id: z.string().optional(),
+          page_id: z.string().optional(),
+          pixel_id: z.string().optional(),
+          meta_access_token: z.string().optional(),
+          daily_budget_cents: z.number().int().optional(),
+          radius_km: z.number().int().optional(),
+          variant_index: z.number().int().optional(),
+          launch_all_variants: z.boolean().optional(),
+        })
+        .optional()
+        .describe("Optional overrides for profile-stored values"),
+    },
+    async ({ campaign_id, overrides }) => {
+      try {
+        const body: Record<string, unknown> = {};
+        if (overrides?.ad_account_id) body.meta_ad_account_id = overrides.ad_account_id;
+        if (overrides?.page_id) body.meta_page_id = overrides.page_id;
+        if (overrides?.pixel_id) body.pixel_id = overrides.pixel_id;
+        if (overrides?.meta_access_token) body.meta_access_token = overrides.meta_access_token;
+        if (overrides?.daily_budget_cents !== undefined) body.daily_budget_cents = overrides.daily_budget_cents;
+        if (overrides?.radius_km !== undefined) body.radius_km = overrides.radius_km;
+        if (overrides?.variant_index !== undefined) body.variant_index = overrides.variant_index;
+        if (overrides?.launch_all_variants) body.launch_all_variants = true;
+
+        const result = await client.post(`/campaigns/${campaign_id}/launch`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
   // ── 11. Generate Creatives ──────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
