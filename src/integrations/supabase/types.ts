@@ -10,1347 +10,997 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.12 (cd3cf9e)"
+    PostgrestVersion: "14.1"
   }
   public: {
     Tables: {
-      ad_campaigns: {
+      agent_runs: {
         Row: {
-          ad_account_id: string | null
-          angles_data: Json | null
-          audience_data: Json | null
-          brand_analysis: Json | null
+          analytics_projections: Json | null
           brand_data: Json | null
-          campaign_name: string
+          campaign_plan: Json | null
           competitor_data: Json | null
-          created_at: string
-          creative_assets: Json | null
-          current_step: number
-          draft_data: Json | null
-          facebook_campaign_data: Json | null
-          framework_selection: Json | null
-          generated_ad_copy: Json | null
-          generated_ads: Json | null
+          created_at: string | null
+          creative_data: Json | null
           id: string
-          image_data: Json | null
-          is_draft: boolean | null
-          last_saved_at: string | null
-          launch_status: string | null
-          pipeline_status: string
-          selected_audiences: Json | null
-          step_data: Json | null
-          updated_at: string
-          user_id: string
+          outreach_plan: Json | null
+          url: string
+          user_id: string | null
         }
         Insert: {
-          ad_account_id?: string | null
-          angles_data?: Json | null
-          audience_data?: Json | null
-          brand_analysis?: Json | null
+          analytics_projections?: Json | null
           brand_data?: Json | null
-          campaign_name?: string
+          campaign_plan?: Json | null
           competitor_data?: Json | null
-          created_at?: string
-          creative_assets?: Json | null
-          current_step?: number
-          draft_data?: Json | null
-          facebook_campaign_data?: Json | null
-          framework_selection?: Json | null
-          generated_ad_copy?: Json | null
-          generated_ads?: Json | null
+          created_at?: string | null
+          creative_data?: Json | null
           id?: string
-          image_data?: Json | null
-          is_draft?: boolean | null
-          last_saved_at?: string | null
-          launch_status?: string | null
-          pipeline_status?: string
-          selected_audiences?: Json | null
-          step_data?: Json | null
-          updated_at?: string
-          user_id: string
+          outreach_plan?: Json | null
+          url: string
+          user_id?: string | null
         }
         Update: {
-          ad_account_id?: string | null
-          angles_data?: Json | null
-          audience_data?: Json | null
-          brand_analysis?: Json | null
+          analytics_projections?: Json | null
           brand_data?: Json | null
-          campaign_name?: string
+          campaign_plan?: Json | null
           competitor_data?: Json | null
-          created_at?: string
-          creative_assets?: Json | null
-          current_step?: number
-          draft_data?: Json | null
-          facebook_campaign_data?: Json | null
-          framework_selection?: Json | null
-          generated_ad_copy?: Json | null
-          generated_ads?: Json | null
-          id?: string
-          image_data?: Json | null
-          is_draft?: boolean | null
-          last_saved_at?: string | null
-          launch_status?: string | null
-          pipeline_status?: string
-          selected_audiences?: Json | null
-          step_data?: Json | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      ad_sets: {
-        Row: {
-          call_to_action: string
-          campaign_id: string
-          created_at: string
-          creative_concept: string | null
-          framework_used: string | null
-          headline: string
-          id: string
-          is_saved: boolean | null
-          performance_score: number | null
-          primary_text: string
-          set_name: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          call_to_action: string
-          campaign_id: string
-          created_at?: string
-          creative_concept?: string | null
-          framework_used?: string | null
-          headline: string
-          id?: string
-          is_saved?: boolean | null
-          performance_score?: number | null
-          primary_text: string
-          set_name: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          call_to_action?: string
-          campaign_id?: string
-          created_at?: string
-          creative_concept?: string | null
-          framework_used?: string | null
-          headline?: string
-          id?: string
-          is_saved?: boolean | null
-          performance_score?: number | null
-          primary_text?: string
-          set_name?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "ad_sets_campaign_id_fkey"
-            columns: ["campaign_id"]
-            isOneToOne: false
-            referencedRelation: "ad_campaigns"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      audience_segments: {
-        Row: {
-          campaign_id: string
-          created_at: string | null
-          facebook_audience_id: string | null
-          id: string
-          segment_criteria: string
-          segment_name: string
-          targeting_data: Json
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          campaign_id: string
           created_at?: string | null
-          facebook_audience_id?: string | null
+          creative_data?: Json | null
           id?: string
-          segment_criteria: string
-          segment_name: string
-          targeting_data?: Json
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          campaign_id?: string
-          created_at?: string | null
-          facebook_audience_id?: string | null
-          id?: string
-          segment_criteria?: string
-          segment_name?: string
-          targeting_data?: Json
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      brand_analysis: {
-        Row: {
-          analysis_status: string | null
-          brand_name: string | null
-          brand_url: string
-          business_category: string | null
-          business_display_name: string | null
-          created_at: string
-          id: string
-          is_active: boolean | null
-          main_products: Json | null
-          niche: string | null
-          scraped_content: string | null
-          updated_at: string
-          user_id: string | null
-          value_propositions: string[] | null
-        }
-        Insert: {
-          analysis_status?: string | null
-          brand_name?: string | null
-          brand_url: string
-          business_category?: string | null
-          business_display_name?: string | null
-          created_at?: string
-          id?: string
-          is_active?: boolean | null
-          main_products?: Json | null
-          niche?: string | null
-          scraped_content?: string | null
-          updated_at?: string
-          user_id?: string | null
-          value_propositions?: string[] | null
-        }
-        Update: {
-          analysis_status?: string | null
-          brand_name?: string | null
-          brand_url?: string
-          business_category?: string | null
-          business_display_name?: string | null
-          created_at?: string
-          id?: string
-          is_active?: boolean | null
-          main_products?: Json | null
-          niche?: string | null
-          scraped_content?: string | null
-          updated_at?: string
-          user_id?: string | null
-          value_propositions?: string[] | null
-        }
-        Relationships: []
-      }
-      campaign_ad_sets: {
-        Row: {
-          ad_set_name: string
-          audience_segment_id: string | null
-          budget_data: Json
-          campaign_id: string
-          created_at: string | null
-          facebook_adset_id: string | null
-          id: string
-          placement_config: Json
-          status: string | null
-          targeting_config: Json
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          ad_set_name: string
-          audience_segment_id?: string | null
-          budget_data?: Json
-          campaign_id: string
-          created_at?: string | null
-          facebook_adset_id?: string | null
-          id?: string
-          placement_config?: Json
-          status?: string | null
-          targeting_config?: Json
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          ad_set_name?: string
-          audience_segment_id?: string | null
-          budget_data?: Json
-          campaign_id?: string
-          created_at?: string | null
-          facebook_adset_id?: string | null
-          id?: string
-          placement_config?: Json
-          status?: string | null
-          targeting_config?: Json
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      campaign_ads: {
-        Row: {
-          ad_copy_data: Json
-          ad_name: string
-          ad_set_id: string | null
-          campaign_id: string
-          created_at: string | null
-          creative_asset_url: string
-          facebook_ad_id: string | null
-          id: string
-          status: string | null
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          ad_copy_data?: Json
-          ad_name: string
-          ad_set_id?: string | null
-          campaign_id: string
-          created_at?: string | null
-          creative_asset_url: string
-          facebook_ad_id?: string | null
-          id?: string
-          status?: string | null
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          ad_copy_data?: Json
-          ad_name?: string
-          ad_set_id?: string | null
-          campaign_id?: string
-          created_at?: string | null
-          creative_asset_url?: string
-          facebook_ad_id?: string | null
-          id?: string
-          status?: string | null
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      campaign_facebook_audiences: {
-        Row: {
-          audience_segment_data: Json
-          campaign_id: string
-          created_at: string
-          facebook_audience_id: string
-          id: string
-          updated_at: string
-        }
-        Insert: {
-          audience_segment_data?: Json
-          campaign_id: string
-          created_at?: string
-          facebook_audience_id: string
-          id?: string
-          updated_at?: string
-        }
-        Update: {
-          audience_segment_data?: Json
-          campaign_id?: string
-          created_at?: string
-          facebook_audience_id?: string
-          id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "campaign_facebook_audiences_campaign_id_fkey"
-            columns: ["campaign_id"]
-            isOneToOne: false
-            referencedRelation: "ad_campaigns"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "campaign_facebook_audiences_facebook_audience_id_fkey"
-            columns: ["facebook_audience_id"]
-            isOneToOne: false
-            referencedRelation: "facebook_audiences"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      competitive_reports: {
-        Row: {
-          competitor_count: number | null
-          created_at: string
-          executive_summary: string | null
-          generated_data: Json
-          id: string
-          key_findings: Json | null
-          recommendations: Json | null
-          report_name: string
-          report_type: string
-          status: string | null
-          updated_at: string
-          user_id: string | null
-        }
-        Insert: {
-          competitor_count?: number | null
-          created_at?: string
-          executive_summary?: string | null
-          generated_data: Json
-          id?: string
-          key_findings?: Json | null
-          recommendations?: Json | null
-          report_name: string
-          report_type: string
-          status?: string | null
-          updated_at?: string
-          user_id?: string | null
-        }
-        Update: {
-          competitor_count?: number | null
-          created_at?: string
-          executive_summary?: string | null
-          generated_data?: Json
-          id?: string
-          key_findings?: Json | null
-          recommendations?: Json | null
-          report_name?: string
-          report_type?: string
-          status?: string | null
-          updated_at?: string
+          outreach_plan?: Json | null
+          url?: string
           user_id?: string | null
         }
         Relationships: []
       }
-      competitor_ad_insights: {
+      api_campaigns: {
         Row: {
-          ads_data: Json
-          competitor_list_id: string
-          competitor_name: string
+          api_key_id: string
+          business_name: string | null
+          business_type: string | null
           created_at: string
-          creative_trends: Json | null
-          ctas: Json | null
-          hooks: Json | null
+          daily_budget_cents: number | null
           id: string
-          total_ads_found: number | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          ads_data?: Json
-          competitor_list_id: string
-          competitor_name: string
-          created_at?: string
-          creative_trends?: Json | null
-          ctas?: Json | null
-          hooks?: Json | null
-          id?: string
-          total_ads_found?: number | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          ads_data?: Json
-          competitor_list_id?: string
-          competitor_name?: string
-          created_at?: string
-          creative_trends?: Json | null
-          ctas?: Json | null
-          hooks?: Json | null
-          id?: string
-          total_ads_found?: number | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      competitor_discovery: {
-        Row: {
-          brand_analysis_id: string | null
-          created_at: string
-          discovered_competitors: Json | null
-          discovery_status: string | null
-          id: string
-          search_query: string
-          updated_at: string
-          user_id: string | null
-        }
-        Insert: {
-          brand_analysis_id?: string | null
-          created_at?: string
-          discovered_competitors?: Json | null
-          discovery_status?: string | null
-          id?: string
-          search_query: string
-          updated_at?: string
-          user_id?: string | null
-        }
-        Update: {
-          brand_analysis_id?: string | null
-          created_at?: string
-          discovered_competitors?: Json | null
-          discovery_status?: string | null
-          id?: string
-          search_query?: string
-          updated_at?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "competitor_discovery_brand_analysis_id_fkey"
-            columns: ["brand_analysis_id"]
-            isOneToOne: false
-            referencedRelation: "brand_analysis"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      competitor_intelligence: {
-        Row: {
-          analysis_status: string | null
-          competitor_discovery_id: string | null
-          competitor_name: string
-          competitor_url: string
-          created_at: string
-          detailed_analysis: Json | null
-          feature_matrix: Json | null
-          id: string
-          market_position: Json | null
-          pricing_info: Json | null
-          sentiment_analysis: Json | null
-          social_presence: Json | null
-          updated_at: string
-          user_id: string | null
-        }
-        Insert: {
-          analysis_status?: string | null
-          competitor_discovery_id?: string | null
-          competitor_name: string
-          competitor_url: string
-          created_at?: string
-          detailed_analysis?: Json | null
-          feature_matrix?: Json | null
-          id?: string
-          market_position?: Json | null
-          pricing_info?: Json | null
-          sentiment_analysis?: Json | null
-          social_presence?: Json | null
-          updated_at?: string
-          user_id?: string | null
-        }
-        Update: {
-          analysis_status?: string | null
-          competitor_discovery_id?: string | null
-          competitor_name?: string
-          competitor_url?: string
-          created_at?: string
-          detailed_analysis?: Json | null
-          feature_matrix?: Json | null
-          id?: string
-          market_position?: Json | null
-          pricing_info?: Json | null
-          sentiment_analysis?: Json | null
-          social_presence?: Json | null
-          updated_at?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "competitor_intelligence_competitor_discovery_id_fkey"
-            columns: ["competitor_discovery_id"]
-            isOneToOne: false
-            referencedRelation: "competitor_discovery"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      competitor_lists: {
-        Row: {
-          auto_generated: boolean | null
-          brand_analysis_id: string | null
-          competitors: Json
-          created_at: string
-          id: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          auto_generated?: boolean | null
-          brand_analysis_id?: string | null
-          competitors?: Json
-          created_at?: string
-          id?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          auto_generated?: boolean | null
-          brand_analysis_id?: string | null
-          competitors?: Json
-          created_at?: string
-          id?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      competitor_profiles: {
-        Row: {
-          audience: string | null
-          competitor_list_id: string
-          competitor_name: string
-          competitor_url: string | null
-          created_at: string
-          id: string
-          niche: string | null
-          scraped_content: string | null
-          tone: string | null
-          updated_at: string
-          user_id: string
-          value_props: Json | null
-        }
-        Insert: {
-          audience?: string | null
-          competitor_list_id: string
-          competitor_name: string
-          competitor_url?: string | null
-          created_at?: string
-          id?: string
-          niche?: string | null
-          scraped_content?: string | null
-          tone?: string | null
-          updated_at?: string
-          user_id: string
-          value_props?: Json | null
-        }
-        Update: {
-          audience?: string | null
-          competitor_list_id?: string
-          competitor_name?: string
-          competitor_url?: string | null
-          created_at?: string
-          id?: string
-          niche?: string | null
-          scraped_content?: string | null
-          tone?: string | null
-          updated_at?: string
-          user_id?: string
-          value_props?: Json | null
-        }
-        Relationships: []
-      }
-      dashboard_metrics: {
-        Row: {
-          calculation_date: string
-          created_at: string
-          id: string
-          metadata: Json | null
-          metric_name: string
-          metric_type: string
-          metric_value: number | null
-          time_period: string
-          user_id: string | null
-        }
-        Insert: {
-          calculation_date?: string
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          metric_name: string
-          metric_type: string
-          metric_value?: number | null
-          time_period: string
-          user_id?: string | null
-        }
-        Update: {
-          calculation_date?: string
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          metric_name?: string
-          metric_type?: string
-          metric_value?: number | null
-          time_period?: string
-          user_id?: string | null
-        }
-        Relationships: []
-      }
-      facebook_ad_creatives: {
-        Row: {
-          ad_id: string | null
-          body: string | null
-          call_to_action: string | null
-          created_at: string
-          creative_id: string
-          creative_name: string | null
-          creative_type: string | null
-          id: string
-          image_url: string | null
-          link_url: string | null
-          performance_score: number | null
-          raw_data: Json | null
-          title: string | null
-          updated_at: string
-          user_id: string
-          video_url: string | null
-        }
-        Insert: {
-          ad_id?: string | null
-          body?: string | null
-          call_to_action?: string | null
-          created_at?: string
-          creative_id: string
-          creative_name?: string | null
-          creative_type?: string | null
-          id?: string
-          image_url?: string | null
-          link_url?: string | null
-          performance_score?: number | null
-          raw_data?: Json | null
-          title?: string | null
-          updated_at?: string
-          user_id: string
-          video_url?: string | null
-        }
-        Update: {
-          ad_id?: string | null
-          body?: string | null
-          call_to_action?: string | null
-          created_at?: string
-          creative_id?: string
-          creative_name?: string | null
-          creative_type?: string | null
-          id?: string
-          image_url?: string | null
-          link_url?: string | null
-          performance_score?: number | null
-          raw_data?: Json | null
-          title?: string | null
-          updated_at?: string
-          user_id?: string
-          video_url?: string | null
-        }
-        Relationships: []
-      }
-      facebook_ad_metrics: {
-        Row: {
-          ad_id: string | null
-          adset_id: string | null
-          campaign_id: string | null
-          clicks: number | null
-          conversion_value: number | null
-          conversions: number | null
-          cost_per_conversion: number | null
-          cpc: number | null
-          cpm: number | null
-          cpp: number | null
-          created_at: string
-          ctr: number | null
-          date_start: string
-          date_stop: string
-          frequency: number | null
-          id: string
-          impressions: number | null
-          raw_data: Json | null
-          reach: number | null
-          spend: number | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          ad_id?: string | null
-          adset_id?: string | null
-          campaign_id?: string | null
-          clicks?: number | null
-          conversion_value?: number | null
-          conversions?: number | null
-          cost_per_conversion?: number | null
-          cpc?: number | null
-          cpm?: number | null
-          cpp?: number | null
-          created_at?: string
-          ctr?: number | null
-          date_start: string
-          date_stop: string
-          frequency?: number | null
-          id?: string
-          impressions?: number | null
-          raw_data?: Json | null
-          reach?: number | null
-          spend?: number | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          ad_id?: string | null
-          adset_id?: string | null
-          campaign_id?: string | null
-          clicks?: number | null
-          conversion_value?: number | null
-          conversions?: number | null
-          cost_per_conversion?: number | null
-          cpc?: number | null
-          cpm?: number | null
-          cpp?: number | null
-          created_at?: string
-          ctr?: number | null
-          date_start?: string
-          date_stop?: string
-          frequency?: number | null
-          id?: string
-          impressions?: number | null
-          raw_data?: Json | null
-          reach?: number | null
-          spend?: number | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      facebook_audiences: {
-        Row: {
-          audience_id: string
-          audience_name: string
-          audience_size: number | null
-          audience_type: string | null
-          behaviors: Json | null
-          created_at: string
-          demographics: Json | null
-          description: string | null
-          id: string
-          interests: Json | null
-          raw_data: Json | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          audience_id: string
-          audience_name: string
-          audience_size?: number | null
-          audience_type?: string | null
-          behaviors?: Json | null
-          created_at?: string
-          demographics?: Json | null
-          description?: string | null
-          id?: string
-          interests?: Json | null
-          raw_data?: Json | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          audience_id?: string
-          audience_name?: string
-          audience_size?: number | null
-          audience_type?: string | null
-          behaviors?: Json | null
-          created_at?: string
-          demographics?: Json | null
-          description?: string | null
-          id?: string
-          interests?: Json | null
-          raw_data?: Json | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      facebook_campaigns: {
-        Row: {
-          campaign_id: string
-          campaign_name: string
-          created_at: string
-          created_time: string | null
-          daily_budget: number | null
-          end_time: string | null
-          id: string
-          lifetime_budget: number | null
+          launched_at: string | null
+          meta_access_token: string | null
+          meta_ad_id: string | null
+          meta_adset_id: string | null
+          meta_campaign_id: string | null
+          meta_leadform_id: string | null
           objective: string | null
-          raw_data: Json | null
-          start_time: string | null
-          status: string | null
-          updated_at: string
-          updated_time: string | null
+          roadmap: Json | null
+          status: string
+          strategy: Json | null
+          targeting: Json | null
+          url: string | null
           user_id: string
+          variants: Json | null
         }
         Insert: {
-          campaign_id: string
-          campaign_name: string
+          api_key_id: string
+          business_name?: string | null
+          business_type?: string | null
           created_at?: string
-          created_time?: string | null
-          daily_budget?: number | null
-          end_time?: string | null
-          id?: string
-          lifetime_budget?: number | null
+          daily_budget_cents?: number | null
+          id: string
+          launched_at?: string | null
+          meta_access_token?: string | null
+          meta_ad_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string | null
+          meta_leadform_id?: string | null
           objective?: string | null
-          raw_data?: Json | null
-          start_time?: string | null
-          status?: string | null
-          updated_at?: string
-          updated_time?: string | null
+          roadmap?: Json | null
+          status?: string
+          strategy?: Json | null
+          targeting?: Json | null
+          url?: string | null
           user_id: string
+          variants?: Json | null
         }
         Update: {
-          campaign_id?: string
-          campaign_name?: string
+          api_key_id?: string
+          business_name?: string | null
+          business_type?: string | null
           created_at?: string
-          created_time?: string | null
-          daily_budget?: number | null
-          end_time?: string | null
+          daily_budget_cents?: number | null
           id?: string
-          lifetime_budget?: number | null
+          launched_at?: string | null
+          meta_access_token?: string | null
+          meta_ad_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string | null
+          meta_leadform_id?: string | null
           objective?: string | null
-          raw_data?: Json | null
-          start_time?: string | null
-          status?: string | null
-          updated_at?: string
-          updated_time?: string | null
+          roadmap?: Json | null
+          status?: string
+          strategy?: Json | null
+          targeting?: Json | null
+          url?: string | null
           user_id?: string
+          variants?: Json | null
         }
         Relationships: []
       }
-      fb_metrics_cache: {
+      api_keys: {
         Row: {
-          ad_account_id: string
-          cache_key: string
-          cached_at: string
+          business_id: string | null
           created_at: string
-          entity_metrics: Json
-          expires_at: string
           id: string
-          metrics_data: Json
-          time_window: string | null
-          updated_at: string
+          is_live: boolean
+          key_hash: string
+          key_prefix: string
+          last_used_at: string | null
+          name: string
+          rate_limit_per_day: number
+          rate_limit_per_min: number
+          revoked_at: string | null
+          tier: string
           user_id: string
         }
         Insert: {
-          ad_account_id: string
-          cache_key: string
-          cached_at?: string
+          business_id?: string | null
           created_at?: string
-          entity_metrics?: Json
-          expires_at?: string
           id?: string
-          metrics_data?: Json
-          time_window?: string | null
-          updated_at?: string
+          is_live?: boolean
+          key_hash: string
+          key_prefix: string
+          last_used_at?: string | null
+          name?: string
+          rate_limit_per_day?: number
+          rate_limit_per_min?: number
+          revoked_at?: string | null
+          tier?: string
           user_id: string
         }
         Update: {
-          ad_account_id?: string
-          cache_key?: string
-          cached_at?: string
+          business_id?: string | null
           created_at?: string
-          entity_metrics?: Json
-          expires_at?: string
           id?: string
-          metrics_data?: Json
-          time_window?: string | null
-          updated_at?: string
+          is_live?: boolean
+          key_hash?: string
+          key_prefix?: string
+          last_used_at?: string | null
+          name?: string
+          rate_limit_per_day?: number
+          rate_limit_per_min?: number
+          revoked_at?: string | null
+          tier?: string
           user_id?: string
-        }
-        Relationships: []
-      }
-      monitoring_alerts: {
-        Row: {
-          alert_type: string
-          created_at: string
-          current_state: Json | null
-          description: string | null
-          detected_changes: Json | null
-          id: string
-          is_read: boolean | null
-          monitoring_config_id: string | null
-          previous_state: Json | null
-          severity: string
-          title: string
-          user_id: string | null
-        }
-        Insert: {
-          alert_type: string
-          created_at?: string
-          current_state?: Json | null
-          description?: string | null
-          detected_changes?: Json | null
-          id?: string
-          is_read?: boolean | null
-          monitoring_config_id?: string | null
-          previous_state?: Json | null
-          severity: string
-          title: string
-          user_id?: string | null
-        }
-        Update: {
-          alert_type?: string
-          created_at?: string
-          current_state?: Json | null
-          description?: string | null
-          detected_changes?: Json | null
-          id?: string
-          is_read?: boolean | null
-          monitoring_config_id?: string | null
-          previous_state?: Json | null
-          severity?: string
-          title?: string
-          user_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "monitoring_alerts_monitoring_config_id_fkey"
-            columns: ["monitoring_config_id"]
+            foreignKeyName: "api_keys_business_id_fkey"
+            columns: ["business_id"]
             isOneToOne: false
-            referencedRelation: "monitoring_config"
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
       }
-      monitoring_config: {
+      api_usage: {
         Row: {
-          alert_threshold: Json | null
-          check_frequency_hours: number | null
-          competitor_name: string
-          competitor_url: string
+          api_key_id: string
           created_at: string
+          endpoint: string
           id: string
-          is_active: boolean | null
-          monitoring_type: string
-          updated_at: string
-          user_id: string | null
+          method: string
+          response_time_ms: number | null
+          status_code: number
         }
         Insert: {
-          alert_threshold?: Json | null
-          check_frequency_hours?: number | null
-          competitor_name: string
-          competitor_url: string
+          api_key_id: string
           created_at?: string
+          endpoint: string
           id?: string
-          is_active?: boolean | null
-          monitoring_type: string
-          updated_at?: string
-          user_id?: string | null
+          method: string
+          response_time_ms?: number | null
+          status_code?: number
         }
         Update: {
-          alert_threshold?: Json | null
-          check_frequency_hours?: number | null
-          competitor_name?: string
-          competitor_url?: string
+          api_key_id?: string
           created_at?: string
+          endpoint?: string
           id?: string
-          is_active?: boolean | null
-          monitoring_type?: string
+          method?: string
+          response_time_ms?: number | null
+          status_code?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_usage_api_key_id_fkey"
+            columns: ["api_key_id"]
+            isOneToOne: false
+            referencedRelation: "api_keys"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_config: {
+        Row: {
+          auto_approve_budget_shifts: boolean
+          auto_approve_creatives: boolean
+          business_id: string
+          campaign_optimizer_enabled: boolean
+          competitor_analyst_enabled: boolean
+          competitor_analyst_frequency_hours: number
+          cpa_spike_threshold_pct: number
+          created_at: string
+          creative_director_enabled: boolean
+          creative_director_frequency_hours: number
+          ctr_drop_threshold_pct: number
+          id: string
+          performance_monitor_enabled: boolean
+          performance_monitor_frequency_hours: number
+          review_scout_enabled: boolean
+          review_scout_frequency_hours: number
+          spend_pacing_threshold_pct: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_approve_budget_shifts?: boolean
+          auto_approve_creatives?: boolean
+          business_id: string
+          campaign_optimizer_enabled?: boolean
+          competitor_analyst_enabled?: boolean
+          competitor_analyst_frequency_hours?: number
+          cpa_spike_threshold_pct?: number
+          created_at?: string
+          creative_director_enabled?: boolean
+          creative_director_frequency_hours?: number
+          ctr_drop_threshold_pct?: number
+          id?: string
+          performance_monitor_enabled?: boolean
+          performance_monitor_frequency_hours?: number
+          review_scout_enabled?: boolean
+          review_scout_frequency_hours?: number
+          spend_pacing_threshold_pct?: number
           updated_at?: string
-          user_id?: string | null
+          user_id: string
+        }
+        Update: {
+          auto_approve_budget_shifts?: boolean
+          auto_approve_creatives?: boolean
+          business_id?: string
+          campaign_optimizer_enabled?: boolean
+          competitor_analyst_enabled?: boolean
+          competitor_analyst_frequency_hours?: number
+          cpa_spike_threshold_pct?: number
+          created_at?: string
+          creative_director_enabled?: boolean
+          creative_director_frequency_hours?: number
+          ctr_drop_threshold_pct?: number
+          id?: string
+          performance_monitor_enabled?: boolean
+          performance_monitor_frequency_hours?: number
+          review_scout_enabled?: boolean
+          review_scout_frequency_hours?: number
+          spend_pacing_threshold_pct?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_config_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: true
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_runs: {
+        Row: {
+          agent_type: string
+          approved_action: Json | null
+          approved_at: string | null
+          business_id: string
+          completed_at: string | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          executing_started_at: string | null
+          first_person_summary: string | null
+          id: string
+          input: Json
+          output: Json | null
+          requires_approval: boolean
+          started_at: string | null
+          status: string
+          summary: string | null
+          tinyfish_replay_url: string | null
+          trigger_reason: string | null
+          trigger_type: string
+          user_id: string
+        }
+        Insert: {
+          agent_type: string
+          approved_action?: Json | null
+          approved_at?: string | null
+          business_id: string
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          executing_started_at?: string | null
+          first_person_summary?: string | null
+          id?: string
+          input?: Json
+          output?: Json | null
+          requires_approval?: boolean
+          started_at?: string | null
+          status?: string
+          summary?: string | null
+          tinyfish_replay_url?: string | null
+          trigger_reason?: string | null
+          trigger_type?: string
+          user_id: string
+        }
+        Update: {
+          agent_type?: string
+          approved_action?: Json | null
+          approved_at?: string | null
+          business_id?: string
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          executing_started_at?: string | null
+          first_person_summary?: string | null
+          id?: string
+          input?: Json
+          output?: Json | null
+          requires_approval?: boolean
+          started_at?: string | null
+          status?: string
+          summary?: string | null
+          tinyfish_replay_url?: string | null
+          trigger_reason?: string | null
+          trigger_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_runs_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      autonomous_policies: {
+        Row: {
+          business_id: string
+          created_at: string
+          enabled: boolean
+          frequency_cap: number
+          id: string
+          max_daily_budget: number
+          max_daily_budget_cents: number
+          min_conversions_to_scale: number
+          pause_multiplier: number
+          scale_multiplier: number
+          scale_pct: number
+          target_cpa: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          enabled?: boolean
+          frequency_cap?: number
+          id?: string
+          max_daily_budget?: number
+          max_daily_budget_cents?: number
+          min_conversions_to_scale?: number
+          pause_multiplier?: number
+          scale_multiplier?: number
+          scale_pct?: number
+          target_cpa: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          enabled?: boolean
+          frequency_cap?: number
+          id?: string
+          max_daily_budget?: number
+          max_daily_budget_cents?: number
+          min_conversions_to_scale?: number
+          pause_multiplier?: number
+          scale_multiplier?: number
+          scale_pct?: number
+          target_cpa?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "autonomous_policies_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: true
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      businesses: {
+        Row: {
+          competitor_names: string[] | null
+          country: string | null
+          created_at: string
+          facebook_access_token: string | null
+          facebook_ad_account_id: string | null
+          facebook_ad_history: Json | null
+          facebook_page_id: string | null
+          google_maps_url: string | null
+          id: string
+          lat: number | null
+          lng: number | null
+          name: string
+          notifications_enabled: boolean
+          phone: string
+          postcode: string | null
+          preview_ads: Json | null
+          state: string | null
+          suburb: string | null
+          target_radius_km: number | null
+          target_type: string | null
+          telegram_chat_id: string | null
+          trade: string
+          updated_at: string
+          user_id: string
+          website: string | null
+          website_url: string | null
+        }
+        Insert: {
+          competitor_names?: string[] | null
+          country?: string | null
+          created_at?: string
+          facebook_access_token?: string | null
+          facebook_ad_account_id?: string | null
+          facebook_ad_history?: Json | null
+          facebook_page_id?: string | null
+          google_maps_url?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          name: string
+          notifications_enabled?: boolean
+          phone: string
+          postcode?: string | null
+          preview_ads?: Json | null
+          state?: string | null
+          suburb?: string | null
+          target_radius_km?: number | null
+          target_type?: string | null
+          telegram_chat_id?: string | null
+          trade: string
+          updated_at?: string
+          user_id: string
+          website?: string | null
+          website_url?: string | null
+        }
+        Update: {
+          competitor_names?: string[] | null
+          country?: string | null
+          created_at?: string
+          facebook_access_token?: string | null
+          facebook_ad_account_id?: string | null
+          facebook_ad_history?: Json | null
+          facebook_page_id?: string | null
+          google_maps_url?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          name?: string
+          notifications_enabled?: boolean
+          phone?: string
+          postcode?: string | null
+          preview_ads?: Json | null
+          state?: string | null
+          suburb?: string | null
+          target_radius_km?: number | null
+          target_type?: string | null
+          telegram_chat_id?: string | null
+          trade?: string
+          updated_at?: string
+          user_id?: string
+          website?: string | null
+          website_url?: string | null
         }
         Relationships: []
       }
-      monitoring_history: {
+      campaigns: {
         Row: {
-          changes_detected: Json | null
-          check_timestamp: string
-          error_message: string | null
+          ad_copy: string | null
+          ad_headline: string | null
+          ad_image_url: string | null
+          business_id: string
+          clicks: number
+          cpl_cents: number | null
+          created_at: string
+          daily_budget_cents: number
           id: string
-          monitoring_config_id: string | null
-          monitoring_data: Json
+          impressions: number
+          last_synced_at: string | null
+          launched_at: string | null
+          leads_count: number
+          meta_ad_id: string | null
+          meta_adset_id: string | null
+          meta_campaign_id: string | null
+          meta_leadform_id: string | null
+          name: string
+          performance_status: string
+          radius_km: number
+          spend_cents: number
           status: string
         }
         Insert: {
-          changes_detected?: Json | null
-          check_timestamp?: string
-          error_message?: string | null
+          ad_copy?: string | null
+          ad_headline?: string | null
+          ad_image_url?: string | null
+          business_id: string
+          clicks?: number
+          cpl_cents?: number | null
+          created_at?: string
+          daily_budget_cents?: number
           id?: string
-          monitoring_config_id?: string | null
-          monitoring_data: Json
-          status: string
+          impressions?: number
+          last_synced_at?: string | null
+          launched_at?: string | null
+          leads_count?: number
+          meta_ad_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string | null
+          meta_leadform_id?: string | null
+          name: string
+          performance_status?: string
+          radius_km?: number
+          spend_cents?: number
+          status?: string
         }
         Update: {
-          changes_detected?: Json | null
-          check_timestamp?: string
-          error_message?: string | null
+          ad_copy?: string | null
+          ad_headline?: string | null
+          ad_image_url?: string | null
+          business_id?: string
+          clicks?: number
+          cpl_cents?: number | null
+          created_at?: string
+          daily_budget_cents?: number
           id?: string
-          monitoring_config_id?: string | null
-          monitoring_data?: Json
+          impressions?: number
+          last_synced_at?: string | null
+          launched_at?: string | null
+          leads_count?: number
+          meta_ad_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string | null
+          meta_leadform_id?: string | null
+          name?: string
+          performance_status?: string
+          radius_km?: number
+          spend_cents?: number
           status?: string
         }
         Relationships: [
           {
-            foreignKeyName: "monitoring_history_monitoring_config_id_fkey"
-            columns: ["monitoring_config_id"]
+            foreignKeyName: "campaigns_business_id_fkey"
+            columns: ["business_id"]
             isOneToOne: false
-            referencedRelation: "monitoring_config"
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
+      }
+      competitor_analyses: {
+        Row: {
+          ad_count: number | null
+          business_id: string | null
+          competitor_ads: Json | null
+          country: string | null
+          created_at: string | null
+          id: string
+          industry: string
+          location: string
+        }
+        Insert: {
+          ad_count?: number | null
+          business_id?: string | null
+          competitor_ads?: Json | null
+          country?: string | null
+          created_at?: string | null
+          id?: string
+          industry: string
+          location: string
+        }
+        Update: {
+          ad_count?: number | null
+          business_id?: string | null
+          competitor_ads?: Json | null
+          country?: string | null
+          created_at?: string | null
+          id?: string
+          industry?: string
+          location?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_analyses_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_reply_log: {
+        Row: {
+          created_at: string | null
+          id: string
+          intent: string
+          replied: boolean | null
+          sender_email: string
+          subject: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          intent: string
+          replied?: boolean | null
+          sender_email: string
+          subject?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          intent?: string
+          replied?: boolean | null
+          sender_email?: string
+          subject?: string | null
+        }
+        Relationships: []
+      }
+      leads: {
+        Row: {
+          business_id: string
+          campaign_id: string
+          created_at: string
+          email: string | null
+          id: string
+          meta_lead_id: string | null
+          name: string | null
+          phone: string | null
+          sms_sent: boolean
+          status: string
+          suburb: string | null
+        }
+        Insert: {
+          business_id: string
+          campaign_id: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          meta_lead_id?: string | null
+          name?: string | null
+          phone?: string | null
+          sms_sent?: boolean
+          status?: string
+          suburb?: string | null
+        }
+        Update: {
+          business_id?: string
+          campaign_id?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          meta_lead_id?: string | null
+          name?: string | null
+          phone?: string | null
+          sms_sent?: boolean
+          status?: string
+          suburb?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      outbound_prospects: {
+        Row: {
+          business_name: string
+          created_at: string
+          first_sms_at: string | null
+          id: string
+          industry: string
+          last_clicked_at: string | null
+          last_sms_at: string | null
+          link_clicks: number
+          notes: string | null
+          phone: string
+          rating: number | null
+          replied_at: string | null
+          reply_text: string | null
+          review_count: number | null
+          scraped_data: Json | null
+          sms_count: number
+          source: string | null
+          state: string | null
+          status: string
+          suburb: string | null
+          tracking_id: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          business_name: string
+          created_at?: string
+          first_sms_at?: string | null
+          id?: string
+          industry?: string
+          last_clicked_at?: string | null
+          last_sms_at?: string | null
+          link_clicks?: number
+          notes?: string | null
+          phone: string
+          rating?: number | null
+          replied_at?: string | null
+          reply_text?: string | null
+          review_count?: number | null
+          scraped_data?: Json | null
+          sms_count?: number
+          source?: string | null
+          state?: string | null
+          status?: string
+          suburb?: string | null
+          tracking_id?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          business_name?: string
+          created_at?: string
+          first_sms_at?: string | null
+          id?: string
+          industry?: string
+          last_clicked_at?: string | null
+          last_sms_at?: string | null
+          link_clicks?: number
+          notes?: string | null
+          phone?: string
+          rating?: number | null
+          replied_at?: string | null
+          reply_text?: string | null
+          review_count?: number | null
+          scraped_data?: Json | null
+          sms_count?: number
+          source?: string | null
+          state?: string | null
+          status?: string
+          suburb?: string | null
+          tracking_id?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
+      preview_leads: {
+        Row: {
+          business_name: string | null
+          created_at: string | null
+          email: string
+          id: string
+          url: string | null
+        }
+        Insert: {
+          business_name?: string | null
+          created_at?: string | null
+          email: string
+          id?: string
+          url?: string | null
+        }
+        Update: {
+          business_name?: string | null
+          created_at?: string | null
+          email?: string
+          id?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
+      preview_logs: {
+        Row: {
+          business_name: string | null
+          created_at: string | null
+          error_message: string | null
+          generated_ads: Json | null
+          has_images: boolean | null
+          id: string
+          image_count: number | null
+          ip_address: string | null
+          saved_image_urls: string[] | null
+          success: boolean | null
+          url: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          business_name?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          generated_ads?: Json | null
+          has_images?: boolean | null
+          id?: string
+          image_count?: number | null
+          ip_address?: string | null
+          saved_image_urls?: string[] | null
+          success?: boolean | null
+          url?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          business_name?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          generated_ads?: Json | null
+          has_images?: boolean | null
+          id?: string
+          image_count?: number | null
+          ip_address?: string | null
+          saved_image_urls?: string[] | null
+          success?: boolean | null
+          url?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
           business_name: string | null
-          conversation_limit: number | null
-          conversations_used: number | null
           created_at: string
           email: string | null
           facebook_access_token: string | null
-          facebook_business_id: string | null
-          facebook_connected: boolean | null
-          facebook_refresh_token: string | null
-          facebook_token_expires_at: string | null
+          facebook_connected: boolean
           full_name: string | null
           id: string
-          onboarding_completed: boolean | null
-          selected_ad_account_id: string | null
-          subscription_tier: string | null
+          onboarding_completed: boolean
           updated_at: string
           user_id: string
         }
         Insert: {
           business_name?: string | null
-          conversation_limit?: number | null
-          conversations_used?: number | null
           created_at?: string
           email?: string | null
           facebook_access_token?: string | null
-          facebook_business_id?: string | null
-          facebook_connected?: boolean | null
-          facebook_refresh_token?: string | null
-          facebook_token_expires_at?: string | null
+          facebook_connected?: boolean
           full_name?: string | null
           id?: string
-          onboarding_completed?: boolean | null
-          selected_ad_account_id?: string | null
-          subscription_tier?: string | null
+          onboarding_completed?: boolean
           updated_at?: string
           user_id: string
         }
         Update: {
           business_name?: string | null
-          conversation_limit?: number | null
-          conversations_used?: number | null
           created_at?: string
           email?: string | null
           facebook_access_token?: string | null
-          facebook_business_id?: string | null
-          facebook_connected?: boolean | null
-          facebook_refresh_token?: string | null
-          facebook_token_expires_at?: string | null
+          facebook_connected?: boolean
           full_name?: string | null
           id?: string
-          onboarding_completed?: boolean | null
-          selected_ad_account_id?: string | null
-          subscription_tier?: string | null
+          onboarding_completed?: boolean
           updated_at?: string
           user_id?: string
         }
         Relationships: []
       }
-      queued_actions: {
+      sms_log: {
         Row: {
-          action_type: string
+          business_id: string
           created_at: string
-          creative_suggestions: Json | null
-          entity_id: string
-          entity_type: string
           id: string
-          impact_score: number
-          payload: Json
+          lead_id: string
+          message: string
           status: string
-          title: string
-          updated_at: string
-          user_id: string
-          why: string
+          to_phone: string
+          twilio_sid: string | null
         }
         Insert: {
-          action_type: string
+          business_id: string
           created_at?: string
-          creative_suggestions?: Json | null
-          entity_id: string
-          entity_type: string
           id?: string
-          impact_score: number
-          payload?: Json
+          lead_id: string
+          message: string
           status?: string
-          title: string
-          updated_at?: string
-          user_id: string
-          why: string
+          to_phone: string
+          twilio_sid?: string | null
         }
         Update: {
-          action_type?: string
+          business_id?: string
           created_at?: string
-          creative_suggestions?: Json | null
-          entity_id?: string
-          entity_type?: string
           id?: string
-          impact_score?: number
-          payload?: Json
+          lead_id?: string
+          message?: string
           status?: string
-          title?: string
-          updated_at?: string
-          user_id?: string
-          why?: string
-        }
-        Relationships: []
-      }
-      selected_angles: {
-        Row: {
-          angle_description: string
-          angle_type: string
-          brand_analysis_id: string | null
-          competitor_insights: Json | null
-          competitor_list_id: string | null
-          created_at: string
-          id: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          angle_description: string
-          angle_type: string
-          brand_analysis_id?: string | null
-          competitor_insights?: Json | null
-          competitor_list_id?: string | null
-          created_at?: string
-          id?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          angle_description?: string
-          angle_type?: string
-          brand_analysis_id?: string | null
-          competitor_insights?: Json | null
-          competitor_list_id?: string | null
-          created_at?: string
-          id?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      strategic_insights: {
-        Row: {
-          action_items: Json | null
-          brand_analysis_id: string | null
-          category: string | null
-          created_at: string
-          description: string
-          effort_score: number | null
-          id: string
-          impact_score: number | null
-          insight_type: string
-          is_implemented: boolean | null
-          priority: string
-          supporting_data: Json | null
-          timeframe: string | null
-          title: string
-          updated_at: string
-          user_id: string | null
-        }
-        Insert: {
-          action_items?: Json | null
-          brand_analysis_id?: string | null
-          category?: string | null
-          created_at?: string
-          description: string
-          effort_score?: number | null
-          id?: string
-          impact_score?: number | null
-          insight_type: string
-          is_implemented?: boolean | null
-          priority: string
-          supporting_data?: Json | null
-          timeframe?: string | null
-          title: string
-          updated_at?: string
-          user_id?: string | null
-        }
-        Update: {
-          action_items?: Json | null
-          brand_analysis_id?: string | null
-          category?: string | null
-          created_at?: string
-          description?: string
-          effort_score?: number | null
-          id?: string
-          impact_score?: number | null
-          insight_type?: string
-          is_implemented?: boolean | null
-          priority?: string
-          supporting_data?: Json | null
-          timeframe?: string | null
-          title?: string
-          updated_at?: string
-          user_id?: string | null
+          to_phone?: string
+          twilio_sid?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "strategic_insights_brand_analysis_id_fkey"
-            columns: ["brand_analysis_id"]
+            foreignKeyName: "sms_log_business_id_fkey"
+            columns: ["business_id"]
             isOneToOne: false
-            referencedRelation: "brand_analysis"
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_log_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
         ]
       }
-      subscribers: {
+      strategy_briefs: {
         Row: {
-          created_at: string
-          email: string
+          brief_markdown: string
+          business_id: string | null
+          created_at: string | null
+          execution_plan: Json
           id: string
-          stripe_customer_id: string | null
-          subscribed: boolean
-          subscription_end: string | null
-          subscription_tier: string | null
-          updated_at: string
+          presentation_url: string | null
+          status: string | null
+          updated_at: string | null
           user_id: string | null
         }
         Insert: {
-          created_at?: string
-          email: string
+          brief_markdown: string
+          business_id?: string | null
+          created_at?: string | null
+          execution_plan: Json
           id?: string
-          stripe_customer_id?: string | null
-          subscribed?: boolean
-          subscription_end?: string | null
-          subscription_tier?: string | null
-          updated_at?: string
+          presentation_url?: string | null
+          status?: string | null
+          updated_at?: string | null
           user_id?: string | null
         }
         Update: {
-          created_at?: string
-          email?: string
+          brief_markdown?: string
+          business_id?: string | null
+          created_at?: string | null
+          execution_plan?: Json
           id?: string
-          stripe_customer_id?: string | null
-          subscribed?: boolean
-          subscription_end?: string | null
-          subscription_tier?: string | null
-          updated_at?: string
+          presentation_url?: string | null
+          status?: string | null
+          updated_at?: string | null
           user_id?: string | null
         }
-        Relationships: []
-      }
-      zuckerbot_conversations: {
-        Row: {
-          business_context: Json | null
-          conversation_count: number | null
-          conversation_title: string | null
-          created_at: string
-          id: string
-          messages: Json
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          business_context?: Json | null
-          conversation_count?: number | null
-          conversation_title?: string | null
-          created_at?: string
-          id?: string
-          messages?: Json
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          business_context?: Json | null
-          conversation_count?: number | null
-          conversation_title?: string | null
-          created_at?: string
-          id?: string
-          messages?: Json
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "strategy_briefs_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
