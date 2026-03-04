@@ -111,6 +111,7 @@ const RUNNER_STATE_KEY = "zb_test_runner_state";
 const Developer = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const apiV1Base = (import.meta.env.VITE_API_V1_BASE_URL as string | undefined)?.replace(/\/$/, "") || `${window.location.origin}/api/v1`;
 
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,6 +134,7 @@ const Developer = () => {
   const [launchStatus, setLaunchStatus] = useState<"idle" | "running" | "success" | "error">("idle");
   const [launchResult, setLaunchResult] = useState<any | null>(null);
   const [runnerError, setRunnerError] = useState<string | null>(null);
+  const runnerStorageKey = `${RUNNER_STATE_KEY}:${session?.user?.id || "anon"}:${newKey?.id || "no-key"}`;
 
   // Facebook connection state
   const [fbConnected, setFbConnected] = useState<boolean | null>(null);
@@ -273,22 +275,26 @@ const Developer = () => {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(RUNNER_STATE_KEY);
-      if (!raw) return;
+      const raw = localStorage.getItem(runnerStorageKey);
+      if (!raw) {
+        setDraftCampaignId(null);
+        setSelectedVariantIndex(0);
+        return;
+      }
       const parsed = JSON.parse(raw);
       if (typeof parsed?.draftCampaignId === "string") setDraftCampaignId(parsed.draftCampaignId);
       if (typeof parsed?.selectedVariantIndex === "number") setSelectedVariantIndex(parsed.selectedVariantIndex);
     } catch {
       // ignore invalid saved state
     }
-  }, []);
+  }, [runnerStorageKey]);
 
   useEffect(() => {
     localStorage.setItem(
-      RUNNER_STATE_KEY,
+      runnerStorageKey,
       JSON.stringify({ draftCampaignId, selectedVariantIndex }),
     );
-  }, [draftCampaignId, selectedVariantIndex]);
+  }, [draftCampaignId, selectedVariantIndex, runnerStorageKey]);
 
   const parseApiError = async (response: Response) => {
     let payload: any = null;
@@ -309,7 +315,7 @@ const Developer = () => {
 
   const fetchMetaStatusForKey = useCallback(async (apiKey: string) => {
     try {
-      const response = await fetch("https://zuckerbot.ai/api/v1/meta/status", {
+      const response = await fetch(`${apiV1Base}/meta/status`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -324,7 +330,7 @@ const Developer = () => {
     } catch {
       setMetaStatus(null);
     }
-  }, []);
+  }, [apiV1Base]);
 
   const handleRunLiveDemo = async () => {
     if (!newKey) return;
@@ -333,7 +339,7 @@ const Developer = () => {
     setDemoResult(null);
     setLaunchResult(null);
     try {
-      const response = await fetch("https://zuckerbot.ai/api/v1/creatives/generate", {
+      const response = await fetch(`${apiV1Base}/creatives/generate`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${newKey.key}`,
@@ -373,7 +379,7 @@ const Developer = () => {
     setDraftStatus("running");
     setLaunchResult(null);
     try {
-      const response = await fetch("https://zuckerbot.ai/api/v1/campaigns/create", {
+      const response = await fetch(`${apiV1Base}/campaigns/create`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${newKey.key}`,
@@ -383,8 +389,8 @@ const Developer = () => {
           url: "https://example.com",
           business_name: "Rosebud AI",
           description: "AI assistant that helps teams ship faster.",
-          objective: "LEAD_GENERATION",
-          daily_budget_cents: 2000,
+          objective: "leads",
+          budget_daily_cents: 2000,
           radius_km: 25,
           use_market_intel: false,
           auto_launch: false,
@@ -418,7 +424,7 @@ const Developer = () => {
     setLaunchStatus("running");
     setLaunchResult(null);
     try {
-      const response = await fetch(`https://zuckerbot.ai/api/v1/campaigns/${draftCampaignId}/launch`, {
+      const response = await fetch(`${apiV1Base}/campaigns/${draftCampaignId}/launch`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${newKey.key}`,
@@ -460,7 +466,7 @@ const Developer = () => {
         return;
       }
 
-      const response = await fetch("https://zuckerbot.ai/api/v1/keys/create", {
+      const response = await fetch(`${apiV1Base}/keys/create`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${freshSession.access_token}`,

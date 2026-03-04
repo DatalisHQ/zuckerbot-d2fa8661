@@ -1065,6 +1065,7 @@ RULES:
 
     // Auto-launch if requested
     if (auto_launch === true) {
+      let autoLaunchBusinessId: string | null = null;
       // If credentials not provided, look up from linked business (same logic as /campaigns/:id/launch)
       if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
         const { data: keyWithBiz } = await supabaseAdmin
@@ -1086,6 +1087,7 @@ RULES:
         }
 
         if (businessId) {
+          autoLaunchBusinessId = businessId;
           const { data: biz } = await supabaseAdmin
             .from('businesses')
             .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
@@ -1122,6 +1124,20 @@ RULES:
       }
 
       try {
+        const autoLaunchCreditDebit = await debitCredits({
+          userId: auth.keyRecord.user_id,
+          businessId: autoLaunchBusinessId,
+          cost: CREDIT_COSTS.campaign_launch,
+          reason: 'campaign_launch',
+          refType: 'api_campaign',
+          refId: campaignId,
+          meta: { endpoint: '/api/v1/campaigns/create', auto_launch: true },
+        });
+        if (!autoLaunchCreditDebit.ok) {
+          await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 402, responseTimeMs: Date.now() - startTime });
+          return res.status(402).json(paymentRequiredError(CREDIT_COSTS.campaign_launch, autoLaunchCreditDebit.balance));
+        }
+
         // Launch the campaign immediately
         const launchResult = await launchCampaignInternal({
           campaignId,
@@ -3822,43 +3838,6 @@ async function handleAutonomousRun(req: VercelRequest, res: VercelResponse) {
     if (actions.length === 0) {
       summary = 'No actions required. All campaigns within policy thresholds.';
     } else {
-      const runCreditDebit = await debitCredits({
-        userId: business.user_id,
-        businessId: business_id,
-        cost: CREDIT_COSTS.autonomous_run_call,
-        reason: 'autonomous_run',
-        refType: 'autonomous_run',
-        refId: business_id,
-        meta: { endpoint: '/api/v1/autonomous/run', action_count: actions.length },
-      });
-      if (!runCreditDebit.ok) {
-        summary = `${actions.length} action(s) generated but not executed: insufficient_credits.`;
-        supabaseAdmin.from('automation_runs').insert({
-          business_id,
-          user_id: business.user_id,
-          agent_type: 'autonomous_loop',
-          status: 'failed',
-          error_message: 'insufficient_credits',
-          trigger_type: 'scheduled',
-          trigger_reason: 'cron autonomous loop via dispatch-agents',
-          input: { policy_id: policy.id, metrics_count: metrics.length },
-          output: {
-            actions,
-            required_credits: CREDIT_COSTS.autonomous_run_call,
-            current_balance: runCreditDebit.balance,
-            purchase_url: PURCHASE_CREDITS_URL,
-          },
-          summary,
-          first_person_summary: `I could not run the autonomous policy loop due to insufficient credits.`,
-          requires_approval: false,
-          duration_ms: Date.now() - startTime,
-          started_at: new Date(startTime).toISOString(),
-          completed_at: new Date().toISOString(),
-        }).then(() => {});
-
-        return res.status(402).json(paymentRequiredError(CREDIT_COSTS.autonomous_run_call, runCreditDebit.balance));
-      }
-
       // System token fallback requires ALLOW_SYSTEM_TOKEN_EXECUTION=true AND business in allowlist.
       const allowSystemToken = process.env.ALLOW_SYSTEM_TOKEN_EXECUTION === 'true';
       // TODO: add specific business UUIDs here to permit system token execution
@@ -3872,6 +3851,43 @@ async function handleAutonomousRun(req: VercelRequest, res: VercelResponse) {
         summary = `${actions.length} action(s) generated but not executed: missing_meta_token. Set facebook_access_token on the business record.`;
         executionResults = actions.map((a) => ({ action: a, ok: false, status: 'skipped', error: 'missing_meta_token: facebook_access_token required' }));
       } else {
+        const runCreditDebit = await debitCredits({
+          userId: business.user_id,
+          businessId: business_id,
+          cost: CREDIT_COSTS.autonomous_run_call,
+          reason: 'autonomous_run',
+          refType: 'autonomous_run',
+          refId: business_id,
+          meta: { endpoint: '/api/v1/autonomous/run', action_count: actions.length },
+        });
+        if (!runCreditDebit.ok) {
+          summary = `${actions.length} action(s) generated but not executed: insufficient_credits.`;
+          supabaseAdmin.from('automation_runs').insert({
+            business_id,
+            user_id: business.user_id,
+            agent_type: 'autonomous_loop',
+            status: 'failed',
+            error_message: 'insufficient_credits',
+            trigger_type: 'scheduled',
+            trigger_reason: 'cron autonomous loop via dispatch-agents',
+            input: { policy_id: policy.id, metrics_count: metrics.length },
+            output: {
+              actions,
+              required_credits: CREDIT_COSTS.autonomous_run_call,
+              current_balance: runCreditDebit.balance,
+              purchase_url: PURCHASE_CREDITS_URL,
+            },
+            summary,
+            first_person_summary: `I could not run the autonomous policy loop due to insufficient credits.`,
+            requires_approval: false,
+            duration_ms: Date.now() - startTime,
+            started_at: new Date(startTime).toISOString(),
+            completed_at: new Date().toISOString(),
+          }).then(() => {});
+
+          return res.status(402).json(paymentRequiredError(CREDIT_COSTS.autonomous_run_call, runCreditDebit.balance));
+        }
+
         for (const action of actions) {
           const result = await executeAutonomousAction(action, accessToken);
           executionResults.push({ action, ...result });
