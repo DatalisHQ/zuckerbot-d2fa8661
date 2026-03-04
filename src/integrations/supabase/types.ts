@@ -1071,11 +1071,11 @@ export type Database = {
     Functions: {
       debit_credits: {
         Args: {
-          p_business_id?: string | null
+          p_business_id: string
           p_cost: number
           p_meta?: Json
           p_reason: string
-          p_ref_id?: string | null
+          p_ref_id?: string
           p_ref_type: string
           p_user_id: string
         }
