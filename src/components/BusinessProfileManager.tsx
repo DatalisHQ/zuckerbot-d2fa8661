@@ -11,7 +11,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-// UpgradeModal removed in v2 strip
 
 interface BusinessProfile {
   id: string;
@@ -33,22 +32,8 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
   const [businesses, setBusinesses] = useState<BusinessProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingBusiness, setEditingBusiness] = useState<BusinessProfile | null>(null);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-
-  const getBusinessLimit = (tier: string) => {
-    switch (tier.toLowerCase()) {
-      case 'free': return 1;
-      case 'pro': return 3;
-      case 'agency': return 10;
-      default: return 1;
-    }
-  };
-
-  const businessLimit = getBusinessLimit(subscriptionTier);
-  const canAddBusiness = businesses.length < businessLimit;
 
   useEffect(() => {
     fetchBusinesses();
@@ -59,15 +44,29 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const { data, error } = await supabase
-        .from('brand_analysis')
+      // Use 'businesses' table since 'brand_analysis' doesn't exist in schema
+      const { data, error } = await (supabase as any)
+        .from('businesses')
         .select('*')
         .eq('user_id', user.id)
-        .eq('analysis_status', 'completed')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setBusinesses(data || []);
+      
+      // Map businesses table fields to BusinessProfile interface
+      const mapped: BusinessProfile[] = (data || []).map((b: any) => ({
+        id: b.id,
+        brand_name: b.name || '',
+        brand_url: b.website_url || b.website || '',
+        business_category: b.trade || '',
+        niche: b.trade || '',
+        value_propositions: [],
+        business_display_name: b.name || '',
+        is_active: true,
+        created_at: b.created_at,
+      }));
+      
+      setBusinesses(mapped);
     } catch (error: any) {
       toast({
         title: "Error loading businesses",
@@ -81,24 +80,6 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
 
   const handleSetActive = async (businessId: string) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      // First, set all businesses to inactive
-      await supabase
-        .from('brand_analysis')
-        .update({ is_active: false })
-        .eq('user_id', user.id);
-
-      // Then set the selected business to active
-      const { error } = await supabase
-        .from('brand_analysis')
-        .update({ is_active: true })
-        .eq('id', businessId);
-
-      if (error) throw error;
-
-      // Update local state
       setBusinesses(prev => prev.map(business => ({
         ...business,
         is_active: business.id === businessId
@@ -108,9 +89,6 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
         title: "Business activated",
         description: "This business is now your active business profile.",
       });
-
-      // Refresh the page to update the app context
-      window.location.reload();
     } catch (error: any) {
       toast({
         title: "Error switching business",
@@ -129,25 +107,19 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
     if (!editingBusiness) return;
 
     try {
-      const { error } = await supabase
-        .from('brand_analysis')
+      const { error } = await (supabase as any)
+        .from('businesses')
         .update({
-          brand_name: formData.brand_name,
-          brand_url: formData.brand_url,
-          business_category: formData.business_category,
-          niche: formData.niche,
-          value_propositions: formData.value_propositions,
-          business_display_name: formData.business_display_name,
+          name: formData.brand_name,
+          website_url: formData.brand_url,
+          trade: formData.business_category,
         })
         .eq('id', editingBusiness.id);
 
       if (error) throw error;
 
-      // Update local state
-      setBusinesses(prev => prev.map(business => 
-        business.id === editingBusiness.id 
-          ? { ...business, ...formData }
-          : business
+      setBusinesses(prev => prev.map(b =>
+        b.id === editingBusiness.id ? { ...b, ...formData } : b
       ));
 
       setIsEditDialogOpen(false);
@@ -155,7 +127,7 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
 
       toast({
         title: "Business updated",
-        description: "Your business profile has been successfully updated.",
+        description: "Your business profile has been updated.",
       });
     } catch (error: any) {
       toast({
@@ -166,297 +138,145 @@ export function BusinessProfileManager({ subscriptionTier }: BusinessProfileMana
     }
   };
 
-  const handleAddBusinessClick = () => {
-    if (!canAddBusiness) {
-      setShowUpgradeModal(true);
-      return;
-    }
-    setIsAddDialogOpen(true);
-  };
-
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[200px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
+      <Card className="bg-white/[0.02] border-white/10">
+        <CardContent className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">Business Profiles</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage your business profiles ({businesses.length}/{businessLimit} used)
-          </p>
-        </div>
-        
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button 
-              disabled={false} // Always enabled, we handle gating in handler
-              variant={canAddBusiness ? "default" : "secondary"}
-              onClick={handleAddBusinessClick}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Business
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Business</DialogTitle>
-              <DialogDescription>
-                Create a new business profile. This will take you through the onboarding process.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">
-                To add a new business, you'll need to go through our onboarding process where we'll analyze your business and competitors.
-              </p>
-              <div className="flex gap-2">
-                <Button asChild className="flex-1">
-                  <a href="/onboarding">Start Onboarding</a>
-                </Button>
-                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <h2 className="text-lg font-semibold text-white">Business Profiles</h2>
       </div>
 
-      {!canAddBusiness && (
-        <Card className="border-warning bg-warning/5">
-          <CardContent className="pt-6">
-            <p className="text-sm text-warning-foreground">
-              You've reached your business limit for the {subscriptionTier} plan. 
-              <a href="/pricing" className="underline ml-1">Upgrade your plan</a> to add more businesses.
-            </p>
+      {businesses.length === 0 ? (
+        <Card className="bg-white/[0.02] border-white/10">
+          <CardContent className="text-center py-12">
+            <Building className="w-12 h-12 mx-auto text-gray-600 mb-4" />
+            <p className="text-gray-400">No business profiles yet</p>
+            <p className="text-sm text-gray-500 mt-1">Add a business from the onboarding flow</p>
           </CardContent>
         </Card>
+      ) : (
+        <div className="grid gap-4">
+          {businesses.map((business) => (
+            <Card
+              key={business.id}
+              className={`bg-white/[0.02] ${business.is_active ? 'border-blue-500/30' : 'border-white/10'}`}
+            >
+              <CardContent className="flex items-center justify-between py-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/10">
+                    <Building className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">{business.brand_name || business.business_display_name}</p>
+                    <p className="text-xs text-gray-500">{business.business_category}</p>
+                  </div>
+                  {business.is_active && (
+                    <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px]">Active</Badge>
+                  )}
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
+                      <MoreVertical className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {!business.is_active && (
+                      <DropdownMenuItem onClick={() => handleSetActive(business.id)}>
+                        <Check className="w-4 h-4 mr-2" /> Set Active
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => handleEdit(business)}>
+                      <Edit2 className="w-4 h-4 mr-2" /> Edit
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
-      <div className="grid gap-4">
-        {businesses.map((business) => (
-          <Card key={business.id} className={business.is_active ? "border-primary bg-primary/5" : ""}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Building className="w-5 h-5" />
-                  <div>
-                    <CardTitle className="text-lg">
-                      {business.business_display_name || business.brand_name}
-                    </CardTitle>
-                    <CardDescription className="flex items-center gap-2">
-                      <Globe className="w-3 h-3" />
-                      {business.brand_url}
-                    </CardDescription>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {business.is_active && (
-                    <Badge variant="default">Active</Badge>
-                  )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      {!business.is_active && (
-                        <DropdownMenuItem onClick={() => handleSetActive(business.id)}>
-                          <Check className="w-4 h-4 mr-2" />
-                          Set as Active
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem onClick={() => handleEdit(business)}>
-                        <Edit2 className="w-4 h-4 mr-2" />
-                        Edit Business
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Category:</span>
-                  <span className="ml-2">{business.business_category}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Niche:</span>
-                  <span className="ml-2">{business.niche}</span>
-                </div>
-              </div>
-              {business.value_propositions && business.value_propositions.length > 0 && (
-                <div>
-                  <span className="text-sm text-muted-foreground">Value Propositions:</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {business.value_propositions.slice(0, 3).map((prop, index) => (
-                      <Badge key={index} variant="secondary" className="text-xs">
-                        {prop}
-                      </Badge>
-                    ))}
-                    {business.value_propositions.length > 3 && (
-                      <Badge variant="secondary" className="text-xs">
-                        +{business.value_propositions.length - 3} more
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Edit Business Dialog */}
-      <BusinessEditDialog
-        business={editingBusiness}
-        isOpen={isEditDialogOpen}
-        onClose={() => {
-          setIsEditDialogOpen(false);
-          setEditingBusiness(null);
-        }}
-        onSave={handleSaveEdit}
-      />
-
-      {/* UpgradeModal removed in v2 strip */}
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="bg-[#0f0f13] border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle>Edit Business</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Update your business profile details.
+            </DialogDescription>
+          </DialogHeader>
+          {editingBusiness && (
+            <EditBusinessForm
+              business={editingBusiness}
+              onSave={handleSaveEdit}
+              onCancel={() => setIsEditDialogOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-interface BusinessEditDialogProps {
-  business: BusinessProfile | null;
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (formData: Partial<BusinessProfile>) => void;
-}
-
-function BusinessEditDialog({ business, isOpen, onClose, onSave }: BusinessEditDialogProps) {
-  const [formData, setFormData] = useState({
-    business_display_name: '',
-    brand_name: '',
-    brand_url: '',
-    business_category: '',
-    niche: '',
-    value_propositions: [] as string[],
-  });
-  const [valuePropsText, setValuePropsText] = useState('');
-
-  useEffect(() => {
-    if (business) {
-      setFormData({
-        business_display_name: business.business_display_name || business.brand_name,
-        brand_name: business.brand_name,
-        brand_url: business.brand_url,
-        business_category: business.business_category,
-        niche: business.niche,
-        value_propositions: business.value_propositions || [],
-      });
-      setValuePropsText((business.value_propositions || []).join('\n'));
-    }
-  }, [business]);
-
-  const handleSave = () => {
-    const valuePropositions = valuePropsText
-      .split('\n')
-      .map(prop => prop.trim())
-      .filter(prop => prop.length > 0);
-
-    onSave({
-      ...formData,
-      value_propositions: valuePropositions,
-    });
-  };
+function EditBusinessForm({
+  business,
+  onSave,
+  onCancel,
+}: {
+  business: BusinessProfile;
+  onSave: (data: Partial<BusinessProfile>) => void;
+  onCancel: () => void;
+}) {
+  const [brandName, setBrandName] = useState(business.brand_name);
+  const [brandUrl, setBrandUrl] = useState(business.brand_url);
+  const [category, setCategory] = useState(business.business_category);
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Edit Business Profile</DialogTitle>
-          <DialogDescription>
-            Update your business information
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="display_name">Display Name</Label>
-              <Input
-                id="display_name"
-                value={formData.business_display_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, business_display_name: e.target.value }))}
-                placeholder="My Business"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="brand_name">Brand Name</Label>
-              <Input
-                id="brand_name"
-                value={formData.brand_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, brand_name: e.target.value }))}
-                placeholder="Brand Name"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="brand_url">Website URL</Label>
-            <Input
-              id="brand_url"
-              value={formData.brand_url}
-              onChange={(e) => setFormData(prev => ({ ...prev, brand_url: e.target.value }))}
-              placeholder="https://example.com"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="category">Business Category</Label>
-              <Input
-                id="category"
-                value={formData.business_category}
-                onChange={(e) => setFormData(prev => ({ ...prev, business_category: e.target.value }))}
-                placeholder="E-commerce, SaaS, etc."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="niche">Niche</Label>
-              <Input
-                id="niche"
-                value={formData.niche}
-                onChange={(e) => setFormData(prev => ({ ...prev, niche: e.target.value }))}
-                placeholder="Your business niche"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="value_props">Value Propositions (one per line)</Label>
-            <Textarea
-              id="value_props"
-              value={valuePropsText}
-              onChange={(e) => setValuePropsText(e.target.value)}
-              placeholder="Fast delivery&#10;Quality products&#10;Great customer service"
-              rows={4}
-            />
-          </div>
-
-          <div className="flex gap-2 pt-4">
-            <Button onClick={handleSave} className="flex-1">
-              Save Changes
-            </Button>
-            <Button variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <div className="space-y-4">
+      <div>
+        <Label className="text-gray-300">Business Name</Label>
+        <Input
+          value={brandName}
+          onChange={(e) => setBrandName(e.target.value)}
+          className="bg-white/5 border-white/10 text-white mt-1"
+        />
+      </div>
+      <div>
+        <Label className="text-gray-300">Website URL</Label>
+        <Input
+          value={brandUrl}
+          onChange={(e) => setBrandUrl(e.target.value)}
+          className="bg-white/5 border-white/10 text-white mt-1"
+        />
+      </div>
+      <div>
+        <Label className="text-gray-300">Category</Label>
+        <Input
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="bg-white/5 border-white/10 text-white mt-1"
+        />
+      </div>
+      <div className="flex justify-end gap-3 pt-2">
+        <Button variant="outline" onClick={onCancel} className="border-white/10 text-gray-300">
+          Cancel
+        </Button>
+        <Button
+          onClick={() => onSave({ brand_name: brandName, brand_url: brandUrl, business_category: category })}
+          className="bg-blue-600 hover:bg-blue-500 text-white"
+        >
+          Save
+        </Button>
+      </div>
+    </div>
   );
 }

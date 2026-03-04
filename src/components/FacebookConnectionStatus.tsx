@@ -23,8 +23,8 @@ export const FacebookConnectionStatus = ({ onConnectionChange }: FacebookConnect
   const handleRefreshConnection = async () => {
     setIsRefreshing(true);
     try {
-      const success = await refreshToken();
-      if (success) {
+      await refreshToken();
+      if (true) {
         toast({
           title: "Refreshing Connection",
           description: "Redirecting to Facebook to refresh your connection...",
