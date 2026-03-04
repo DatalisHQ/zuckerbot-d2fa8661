@@ -59,7 +59,7 @@ const features = [
 const endpoints = [
   { method: "POST", path: "campaigns/preview", desc: "Generate ad previews from any URL" },
   { method: "POST", path: "campaigns/create", desc: "Full campaign strategy with targeting" },
-  { method: "POST", path: "campaigns/:id/launch", desc: "Deploy to Meta" },
+  { method: "POST", path: "campaigns/:id/launch", desc: "Deploy to Meta with A/B testing" },
   { method: "POST", path: "campaigns/:id/pause", desc: "Pause or resume campaigns" },
   { method: "GET", path: "campaigns/:id/performance", desc: "Real-time metrics" },
   { method: "POST", path: "campaigns/:id/conversions", desc: "CAPI feedback loop" },
@@ -67,7 +67,6 @@ const endpoints = [
   { method: "POST", path: "research/competitors", desc: "Competitor analysis" },
   { method: "POST", path: "research/market", desc: "Market research" },
   { method: "POST", path: "creatives/generate", desc: "AI ad image generation" },
-  { method: "POST", path: "keys/create", desc: "Generate API keys" },
 ];
 
 const pricingTiers = [
@@ -172,13 +171,13 @@ const Index = () => {
             MCP Server + REST API
           </Badge>
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-white mb-6">
-            MCP Server
+            Give your AI agent
             <br />
-            for Meta Ads.
+            <span className="text-blue-500">Facebook Ads.</span>
           </h1>
           <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mb-8 leading-relaxed">
-            Let any AI agent create and manage Facebook ad campaigns programmatically.
-            One command to install. 11 tools. Free tier.
+            Ad infrastructure for AI agents. One API to create, launch, and optimize
+            Meta ad campaigns programmatically. 10 endpoints. 4 objectives. A/B testing built in.
           </p>
 
           {/* Install snippet - most important thing on the page */}
@@ -246,28 +245,28 @@ const Index = () => {
       <section className="py-16 px-6 border-t border-white/5 bg-white/[0.01]">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl font-bold tracking-tight text-white mb-8">
-            What devs are building
+            What agent builders are shipping
           </h2>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-lg border border-white/10 bg-white/[0.02] p-5">
               <div className="text-2xl mb-3">🤖</div>
               <h3 className="text-base font-semibold text-white mb-2">Autonomous lead gen agents</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
-                Agents that research a market, create campaigns, launch ads, and pipe leads into a CRM. No human in the loop.
+                Agents that research a market, create campaigns with lead-form objective, launch ads, and pipe leads into a CRM. No human in the loop.
               </p>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.02] p-5">
-              <div className="text-2xl mb-3">🛒</div>
-              <h3 className="text-base font-semibold text-white mb-2">E-commerce ad automation</h3>
+              <div className="text-2xl mb-3">🧪</div>
+              <h3 className="text-base font-semibold text-white mb-2">A/B testing at scale</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
-                Product launch triggers an agent that generates creatives, writes copy, and deploys ads to Meta. Fully automated.
+                Generate multiple creative variants, launch them all with <code className="text-blue-400 text-xs">launch_all_variants</code>, and let Meta auto-optimize for the winner.
               </p>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.02] p-5">
               <div className="text-2xl mb-3">📊</div>
-              <h3 className="text-base font-semibold text-white mb-2">Competitive intelligence</h3>
+              <h3 className="text-base font-semibold text-white mb-2">Multi-objective campaigns</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
-                Agents that monitor competitor ads, analyze their strategy, and adjust your campaigns in response. Real-time.
+                Traffic, leads, conversions, or awareness. Your agent picks the right objective, and ZuckerBot handles the Meta-specific mapping automatically.
               </p>
             </div>
           </div>
@@ -284,20 +283,20 @@ const Index = () => {
             {[
               {
                 step: "1",
-                title: "Get an API key",
-                desc: "Free tier includes 25 preview calls per month. No credit card required.",
-                code: "zb_live_abc123...",
+                title: "Connect Facebook once",
+                desc: "Users connect their Meta account on the developer page. Credentials are stored securely — no need to pass tokens in every API call.",
+                code: "/developer → Connect FB",
               },
               {
                 step: "2",
-                title: "Install or call",
-                desc: "Use the MCP server with Claude, Cursor, or any agent. Or call the REST API directly.",
+                title: "Get an API key",
+                desc: "Free tier includes 25 preview calls per month. Install the MCP server or call the REST API directly.",
                 code: "npx zuckerbot-mcp",
               },
               {
                 step: "3",
                 title: "Your agent runs ads",
-                desc: "Create campaigns, launch to Meta, and optimize with real-time performance data.",
+                desc: "Create campaigns with any objective (leads, traffic, conversions, awareness). Launch with A/B testing. Monitor performance in real time.",
                 code: "campaigns/launch ✓",
               },
             ].map((item) => (
@@ -323,7 +322,7 @@ const Index = () => {
             What your agent can do
           </h2>
           <p className="text-gray-400 mb-10">
-            Five capabilities. Everything an AI agent needs to run Facebook ads end to end.
+            Five capabilities. Everything an AI agent needs to run Facebook ads end to end — across leads, traffic, conversions, and awareness objectives.
           </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {features.map((feature) => (
@@ -352,7 +351,7 @@ const Index = () => {
             Base URL: <code className="text-sm font-mono text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">https://zuckerbot.ai/api/v1/</code>
           </p>
           <p className="text-gray-500 text-sm mb-10">
-            11 endpoints. Everything an AI agent needs to run a full ad campaign lifecycle.
+            10 endpoints. Full ad campaign lifecycle: research, create, launch, A/B test, monitor, and optimize.
           </p>
           <div className="grid gap-2">
             {endpoints.map((ep) => (

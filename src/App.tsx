@@ -170,7 +170,7 @@ function App() {
               <Route path="/dashboard" element={<Navigate to="/developer" />} />
               <Route path="/campaign/new" element={user ? <CampaignCreator /> : <Navigate to="/auth" />} />
               <Route path="/leads" element={user ? <LeadInbox /> : <Navigate to="/auth" />} />
-              <Route path="/profile" element={user ? <Profile /> : <Navigate to="/auth" />} />
+              <Route path="/profile" element={<Navigate to="/developer" />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
               <Route path="/privacy" element={<Privacy />} />

@@ -354,7 +354,7 @@ const Docs = () => {
           <section id="endpoints" className="scroll-mt-24 mb-8">
             <h2 className="text-2xl font-bold text-white mb-2">Endpoints</h2>
             <p className="text-gray-400 mb-6">
-              10 endpoints covering the full ad campaign lifecycle: research, create, launch, monitor, and optimize.
+              10 endpoints covering the full ad campaign lifecycle: research, create, launch, A/B test, monitor, and optimize.
             </p>
           </section>
 
@@ -417,7 +417,7 @@ const Docs = () => {
             method="POST"
             path="/v1/campaigns/create"
             description="Create a full campaign strategy with targeting, budget recommendations, and creatives. Returns a draft campaign ready for review and launch. Does not create anything on Meta."
-            notes="Only the url field is required. Everything else improves the results. The meta_access_token is optional at this stage."
+            notes="Only the url field is required. The objective parameter supports 'leads', 'traffic' (default), 'conversions', and 'awareness'. Each objective configures the correct Meta optimization_goal, destination_type, and promoted_object automatically."
             requestBody={`{
   "url": "https://joes-pizza-austin.com",
   "business_name": "Joe's Pizza",
@@ -430,15 +430,21 @@ const Docs = () => {
     "lng": -97.7431
   },
   "budget_daily_cents": 2000,
-  "objective": "leads"
-}`}
+  "objective": "traffic"
+}
+
+// Supported objectives:
+// "leads"       → Lead forms (OUTCOME_LEADS, ON_AD)
+// "traffic"     → Website clicks (OUTCOME_TRAFFIC, WEBSITE) — default
+// "conversions" → Website actions (OUTCOME_SALES, WEBSITE, pixel required)
+// "awareness"   → Reach (OUTCOME_AWARENESS)`}
             responseBody={`{
   "id": "camp_xyz789",
   "status": "draft",
   "business_name": "Joe's Pizza",
   "strategy": {
-    "objective": "leads",
-    "summary": "Lead generation campaign targeting pizza lovers in Austin, TX within 15km radius.",
+    "objective": "traffic",
+    "summary": "Traffic campaign targeting pizza lovers in Austin, TX within 15km radius.",
     "strengths": ["Strong review profile", "Established local brand"],
     "opportunities": ["Competitors lack social proof in ads"],
     "recommended_daily_budget_cents": 2000,
@@ -455,23 +461,16 @@ const Docs = () => {
   "variants": [
     {
       "headline": "4.8 Stars, 127 Reviews",
-      "copy": "Austin's favorite pizza since 2019. Try the slice locals can't stop raving about.",
+      "copy": "Austin's favorite pizza since 2019.",
       "cta": "Learn More",
       "angle": "social_proof",
       "image_url": "https://storage.zuckerbot.ai/..."
     },
     {
       "headline": "Tonight's Dinner, Sorted",
-      "copy": "Hot, fresh, authentic NY-style pizza delivered to your door. Order before 8pm tonight.",
-      "cta": "Call Now",
+      "copy": "Hot, fresh, authentic NY-style pizza delivered to your door.",
+      "cta": "Order Now",
       "angle": "urgency",
-      "image_url": "https://storage.zuckerbot.ai/..."
-    },
-    {
-      "headline": "Free Slice With Your First Order",
-      "copy": "New to Joe's? Your first order comes with a free slice on the house. Limited time.",
-      "cta": "Get Quote",
-      "angle": "value",
       "image_url": "https://storage.zuckerbot.ai/..."
     }
   ],
@@ -482,6 +481,7 @@ const Docs = () => {
   -H "Content-Type: application/json" \\
   -d '{
     "url": "https://joes-pizza-austin.com",
+    "objective": "traffic",
     "location": {"city": "Austin", "state": "TX", "country": "US"},
     "budget_daily_cents": 2000
   }'`}
@@ -492,15 +492,18 @@ const Docs = () => {
             id="ep-launch"
             method="POST"
             path="/v1/campaigns/:id/launch"
-            description="Launch a draft campaign on Meta. Creates the ad campaign, ad set, lead form, creative, and ad on Meta, then activates everything. This is the endpoint that spends real money."
-            notes="All fields are required. The variant_index selects which creative variant from the draft campaign to use. Requires the end user's Meta access token, ad account ID, and Facebook Page ID."
+            description="Launch a draft campaign on Meta. Creates the ad campaign, ad set, creative, and ad on Meta, then activates everything. This is the endpoint that spends real money."
+            notes="Meta credentials are optional if the user has connected Facebook on the /developer page (stored credentials flow). Set launch_all_variants: true to create multiple ads under one ad set for A/B testing — Meta auto-optimizes for the winner."
             requestBody={`{
-  "meta_access_token": "EAAGm0PX4ZCps...",
-  "meta_ad_account_id": "act_123456789",
-  "meta_page_id": "987654321",
   "variant_index": 0,
   "daily_budget_cents": 2000,
-  "radius_km": 15
+  "radius_km": 15,
+  "launch_all_variants": false,
+
+  // Optional — omit if Facebook is connected on /developer
+  "meta_access_token": "EAAGm0PX4ZCps...",
+  "meta_ad_account_id": "act_123456789",
+  "meta_page_id": "987654321"
 }`}
             responseBody={`{
   "id": "camp_xyz789",
@@ -508,21 +511,20 @@ const Docs = () => {
   "meta_campaign_id": "120211234567890",
   "meta_adset_id": "120211234567891",
   "meta_ad_id": "120211234567892",
-  "meta_leadform_id": "120211234567893",
   "daily_budget_cents": 2000,
   "launched_at": "2026-02-23T00:15:00Z"
 }`}
-            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
+            curlExample={`# With stored credentials (Facebook connected on /developer):
+curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
   -H "Authorization: Bearer zb_live_abc123" \\
   -H "Content-Type: application/json" \\
-  -d '{
-    "meta_access_token": "EAAGm0PX4ZCps...",
-    "meta_ad_account_id": "act_123456789",
-    "meta_page_id": "987654321",
-    "variant_index": 0,
-    "daily_budget_cents": 2000,
-    "radius_km": 15
-  }'`}
+  -d '{"variant_index": 0, "daily_budget_cents": 2000}'
+
+# With A/B testing (launches all creative variants):
+curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"launch_all_variants": true, "daily_budget_cents": 2000}'`}
           />
 
           {/* POST /v1/campaigns/:id/pause */}
@@ -772,14 +774,14 @@ const Docs = () => {
             </p>
 
             <h3 className="text-lg font-semibold text-white mb-3">Install</h3>
-            <CodeBlock title="npx (recommended)" lang="bash">{`npx @zuckerbot/mcp-server`}</CodeBlock>
+            <CodeBlock title="npx (recommended)" lang="bash">{`npx zuckerbot-mcp`}</CodeBlock>
 
             <h3 className="text-lg font-semibold text-white mt-6 mb-3">Claude Desktop config</h3>
             <CodeBlock title="claude_desktop_config.json" lang="json">{`{
   "mcpServers": {
     "zuckerbot": {
       "command": "npx",
-      "args": ["-y", "@zuckerbot/mcp-server"],
+      "args": ["-y", "zuckerbot-mcp"],
       "env": {
         "ZUCKERBOT_API_KEY": "zb_live_your_key_here"
       }
@@ -792,7 +794,7 @@ const Docs = () => {
   "skills": {
     "zuckerbot": {
       "command": "npx",
-      "args": ["-y", "@zuckerbot/mcp-server"],
+      "args": ["-y", "zuckerbot-mcp"],
       "env": {
         "ZUCKERBOT_API_KEY": "zb_live_your_key_here"
       }
@@ -804,15 +806,16 @@ const Docs = () => {
             <div className="space-y-2">
               {[
                 { name: "zuckerbot_preview_campaign", desc: "Generate ad previews from a URL" },
-                { name: "zuckerbot_create_campaign", desc: "Create full campaign with strategy and targeting" },
-                { name: "zuckerbot_launch_campaign", desc: "Launch a draft campaign on Meta" },
+                { name: "zuckerbot_create_campaign", desc: "Create full campaign with strategy, targeting, and objectives" },
+                { name: "zuckerbot_launch_campaign", desc: "Launch to Meta with A/B testing support" },
+                { name: "zuckerbot_pause_campaign", desc: "Pause or resume a running campaign" },
                 { name: "zuckerbot_get_performance", desc: "Get real-time campaign metrics" },
-                { name: "zuckerbot_pause_campaign", desc: "Pause a running campaign" },
-                { name: "zuckerbot_delete_campaign", desc: "Delete a campaign from Meta and ZuckerBot" },
-                { name: "zuckerbot_research_competitors", desc: "Analyze competitor ads" },
+                { name: "zuckerbot_sync_conversion", desc: "Send conversion feedback to Meta CAPI" },
                 { name: "zuckerbot_research_reviews", desc: "Get review intelligence for a business" },
-                { name: "zuckerbot_generate_ad_creative", desc: "Generate ad images via Imagen 4.0" },
-                { name: "zuckerbot_sync_conversion", desc: "Send conversion feedback to Meta" },
+                { name: "zuckerbot_research_competitors", desc: "Analyze competitor ads" },
+                { name: "zuckerbot_research_market", desc: "Get market intelligence and benchmarks" },
+                { name: "zuckerbot_generate_creatives", desc: "Generate ad images via AI" },
+                { name: "zuckerbot_meta_status", desc: "Check Facebook connection status" },
               ].map((tool) => (
                 <div
                   key={tool.name}

@@ -28,28 +28,26 @@ export const useFacebookHealthCheck = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        throw new Error('User not authenticated');
+        const status: FacebookHealthStatus = {
+          isHealthy: false, tokenValid: false, adAccountValid: false,
+          businessAccountValid: false, error: 'Not authenticated', isChecking: false
+        };
+        setHealthStatus(status);
+        return status;
       }
 
-      // Get profile data
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('facebook_connected, facebook_access_token, facebook_business_id, selected_ad_account_id')
+      // Use 'businesses' table which has facebook_access_token and facebook_ad_account_id
+      const { data: biz, error: bizError } = await (supabase as any)
+        .from('businesses')
+        .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
         .eq('user_id', user.id)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
-      if (profileError) {
-        throw new Error('Failed to fetch profile data');
-      }
-
-      if (!profile?.facebook_connected || !profile.facebook_access_token) {
-        const status = {
-          isHealthy: false,
-          tokenValid: false,
-          adAccountValid: false,
-          businessAccountValid: false,
-          error: 'Facebook not connected',
-          isChecking: false
+      if (bizError || !biz?.facebook_access_token) {
+        const status: FacebookHealthStatus = {
+          isHealthy: false, tokenValid: false, adAccountValid: false,
+          businessAccountValid: false, error: 'Facebook not connected', isChecking: false
         };
         setHealthStatus(status);
         return status;
@@ -59,104 +57,57 @@ export const useFacebookHealthCheck = () => {
       let tokenValid = false;
       try {
         const tokenResponse = await fetch(
-          `https://graph.facebook.com/v18.0/me?access_token=${profile.facebook_access_token}`
+          `https://graph.facebook.com/v18.0/me?access_token=${biz.facebook_access_token}`
         );
         tokenValid = tokenResponse.ok;
-      } catch (error) {
-        console.error('Token validation failed:', error);
+      } catch {
         tokenValid = false;
-      }
-
-      // Check business account access
-      let businessAccountValid = false;
-      if (tokenValid && profile.facebook_business_id) {
-        try {
-          const businessResponse = await fetch(
-            `https://graph.facebook.com/v18.0/${profile.facebook_business_id}?access_token=${profile.facebook_access_token}`
-          );
-          businessAccountValid = businessResponse.ok;
-        } catch (error) {
-          console.error('Business account validation failed:', error);
-          businessAccountValid = false;
-        }
       }
 
       // Check ad account access
       let adAccountValid = false;
-      if (tokenValid && profile.selected_ad_account_id) {
+      if (tokenValid && biz.facebook_ad_account_id) {
         try {
           const adAccountResponse = await fetch(
-            `https://graph.facebook.com/v18.0/act_${profile.selected_ad_account_id}?access_token=${profile.facebook_access_token}`
+            `https://graph.facebook.com/v18.0/${biz.facebook_ad_account_id}?access_token=${biz.facebook_access_token}`
           );
           adAccountValid = adAccountResponse.ok;
-        } catch (error) {
-          console.error('Ad account validation failed:', error);
+        } catch {
           adAccountValid = false;
         }
       }
 
-      const isHealthy = tokenValid && businessAccountValid && adAccountValid;
-      
-      const status = {
+      const isHealthy = tokenValid && adAccountValid;
+
+      const status: FacebookHealthStatus = {
         isHealthy,
         tokenValid,
         adAccountValid,
-        businessAccountValid,
-        error: isHealthy ? null : 'Facebook API access issues detected',
+        businessAccountValid: tokenValid, // simplified
+        error: isHealthy ? null : 'Some Facebook components need attention',
         isChecking: false
       };
 
       setHealthStatus(status);
-      return status;
 
-    } catch (error: any) {
-      console.error('Facebook health check failed:', error);
-      const status = {
-        isHealthy: false,
-        tokenValid: false,
-        adAccountValid: false,
-        businessAccountValid: false,
-        error: error.message || 'Health check failed',
-        isChecking: false
-      };
-      setHealthStatus(status);
-      return status;
-    }
-  }, []);
-
-  const requireHealthyConnection = useCallback(async (): Promise<boolean> => {
-    const status = await performHealthCheck();
-    
-    if (!status.isHealthy) {
-      let errorMessage = 'Facebook connection issue detected.';
-      let recoveryParam = 'facebook';
-
-      if (!status.tokenValid) {
-        errorMessage = 'Your Facebook access token has expired. Please reconnect.';
-      } else if (!status.businessAccountValid) {
-        errorMessage = 'Cannot access your Facebook Business account. Please reconnect.';
-      } else if (!status.adAccountValid) {
-        errorMessage = 'Cannot access your selected ad account. Please reselect.';
-        recoveryParam = 'ad_account';
+      if (!isHealthy) {
+        toast({
+          title: "Facebook Connection Issue",
+          description: "Some Facebook components need attention. Please check your connection.",
+          variant: "destructive",
+        });
       }
 
-      toast({
-        title: "Facebook Connection Required",
-        description: errorMessage,
-        variant: "destructive",
-      });
-
-      // Redirect to recovery
-      window.location.href = `/onboarding?recovery=${recoveryParam}`;
-      return false;
+      return status;
+    } catch (error: any) {
+      const status: FacebookHealthStatus = {
+        isHealthy: false, tokenValid: false, adAccountValid: false,
+        businessAccountValid: false, error: error.message, isChecking: false
+      };
+      setHealthStatus(status);
+      return status;
     }
+  }, [toast]);
 
-    return true;
-  }, [performHealthCheck, toast]);
-
-  return {
-    healthStatus,
-    performHealthCheck,
-    requireHealthyConnection
-  };
+  return { healthStatus, performHealthCheck };
 };

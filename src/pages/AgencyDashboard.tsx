@@ -100,20 +100,22 @@ export default function AgencyDashboard() {
       setRuns((runsData as unknown as AutomationRun[]) || []);
 
       // Fetch automation config (optional, may not exist)
-      const { data: configData } = await supabase
+      const { data: configData } = await (supabase as any)
         .from("automation_config")
-        .select("enabled_agents")
+        .select("*")
         .eq("business_id", biz.id)
         .limit(1)
         .maybeSingle();
 
-      if (configData?.enabled_agents) {
-        const agents = configData.enabled_agents as unknown;
-        if (Array.isArray(agents)) {
-          setAgentsEnabled(agents.length);
-        } else if (typeof agents === "number") {
-          setAgentsEnabled(agents);
-        }
+      if (configData) {
+        // Count enabled agent types from config columns
+        let count = 0;
+        if (configData.performance_monitor_enabled) count++;
+        if (configData.competitor_analyst_enabled) count++;
+        if (configData.creative_director_enabled) count++;
+        if (configData.review_scout_enabled) count++;
+        if (configData.campaign_optimizer_enabled) count++;
+        setAgentsEnabled(count);
       }
     } catch (err) {
       console.error("[AgencyDashboard] Unexpected error:", err);

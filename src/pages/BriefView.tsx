@@ -249,16 +249,18 @@ export default function BriefView() {
       }
 
       // Fetch brief
-      const { data, error: fetchError } = await supabase
-        .from("strategy_briefs" as any)
+      const { data: rawData, error: fetchError } = await (supabase as any)
+        .from("strategy_briefs")
         .select("id, brief_markdown, execution_plan, created_at, business_id")
         .eq("id", briefId)
         .maybeSingle();
 
-      if (fetchError || !data) {
+      if (fetchError || !rawData) {
         setError("Strategy brief not found");
         return;
       }
+
+      const data = rawData as any;
 
       // Fetch business details separately
       let businessName = "Business";
@@ -266,26 +268,27 @@ export default function BriefView() {
       let businessLocation = "";
 
       if (data.business_id) {
-        const { data: biz } = await supabase
-          .from("businesses" as any)
+        const { data: bizRaw } = await (supabase as any)
+          .from("businesses")
           .select("name, trade, suburb, state")
           .eq("id", data.business_id)
           .maybeSingle();
 
+        const biz = bizRaw as any;
         if (biz) {
-          businessName = (biz as any).name || "Business";
-          businessTrade = (biz as any).trade || "";
-          businessLocation = (biz as any).suburb
-            ? `${(biz as any).suburb}, ${(biz as any).state}`
+          businessName = biz.name || "Business";
+          businessTrade = biz.trade || "";
+          businessLocation = biz.suburb
+            ? `${biz.suburb}, ${biz.state}`
             : "";
         }
       }
 
       setBrief({
-        id: data.id as string,
-        brief_markdown: data.brief_markdown as string,
+        id: data.id,
+        brief_markdown: data.brief_markdown,
         execution_plan: data.execution_plan,
-        created_at: data.created_at as string,
+        created_at: data.created_at,
         business_name: businessName,
         business_trade: businessTrade,
         business_location: businessLocation,

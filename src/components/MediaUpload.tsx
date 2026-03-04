@@ -107,11 +107,11 @@ export default function MediaUpload({ onUploadComplete, userId }: MediaUploadPro
 
     try {
       // Upload files sequentially to avoid overwhelming the server
-      for (const uploadFile of validFiles) {
+      for (const uf of validFiles) {
         setUploads(prev => prev.map(u => 
-          u.id === uploadFile.id ? { ...u, progress: 50 } : u
+          u.id === uf.id ? { ...u, progress: 50 } : u
         ));
-        await uploadFile(uploadFile);
+        await uploadFile(uf);
       }
 
       // Clear successful uploads after a delay

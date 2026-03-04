@@ -63,11 +63,12 @@ export default function MediaGrid({ userId, onMediaChange }: MediaGridProps) {
           .from('business-photos')
           .getPublicUrl(`${userId}/${file.name}`);
         
+        const meta = file.metadata as Record<string, any> | null;
         return {
           id: file.id || file.name,
           name: file.name,
           created_at: file.created_at || new Date().toISOString(),
-          metadata: file.metadata || { size: 0 },
+          metadata: { size: meta?.size ?? 0, mimetype: meta?.mimetype },
           publicUrl: urlData.publicUrl
         };
       });
