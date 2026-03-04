@@ -6,6 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const ADMIN_EMAILS = ["davisgrainger@gmail.com"];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -14,6 +16,26 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAdmin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    // Auth check
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Missing authorization" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
+    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
+
+    if (authError || !user || !user.email || !ADMIN_EMAILS.includes(user.email)) {
+      return new Response(JSON.stringify({ error: "Forbidden - admin only" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 403,
+      });
+    }
 
     // Get all data to see what exists
     const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
