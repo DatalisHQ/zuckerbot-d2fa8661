@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import Anthropic from "npm:@anthropic-ai/sdk@latest";
+import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.24.1";
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const corsHeaders = {
