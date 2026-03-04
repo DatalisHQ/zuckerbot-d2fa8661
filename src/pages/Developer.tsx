@@ -623,10 +623,10 @@ const Developer = () => {
                   </Button>
                 </div>
               </div>
-            ) : null}
+            )}
           </div>
         ) : (
-
+          <>
         {/* Facebook connection status for returning users */}
         {!fbLoading && (
           fbConnected ? (
@@ -1098,6 +1098,7 @@ const Developer = () => {
             </Card>
           </TabsContent>
         </Tabs>
+          </>
         )}
       </main>
 
