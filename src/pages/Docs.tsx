@@ -719,14 +719,16 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             id="ep-creatives"
             method="POST"
             path="/v1/creatives/generate"
-            description="Generate AI-powered ad creative images. Provide a URL or business description and get back Facebook-optimized ad images via Google Imagen 4.0."
-            notes="Alias fields are supported for compatibility: image_count (alias of count) and use_market_intel (alias of use_market_intelligence). Validation errors include example_body and docs_url."
+            description="Generate AI-powered ad creative images. Provide a URL or business description and get back Facebook-optimized ad images via Seedream, Imagen, or Kling."
+            notes='Alias fields are supported for compatibility: image_count (alias of count) and use_market_intel (alias of use_market_intelligence). `model` supports `auto|seedream|imagen|kling`. `quality` supports `fast|ultra`, and `ultra` is valid only with `model="kling"`. Validation errors include example_body and docs_url.'
             requestBody={`{
   "url": "https://joes-pizza.com",
   "style": "photo",
   "aspect_ratio": "1:1",
   "count": 2,
   "image_count": 2,
+  "model": "auto",
+  "quality": "fast",
   "use_market_intel": false
 }`}
             responseBody={`{
@@ -742,7 +744,7 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             curlExample={`curl -X POST https://zuckerbot.ai/api/v1/creatives/generate \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://joes-pizza.com", "style": "photo", "count": 2}'`}
+  -d '{"url": "https://joes-pizza.com", "style": "photo", "count": 2, "model": "kling", "quality": "ultra"}'`}
           />
 
           {/* POST /v1/keys/create */}

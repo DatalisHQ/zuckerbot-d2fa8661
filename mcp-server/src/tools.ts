@@ -355,17 +355,27 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         .max(5)
         .default(2)
         .describe("Number of creative variants to generate (1-5)"),
+      model: z
+        .enum(["auto", "seedream", "imagen", "kling"])
+        .default("auto")
+        .describe("Image model selection. auto uses existing Seedream->Imagen chain."),
+      quality: z
+        .enum(["fast", "ultra"])
+        .default("fast")
+        .describe('Generation quality. "ultra" is supported only when model is "kling".'),
       generate_images: z
         .boolean()
         .default(true)
         .describe("Whether to generate AI images (set false for copy-only)"),
     },
-    async ({ business_name, description, count, generate_images }) => {
+    async ({ business_name, description, count, model, quality, generate_images }) => {
       try {
         const result = await client.post("/creatives/generate", {
           business_name,
           description,
           count,
+          model,
+          quality,
           generate_images,
         });
         return formatResult(result);

@@ -2413,6 +2413,51 @@ interface SeedreamResult {
   error?: string;
 }
 
+function getImageSizeFromAspectRatio(aspectRatio: string): string {
+  if (aspectRatio === '16:9') return '1280x720';
+  if (aspectRatio === '9:16') return '720x1280';
+  if (aspectRatio === '4:3') return '1024x768';
+  if (aspectRatio === '3:4') return '768x1024';
+  return '1024x1024';
+}
+
+function extractImageResult(payload: any): SeedreamResult {
+  const b64 =
+    payload?.data?.[0]?.b64_json
+    || payload?.output?.[0]?.b64_json
+    || payload?.result?.images?.[0]?.b64_json
+    || payload?.result?.b64_json
+    || payload?.image_base64
+    || payload?.base64
+    || payload?.image?.base64;
+
+  if (typeof b64 === 'string' && b64.length > 0) {
+    return {
+      success: true,
+      base64: b64,
+      mimeType: payload?.data?.[0]?.mime_type || payload?.output?.[0]?.mime_type || payload?.mime_type || 'image/png',
+    };
+  }
+
+  const imageUrl =
+    payload?.data?.[0]?.url
+    || payload?.output?.[0]?.url
+    || payload?.result?.images?.[0]?.url
+    || payload?.image_url
+    || payload?.url
+    || payload?.image?.url;
+
+  if (typeof imageUrl === 'string' && imageUrl.length > 0) {
+    return {
+      success: true,
+      imageUrl,
+      mimeType: payload?.data?.[0]?.mime_type || payload?.output?.[0]?.mime_type || payload?.mime_type || 'image/png',
+    };
+  }
+
+  return { success: false, error: 'No image payload found in provider response' };
+}
+
 /**
  * Call Seedream 4.5 via AI/ML API (primary provider)
  */
@@ -2431,11 +2476,7 @@ async function callSeedreamAIML(prompt: string, aspectRatio: string): Promise<Se
       body: JSON.stringify({
         model: 'bytedance/seedream-4-5',
         prompt: prompt,
-        image_size: aspectRatio === '1:1' ? '1024x1024' : 
-                   aspectRatio === '16:9' ? '1280x720' : 
-                   aspectRatio === '9:16' ? '720x1280' : 
-                   aspectRatio === '4:3' ? '1024x768' : 
-                   aspectRatio === '3:4' ? '768x1024' : '1024x1024',
+        image_size: getImageSizeFromAspectRatio(aspectRatio),
         response_format: 'b64_json',
       }),
       signal: AbortSignal.timeout(60000),
@@ -2548,6 +2589,83 @@ async function generateWithSeedream(prompt: string, aspectRatio: string): Promis
 }
 
 /**
+ * Call Kling via WaveSpeed and normalize into SeedreamResult shape
+ */
+async function callKlingWavespeed(prompt: string, aspectRatio: string): Promise<SeedreamResult> {
+  if (!WAVESPEED_API_KEY) {
+    return { success: false, error: 'WaveSpeed API key not configured' };
+  }
+
+  const apiBase = process.env.WAVESPEED_API_BASE_URL || 'https://api.wavespeed.ai/v1';
+  const model = process.env.WAVESPEED_KLING_MODEL || 'kling-image-v1';
+  const imageSize = getImageSizeFromAspectRatio(aspectRatio);
+  const [width, height] = imageSize.split('x').map((v) => Number(v));
+
+  try {
+    const createResponse = await fetch(`${apiBase}/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WAVESPEED_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        image_size: imageSize,
+        width,
+        height,
+        aspect_ratio: aspectRatio,
+        response_format: 'b64_json',
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      return { success: false, error: `WaveSpeed create error: ${createResponse.status} ${errorText}` };
+    }
+
+    const createData = await createResponse.json();
+    const directResult = extractImageResult(createData);
+    if (directResult.success) return directResult;
+
+    const jobId = createData?.id || createData?.job_id || createData?.prediction_id;
+    if (!jobId) {
+      return { success: false, error: directResult.error || 'WaveSpeed returned neither image payload nor job id' };
+    }
+
+    for (let i = 0; i < 30; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const pollResponse = await fetch(`${apiBase}/images/generations/${jobId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${WAVESPEED_API_KEY}`,
+        },
+        signal: AbortSignal.timeout(20000),
+      });
+
+      if (!pollResponse.ok) continue;
+      const pollData = await pollResponse.json();
+      const status = String(pollData?.status || pollData?.state || '').toLowerCase();
+
+      if (status === 'failed' || status === 'error' || status === 'cancelled') {
+        return { success: false, error: `WaveSpeed job failed: ${pollData?.error || 'unknown error'}` };
+      }
+
+      const pollResult = extractImageResult(pollData);
+      if (pollResult.success) return pollResult;
+      if (status === 'succeeded' || status === 'completed' || status === 'finished' || status === 'success') {
+        return { success: false, error: pollResult.error || 'WaveSpeed job completed without image payload' };
+      }
+    }
+
+    return { success: false, error: 'WaveSpeed prediction timed out' };
+  } catch (error: any) {
+    return { success: false, error: `WaveSpeed API call failed: ${error.message}` };
+  }
+}
+
+/**
  * Quick competitor insights for market intelligence (internal use)
  */
 async function getCompetitorInsights(industry: string, location: string, country: string, limit: number): Promise<Array<{creative_style: string, advertising_strategy: string}> | null> {
@@ -2609,6 +2727,7 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
     count,
     image_count,
     model,
+    quality,
     use_market_intelligence,
     use_market_intel,
   } = req.body || {};
@@ -2626,8 +2745,12 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
   const imageCount = Math.min(Math.max(rawCount, 1), 4);
 
   // Validate model
-  const validModels = ['seedream', 'imagen', 'auto'];
+  const validModels = ['seedream', 'imagen', 'kling', 'auto'];
   const selectedModel: string = validModels.includes(model) ? model : 'auto';
+
+  // Validate quality
+  const validQualities = ['fast', 'ultra'];
+  const selectedQuality: string = validQualities.includes(quality) ? quality : 'fast';
 
   // Market intelligence flag
   const useMarketIntel =
@@ -2648,6 +2771,26 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
         style: 'photo',
         aspect_ratio: '1:1',
         model: 'auto',
+        quality: 'fast',
+        use_market_intel: false,
+      },
+    );
+  }
+
+  if (selectedQuality === 'ultra' && selectedModel !== 'kling') {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return validationError(
+      res,
+      'creatives-generate',
+      '`quality` can be "ultra" only when `model` is "kling"',
+      {
+        business_name: 'Rosebud AI',
+        description: 'AI assistant that helps teams ship faster.',
+        image_count: 3,
+        style: 'photo',
+        aspect_ratio: '1:1',
+        model: 'kling',
+        quality: 'ultra',
         use_market_intel: false,
       },
     );
@@ -2665,6 +2808,11 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
   if (needsImagen && !GOOGLE_AI_API_KEY) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
     return res.status(500).json({ error: { code: 'config_error', message: 'Google AI API key not configured' } });
+  }
+
+  if (selectedModel === 'kling' && !WAVESPEED_API_KEY) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
+    return res.status(500).json({ error: { code: 'config_error', message: 'WaveSpeed API key not configured for Kling model' } });
   }
 
   if (!ANTHROPIC_API_KEY) {
@@ -2770,7 +2918,8 @@ Respond with ONLY the industry category (e.g., "restaurant", "dental", "ecommerc
       bold: 'Bold and high-impact. Saturated colors, strong contrast, dynamic compositions. Think attention-grabbing billboard or social media thumb-stopper.',
     };
 
-    const promptGenerationRequest = `You are an expert at writing image generation prompts for Facebook ad creatives. Generate ${imageCount} distinct image prompt(s) for this business.
+    const requestedPromptCount = selectedModel === 'kling' && selectedQuality === 'ultra' ? 6 : imageCount;
+    const promptGenerationRequest = `You are an expert at writing image generation prompts for Facebook ad creatives. Generate ${requestedPromptCount} distinct image prompt(s) for this business.
 
 BUSINESS:
 - Name: ${resolvedName}
@@ -2805,7 +2954,7 @@ RULES FOR EACH PROMPT:
     );
 
     const parsed = parseClaudeJson(claudeText);
-    const prompts: string[] = Array.isArray(parsed.prompts) ? parsed.prompts.slice(0, imageCount) : [];
+    const prompts: string[] = Array.isArray(parsed.prompts) ? parsed.prompts.slice(0, requestedPromptCount) : [];
 
     if (prompts.length === 0) {
       console.error('[api/creatives] Failed to generate prompts from Claude:', claudeText?.slice(0, 500));
@@ -2968,7 +3117,74 @@ RULES FOR EACH PROMPT:
           console.error('[api/creatives] Imagen API error:', await imagenResponse.text());
         }
       }
+
+      // Kling path (explicit only, auto is intentionally unchanged)
+      if (!generationSuccess && selectedModel === 'kling' && WAVESPEED_API_KEY) {
+        const klingResult = await callKlingWavespeed(imagePrompt, selectedRatio);
+        if (klingResult.success) {
+          actualGenerationMethod = 'kling';
+          generationSuccess = true;
+
+          let publicUrl = '';
+          let base64Data = klingResult.base64;
+
+          if (klingResult.imageUrl && !klingResult.base64) {
+            try {
+              const imageResponse = await fetch(klingResult.imageUrl);
+              if (imageResponse.ok) {
+                const buffer = await imageResponse.arrayBuffer();
+                base64Data = Buffer.from(buffer).toString('base64');
+              }
+            } catch (err) {
+              console.error('[api/creatives] Failed to download Kling image:', err);
+              continue;
+            }
+          }
+
+          if (base64Data) {
+            try {
+              const mimeType = klingResult.mimeType || 'image/png';
+              const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+              const buf = Buffer.from(base64Data, 'base64');
+              const fileName = `creative-kling-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+              const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
+
+              const uploadRes = await fetch(storageUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                  'Content-Type': mimeType,
+                  'x-upsert': 'true',
+                  'Content-Length': String(buf.length),
+                },
+                body: buf,
+              });
+
+              if (uploadRes.ok) {
+                publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
+              } else {
+                console.error('[api/creatives] Kling upload failed:', await uploadRes.text());
+              }
+            } catch (uploadErr: any) {
+              console.error('[api/creatives] Kling upload error:', uploadErr);
+            }
+
+            creatives.push({
+              url: publicUrl || null,
+              base64: base64Data,
+              mimeType: klingResult.mimeType || 'image/png',
+              prompt: imagePrompt,
+              aspect_ratio: selectedRatio,
+              generation_method: 'kling',
+            });
+          }
+        } else {
+          console.warn('[api/creatives] Kling generation failed:', klingResult.error);
+        }
+      }
     }
+
+    const candidateCount = creatives.length;
 
     if (creatives.length === 0) {
       await logUsage({ 
@@ -2981,6 +3197,66 @@ RULES FOR EACH PROMPT:
   
       });
       return res.status(502).json({ error: { code: 'image_generation_failed', message: 'Image generation service failed to produce any images. Try again or use a different description.' } });
+    }
+
+    // Ultra mode for Kling: best-of-N selection (N=6 generated, return top requested count)
+    if (selectedModel === 'kling' && selectedQuality === 'ultra' && creatives.length > imageCount) {
+      try {
+        const rankingPrompt = `Rank these ${creatives.length} ad creative prompts for likely Facebook/Instagram ad performance.
+
+Return JSON only:
+{
+  "ranked_indexes": [<0-based indexes best to worst>]
+}
+
+Scoring criteria:
+- Prompt adherence and clarity
+- Commercial visual appeal
+- Scroll-stopping potential
+- Relevance to the business description
+- Clean ad-suitable composition with no text/logos
+
+Business name: ${resolvedName}
+Business description: ${resolvedDesc || 'N/A'}
+
+Candidates:
+${creatives.map((creative, idx) => `${idx}: ${creative.prompt}`).join('\n')}
+`;
+
+        const rankingText = await callClaude(
+          'You are a strict creative quality ranker. Return JSON only.',
+          rankingPrompt,
+          800,
+        );
+        const rankingParsed = parseClaudeJson(rankingText);
+        const rankedIndexes = Array.isArray(rankingParsed.ranked_indexes)
+          ? rankingParsed.ranked_indexes
+              .map((value: any) => Number(value))
+              .filter((value: number) => Number.isInteger(value) && value >= 0 && value < creatives.length)
+          : [];
+
+        if (rankedIndexes.length > 0) {
+          const seen = new Set<number>();
+          const deduped = rankedIndexes.filter((value: number) => {
+            if (seen.has(value)) return false;
+            seen.add(value);
+            return true;
+          });
+          const selectedIndexes = deduped.slice(0, imageCount);
+          for (let idx = 0; idx < creatives.length && selectedIndexes.length < imageCount; idx++) {
+            if (!selectedIndexes.includes(idx)) selectedIndexes.push(idx);
+          }
+          const selectedCreatives = selectedIndexes.map((idx: number) => creatives[idx]).filter(Boolean);
+          if (selectedCreatives.length > 0) {
+            creatives.splice(0, creatives.length, ...selectedCreatives);
+          }
+        } else {
+          creatives.splice(imageCount);
+        }
+      } catch (rankingErr) {
+        console.warn('[api/creatives] Ultra ranking failed, returning first results:', rankingErr);
+        creatives.splice(imageCount);
+      }
     }
 
     // Store original prompts in database for variations support
@@ -3019,9 +3295,11 @@ RULES FOR EACH PROMPT:
     return res.status(200).json({ 
       creatives,
       meta: {
-  
-  
         market_intelligence_used: useMarketIntel,
+        model_requested: selectedModel,
+        model_used: actualGenerationMethod,
+        quality: selectedQuality,
+        candidate_count: candidateCount,
       }
     });
   } catch (err: any) {

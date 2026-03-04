@@ -126,6 +126,8 @@ const Developer = () => {
   const [keyCopied, setKeyCopied] = useState(false);
   const [demoStatus, setDemoStatus] = useState<"idle" | "running" | "success" | "error">("idle");
   const [demoResult, setDemoResult] = useState<{ creatives: CreativeDemoItem[]; raw?: any } | null>(null);
+  const [demoModel, setDemoModel] = useState<"auto" | "seedream" | "imagen" | "kling">("auto");
+  const [demoQuality, setDemoQuality] = useState<"fast" | "ultra">("fast");
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [draftStatus, setDraftStatus] = useState<"idle" | "running" | "success" | "error">("idle");
   const [draftCampaignId, setDraftCampaignId] = useState<string | null>(null);
@@ -334,6 +336,10 @@ const Developer = () => {
 
   const handleRunLiveDemo = async () => {
     if (!newKey) return;
+    if (demoQuality === "ultra" && demoModel !== "kling") {
+      setRunnerError('Ultra quality is only available when model is "kling".');
+      return;
+    }
     setRunnerError(null);
     setDemoStatus("running");
     setDemoResult(null);
@@ -352,7 +358,8 @@ const Developer = () => {
           image_count: 3,
           style: "photo",
           aspect_ratio: "1:1",
-          model: "auto",
+          model: demoModel,
+          quality: demoQuality,
           use_market_intelligence: false,
         }),
       });
@@ -372,6 +379,12 @@ const Developer = () => {
       toast({ title: "Demo failed", description: error?.message || "Please try again.", variant: "destructive" });
     }
   };
+
+  useEffect(() => {
+    if (demoModel !== "kling" && demoQuality === "ultra") {
+      setDemoQuality("fast");
+    }
+  }, [demoModel, demoQuality]);
 
   const handleCreateCampaignDraft = async () => {
     if (!newKey || demoStatus !== "success") return;
@@ -770,6 +783,34 @@ const Developer = () => {
                         {runnerError}
                       </div>
                     )}
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="text-sm text-gray-300">
+                        Model
+                        <select
+                          className="mt-1 block w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+                          value={demoModel}
+                          onChange={(event) => setDemoModel(event.target.value as "auto" | "seedream" | "imagen" | "kling")}
+                        >
+                          <option value="auto">auto (recommended)</option>
+                          <option value="seedream">seedream</option>
+                          <option value="imagen">imagen</option>
+                          <option value="kling">kling</option>
+                        </select>
+                      </label>
+                      <label className="text-sm text-gray-300">
+                        Quality
+                        <select
+                          className="mt-1 block w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+                          value={demoQuality}
+                          onChange={(event) => setDemoQuality(event.target.value as "fast" | "ultra")}
+                        >
+                          <option value="fast">fast</option>
+                          <option value="ultra" disabled={demoModel !== "kling"}>
+                            ultra (kling only)
+                          </option>
+                        </select>
+                      </label>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         onClick={handleRunLiveDemo}
@@ -843,6 +884,16 @@ const Developer = () => {
                         ))}
                       </div>
                     ) : null}
+
+                    {demoResult?.raw?.meta && (
+                      <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-gray-300">
+                        <span className="text-gray-400">Generation meta:</span>{" "}
+                        model requested <code>{demoResult.raw.meta.model_requested || "n/a"}</code>, model used{" "}
+                        <code>{demoResult.raw.meta.model_used || "n/a"}</code>, quality{" "}
+                        <code>{demoResult.raw.meta.quality || "fast"}</code>, candidates{" "}
+                        <code>{String(demoResult.raw.meta.candidate_count ?? "n/a")}</code>
+                      </div>
+                    )}
 
                     {draftCampaignId && (
                       <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3 text-sm">
