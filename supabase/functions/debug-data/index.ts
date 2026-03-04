@@ -21,6 +21,8 @@ serve(async (req) => {
     const { data: businesses } = await supabaseAdmin.from("businesses").select("*");
     const { data: campaigns } = await supabaseAdmin.from("campaigns").select("*");
     const { data: leads } = await supabaseAdmin.from("leads").select("*");
+    const { data: apiKeys } = await supabaseAdmin.from("api_keys").select("*");
+    const { data: apiUsage } = await supabaseAdmin.from("api_usage").select("*").order("created_at", { ascending: false }).limit(1000);
 
     const response = {
       auth_users_count: authUsers?.users?.length || 0,
@@ -33,6 +35,10 @@ serve(async (req) => {
       campaigns: campaigns || [],
       leads_count: leads?.length || 0,
       leads: leads || [],
+      api_keys_count: apiKeys?.length || 0,
+      api_keys: apiKeys || [],
+      api_usage_count: apiUsage?.length || 0,
+      api_usage: apiUsage || [],
       timestamp: new Date().toISOString(),
     };
 
