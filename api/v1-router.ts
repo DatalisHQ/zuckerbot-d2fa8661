@@ -36,7 +36,7 @@ import {
   needsUrl,
   needsPixel,
   buildCreativeLinkData,
-} from '../lib/objective';
+} from '../lib/objective.js';
 
 export const config = { maxDuration: 120 };
 
@@ -810,7 +810,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse) {
   assertAuth(auth);
   applyRateLimitHeaders(res, auth.rateLimitHeaders);
 
-  const { 
+  let { 
     url, business_name, business_type, location, budget_daily_cents, objective, 
     meta_access_token, auto_launch, meta_ad_account_id, meta_page_id, variant_index = 0, radius_km
   } = req.body || {};
@@ -1366,7 +1366,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
         .single();
 
       if (notifBiz) {
-        const { notifyCampaignLaunched } = await import('../lib/notifications');
+        const { notifyCampaignLaunched } = await import('../lib/notifications.js');
         await notifyCampaignLaunched(notifBiz, campaignName, budgetCents);
       }
     } catch (e) {
@@ -1414,7 +1414,7 @@ async function handlePause(req: VercelRequest, res: VercelResponse, campaignId: 
     let recordId: string | null = null;
 
     const { data: apiCampaign } = await supabaseAdmin
-      .from('api_campaigns').select('id, meta_campaign_id, meta_access_token, status')
+      .from('api_campaigns').select('id, meta_campaign_id, meta_access_token, status, business_name')
       .eq('id', campaignId).eq('api_key_id', auth.keyRecord.id).single();
 
     if (apiCampaign?.meta_campaign_id) {
@@ -1479,7 +1479,7 @@ async function handlePause(req: VercelRequest, res: VercelResponse, campaignId: 
           .single();
 
         if (notifBiz) {
-          const { notifyCampaignPaused } = await import('../lib/notifications');
+          const { notifyCampaignPaused } = await import('../lib/notifications.js');
           await notifyCampaignPaused(notifBiz, apiCampaign?.business_name || 'Campaign');
         }
       } catch (e) {
@@ -2275,7 +2275,7 @@ async function handleSetTelegram(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: { code: 'internal_error', message: 'Failed to update notification settings' } });
   }
 
-  const { sendTelegram } = await import('../lib/notifications');
+  const { sendTelegram } = await import('../lib/notifications.js');
   const sent = await sendTelegram({ chatId: chat_id, message: '✅ ZuckerBot notifications connected! You\'ll receive campaign updates here.' });
 
   return res.status(200).json({
@@ -2833,8 +2833,8 @@ RULES FOR EACH PROMPT:
         method: 'POST', 
         statusCode: 502, 
         responseTimeMs: Date.now() - startTime,
-        generation_method: actualGenerationMethod,
-        detected_industry: detectedIndustry,
+  
+  
       });
       return res.status(502).json({ error: { code: 'image_generation_failed', message: 'Image generation service failed to produce any images. Try again or use a different description.' } });
     }
@@ -2868,15 +2868,15 @@ RULES FOR EACH PROMPT:
       method: 'POST', 
       statusCode: 200, 
       responseTimeMs: Date.now() - startTime,
-      generation_method: actualGenerationMethod,
-      detected_industry: detectedIndustry,
+
+
     });
     
     return res.status(200).json({ 
       creatives,
       meta: {
-        generation_method: actualGenerationMethod,
-        detected_industry: detectedIndustry,
+  
+  
         market_intelligence_used: useMarketIntel,
       }
     });
@@ -2888,8 +2888,8 @@ RULES FOR EACH PROMPT:
       method: 'POST', 
       statusCode: 500, 
       responseTimeMs: Date.now() - startTime,
-      generation_method: actualGenerationMethod,
-      detected_industry: detectedIndustry,
+
+
     });
     return res.status(500).json({ error: { code: 'internal_error', message: 'An unexpected error occurred while generating creatives', details: err?.message || String(err) } });
   }
