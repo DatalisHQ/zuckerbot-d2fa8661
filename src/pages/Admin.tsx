@@ -167,28 +167,25 @@ const Admin = () => {
           return;
         }
 
-        // Fetch auth users from debug-data edge function
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const debugRes = await fetch(`${supabaseUrl}/functions/v1/debug-data`, {
-          headers: {
-            Authorization: `Bearer ${fresh.access_token}`,
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-        });
+        // Fetch auth users from debug-data edge function via supabase client
+        const { data: debugData, error: debugError } = await supabase.functions.invoke("debug-data");
+        
+        const debugRes = { ok: !debugError, json: () => debugData };
 
         let authUsers: AuthUser[] = [];
         let apiKeysAll: ApiKey[] = [];
         let apiUsageAll: ApiUsageRow[] = [];
-        if (debugRes.ok) {
-          const debugJson = await debugRes.json();
-          authUsers = (debugJson.auth_users || []).map((u: any) => ({
+        if (!debugError && debugData) {
+          authUsers = (debugData.auth_users || []).map((u: any) => ({
             id: u.id,
             email: u.email,
             created_at: u.created_at,
             last_sign_in_at: u.last_sign_in_at,
           }));
-          apiKeysAll = (debugJson.api_keys || []) as ApiKey[];
-          apiUsageAll = (debugJson.api_usage || []) as ApiUsageRow[];
+          apiKeysAll = (debugData.api_keys || []) as ApiKey[];
+          apiUsageAll = (debugData.api_usage || []) as ApiUsageRow[];
+        } else if (debugError) {
+          console.error("Debug data error:", debugError);
         }
 
         setData({
