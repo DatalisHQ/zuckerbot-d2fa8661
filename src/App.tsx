@@ -12,20 +12,11 @@ import { identifyUser, resetMixpanel, mpSignIn } from "@/lib/mixpanel";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import AuthCallback from "./pages/AuthCallback";
-import Onboarding from "./pages/Onboarding";
-import Dashboard from "./pages/Dashboard";
-import CampaignCreator from "./pages/CampaignCreator";
-import LeadInbox from "./pages/LeadInbox";
-import Profile from "./pages/Profile";
 import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
-import BriefView from "./pages/BriefView";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import AdAudit from "./pages/AdAudit";
-import AgentConsole from "./pages/AgentConsole";
-import CampaignWorkspace from "./pages/CampaignWorkspace";
-import AgencyDashboard from "./pages/AgencyDashboard";
 import Docs from "./pages/Docs";
 import Developer from "./pages/Developer";
 import Admin from "./pages/Admin";
@@ -168,16 +159,16 @@ function App() {
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/onboarding" element={<Navigate to="/developer" />} />
               <Route path="/dashboard" element={<Navigate to="/developer" />} />
-              <Route path="/campaign/new" element={user ? <CampaignCreator /> : <Navigate to="/auth" />} />
-              <Route path="/leads" element={user ? <LeadInbox /> : <Navigate to="/auth" />} />
+              <Route path="/campaign/new" element={<Navigate to="/developer" />} />
+              <Route path="/leads" element={<Navigate to="/developer" />} />
               <Route path="/profile" element={<Navigate to="/developer" />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />
-              <Route path="/workspace" element={user ? <CampaignWorkspace /> : <Navigate to="/auth?returnTo=/workspace" />} />
-              <Route path="/agent-console" element={<Navigate to="/workspace" />} />
-              <Route path="/brief/:briefId" element={<BriefView />} />
+              <Route path="/workspace" element={<Navigate to="/developer" />} />
+              <Route path="/agent-console" element={<Navigate to="/developer" />} />
+              <Route path="/brief/:briefId" element={<Navigate to="/developer" />} />
               <Route path="/admin/audit" element={user ? <AdAudit /> : <Navigate to="/auth" />} />
               <Route path="/agency" element={<Navigate to="/developer" />} />
               <Route path="/docs" element={<Docs />} />
