@@ -34,14 +34,14 @@ Base URL: `https://zuckerbot.ai/api/v1/`
 |--------|------|-------------|
 | `POST` | `/campaigns/preview` | Generate ad preview from a URL (no Meta account needed) |
 | `POST` | `/campaigns/create` | Create full campaign with strategy, targeting, and creatives |
-| `POST` | `/campaigns/:id/launch` | Launch a draft campaign on Meta (creates real ads) |
+| `POST` | `/campaigns/:id/launch` | Launch a draft campaign on Meta (creates real ads, billed: 5 credits) |
 | `POST` | `/campaigns/:id/pause` | Pause or resume a live campaign |
 | `GET` | `/campaigns/:id/performance` | Get real-time campaign metrics from Meta |
 | `POST` | `/campaigns/:id/conversions` | Send lead quality feedback to Meta's conversion API |
 | `POST` | `/research/reviews` | Get review intelligence for a business |
 | `POST` | `/research/competitors` | Analyze competitor ads in a category and location |
 | `POST` | `/research/market` | Get market size, trends, and ad benchmarks |
-| `POST` | `/creatives/generate` | Generate ad copy and images independently |
+| `POST` | `/creatives/generate` | Generate ad copy and images independently (free, monthly capped) |
 | `POST` | `/keys/create` | Create a new API key |
 
 All endpoints require `Authorization: Bearer zb_live_...` except where noted.
@@ -141,11 +141,28 @@ curl -X POST https://zuckerbot.ai/api/v1/creatives/generate \
     "business_name": "Sunrise Yoga Studio",
     "description": "Hot yoga and meditation classes in Austin, TX",
     "count": 3,
-    "generate_images": true
+    "image_count": 3,
+    "style": "photo",
+    "aspect_ratio": "1:1",
+    "model": "auto",
+    "use_market_intel": false
   }'
 ```
 
 Returns ad copy variants with AI-generated images (powered by Imagen 4.0).
+
+## Credits and Errors
+
+- Execution endpoints can return HTTP `402` with:
+  - `error.code = "insufficient_credits"`
+  - `required_credits`
+  - `current_balance`
+  - `purchase_url`
+- Validation `400` responses on selected endpoints include:
+  - `error.code`
+  - `error.message`
+  - `error.example_body`
+  - `error.docs_url`
 
 ## Pricing
 
@@ -160,6 +177,11 @@ All plans include access to every endpoint. [Get your API key](https://zuckerbot
 ## Autonomous Execution (Approval Flow)
 
 When ZuckerBot's `campaign_optimizer` agent detects anomalies, it logs recommended actions to `automation_runs` with `status = "needs_approval"`. Approving a run now **executes the actions** against the Meta Graph API and records results back in `automation_runs.output`.
+
+Credit billing:
+- `POST /api/agents/execute-approval` (approve): 1 credit per executable action
+- `POST /api/v1/autonomous/execute`: 3 credits per call
+- `POST /api/v1/autonomous/run`: 3 credits per run with actions
 
 ### Approve a run (triggers real Meta API calls)
 
@@ -264,8 +286,8 @@ Set `CRON_SECRET` in your Vercel project settings (Settings → Environment Vari
 | `POST` | `/autonomous/policies/upsert` | API key | Create or update autonomous policy for a business |
 | `GET` | `/autonomous/metrics` | API key | Get normalized campaign metrics |
 | `POST` | `/autonomous/evaluate` | API key | Evaluate policy and return action list (supports `dry_run`) |
-| `POST` | `/autonomous/execute` | API key | Execute a list of actions and log results |
-| `POST` | `/autonomous/run` | CRON_SECRET | Internal: evaluate + execute + log in one call |
+| `POST` | `/autonomous/execute` | API key | Execute a list of actions and log results (billed: 3 credits/call) |
+| `POST` | `/autonomous/run` | CRON_SECRET | Internal: evaluate + execute + log in one call (billed: 3 credits/call) |
 
 ### Database migration
 

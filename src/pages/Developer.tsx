@@ -46,6 +46,18 @@ interface NewKeyResponse {
   tier: string;
 }
 
+interface CreativeDemoItem {
+  url: string | null;
+  prompt?: string;
+  aspect_ratio?: string;
+}
+
+interface DraftSummary {
+  campaign_id: string;
+  objective?: string;
+  budget?: number;
+}
+
 // ── Code block with copy ───────────────────────────────────────────────────
 
 function CodeBlock({ title, children }: { title?: string; children: string }) {
@@ -92,6 +104,7 @@ const TIER_LIMITS: Record<string, { reqPerMin: number; reqPerDay: number; previe
   pro: { reqPerMin: 60, reqPerDay: 1000, previewsPerMonth: 500 },
   enterprise: { reqPerMin: 300, reqPerDay: 50000, previewsPerMonth: -1 },
 };
+const RUNNER_STATE_KEY = "zb_test_runner_state";
 
 // ── Main component ─────────────────────────────────────────────────────────
 
@@ -110,6 +123,16 @@ const Developer = () => {
   const [generating, setGenerating] = useState(false);
   const [newKey, setNewKey] = useState<NewKeyResponse | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
+  const [demoStatus, setDemoStatus] = useState<"idle" | "running" | "success" | "error">("idle");
+  const [demoResult, setDemoResult] = useState<{ creatives: CreativeDemoItem[]; raw?: any } | null>(null);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
+  const [draftStatus, setDraftStatus] = useState<"idle" | "running" | "success" | "error">("idle");
+  const [draftCampaignId, setDraftCampaignId] = useState<string | null>(null);
+  const [draftSummary, setDraftSummary] = useState<DraftSummary | null>(null);
+  const [metaStatus, setMetaStatus] = useState<{ connected: boolean; connect_url?: string } | null>(null);
+  const [launchStatus, setLaunchStatus] = useState<"idle" | "running" | "success" | "error">("idle");
+  const [launchResult, setLaunchResult] = useState<any | null>(null);
+  const [runnerError, setRunnerError] = useState<string | null>(null);
 
   // Facebook connection state
   const [fbConnected, setFbConnected] = useState<boolean | null>(null);
@@ -248,6 +271,180 @@ const Developer = () => {
     fetchUsage();
   }, [keys, fetchUsage]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RUNNER_STATE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.draftCampaignId === "string") setDraftCampaignId(parsed.draftCampaignId);
+      if (typeof parsed?.selectedVariantIndex === "number") setSelectedVariantIndex(parsed.selectedVariantIndex);
+    } catch {
+      // ignore invalid saved state
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      RUNNER_STATE_KEY,
+      JSON.stringify({ draftCampaignId, selectedVariantIndex }),
+    );
+  }, [draftCampaignId, selectedVariantIndex]);
+
+  const parseApiError = async (response: Response) => {
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      // ignore non-json errors
+    }
+    const message =
+      payload?.error?.message ||
+      payload?.message ||
+      `Request failed (${response.status})`;
+    const exampleBody = payload?.error?.example_body
+      ? ` Example body: ${JSON.stringify(payload.error.example_body)}`
+      : "";
+    return `${message}${exampleBody}`;
+  };
+
+  const fetchMetaStatusForKey = useCallback(async (apiKey: string) => {
+    try {
+      const response = await fetch("https://zuckerbot.ai/api/v1/meta/status", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      });
+      if (!response.ok) {
+        setMetaStatus(null);
+        return;
+      }
+      const data = await response.json();
+      setMetaStatus({ connected: !!data?.connected, connect_url: data?.connect_url });
+    } catch {
+      setMetaStatus(null);
+    }
+  }, []);
+
+  const handleRunLiveDemo = async () => {
+    if (!newKey) return;
+    setRunnerError(null);
+    setDemoStatus("running");
+    setDemoResult(null);
+    setLaunchResult(null);
+    try {
+      const response = await fetch("https://zuckerbot.ai/api/v1/creatives/generate", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${newKey.key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          business_name: "Rosebud AI",
+          description: "AI assistant that helps teams ship faster. Clean, modern, premium vibe.",
+          count: 3,
+          image_count: 3,
+          style: "photo",
+          aspect_ratio: "1:1",
+          model: "auto",
+          use_market_intelligence: false,
+        }),
+      });
+      if (!response.ok) {
+        const message = await parseApiError(response);
+        throw new Error(message);
+      }
+      const data = await response.json();
+      const creatives = Array.isArray(data?.creatives) ? data.creatives.slice(0, 3) : [];
+      if (creatives.length === 0) throw new Error("No creatives returned from demo endpoint.");
+      setDemoResult({ creatives, raw: data });
+      setDemoStatus("success");
+      toast({ title: "Live demo complete", description: "Creatives are ready to review." });
+    } catch (error: any) {
+      setDemoStatus("error");
+      setRunnerError(error?.message || "Failed to run live demo.");
+      toast({ title: "Demo failed", description: error?.message || "Please try again.", variant: "destructive" });
+    }
+  };
+
+  const handleCreateCampaignDraft = async () => {
+    if (!newKey || demoStatus !== "success") return;
+    setRunnerError(null);
+    setDraftStatus("running");
+    setLaunchResult(null);
+    try {
+      const response = await fetch("https://zuckerbot.ai/api/v1/campaigns/create", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${newKey.key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: "https://example.com",
+          business_name: "Rosebud AI",
+          description: "AI assistant that helps teams ship faster.",
+          objective: "LEAD_GENERATION",
+          daily_budget_cents: 2000,
+          radius_km: 25,
+          use_market_intel: false,
+          auto_launch: false,
+        }),
+      });
+      if (!response.ok) {
+        const message = await parseApiError(response);
+        throw new Error(message);
+      }
+      const data = await response.json();
+      if (!data?.campaign_id) throw new Error("Campaign ID missing from draft response.");
+      setDraftCampaignId(data.campaign_id);
+      setDraftSummary({
+        campaign_id: data.campaign_id,
+        objective: data.objective,
+        budget: data.daily_budget_cents,
+      });
+      setDraftStatus("success");
+      toast({ title: "Draft created", description: `Campaign ID: ${data.campaign_id}` });
+      await fetchMetaStatusForKey(newKey.key);
+    } catch (error: any) {
+      setDraftStatus("error");
+      setRunnerError(error?.message || "Failed to create campaign draft.");
+      toast({ title: "Draft failed", description: error?.message || "Please try again.", variant: "destructive" });
+    }
+  };
+
+  const handleLaunchNow = async () => {
+    if (!newKey || !draftCampaignId) return;
+    setRunnerError(null);
+    setLaunchStatus("running");
+    setLaunchResult(null);
+    try {
+      const response = await fetch(`https://zuckerbot.ai/api/v1/campaigns/${draftCampaignId}/launch`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${newKey.key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          variant_index: selectedVariantIndex,
+          daily_budget_cents: 2000,
+          radius_km: 25,
+        }),
+      });
+      if (!response.ok) {
+        const message = await parseApiError(response);
+        throw new Error(message);
+      }
+      const data = await response.json();
+      setLaunchResult(data);
+      setLaunchStatus("success");
+      toast({ title: "Campaign launched", description: "Your campaign is now live on Meta." });
+    } catch (error: any) {
+      setLaunchStatus("error");
+      setRunnerError(error?.message || "Failed to launch campaign.");
+      toast({ title: "Launch failed", description: error?.message || "Please try again.", variant: "destructive" });
+    }
+  };
+
   // ── Generate key ───────────────────────────────────────────────────────
 
   const handleGenerateKey = async () => {
@@ -279,7 +476,15 @@ const Developer = () => {
 
       const result: NewKeyResponse = await response.json();
       setNewKey(result);
+      setDemoStatus("idle");
+      setDraftStatus("idle");
+      setLaunchStatus("idle");
+      setDemoResult(null);
+      setDraftSummary(null);
+      setLaunchResult(null);
+      setRunnerError(null);
       toast({ title: "API key created", description: "Copy it now. You will not see it again." });
+      await fetchMetaStatusForKey(result.key);
 
       // Refresh the key list
       await fetchKeys();
@@ -396,15 +601,15 @@ const Developer = () => {
                       <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                     </svg>
                   </div>
-                  <CardTitle className="text-white text-2xl">Connect Your Facebook Ad Account</CardTitle>
+                  <CardTitle className="text-white text-2xl">Optional: Connect Facebook</CardTitle>
                   <CardDescription className="text-gray-400 mt-2 text-base max-w-lg mx-auto">
-                    ZuckerBot needs access to your Facebook Ad Account to create and manage campaigns. This is a one-time setup.
+                    You can generate keys and test the API without Facebook. Connect once when you are ready to launch campaigns.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center pb-8">
                   <div className="flex items-center gap-2 mb-6 text-sm text-gray-500">
-                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Step 1 of 4</Badge>
-                    <span>Connect Facebook</span>
+                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Optional</Badge>
+                    <span>Required only for launch</span>
                   </div>
                   <Button
                     size="lg"
@@ -437,8 +642,8 @@ const Developer = () => {
               </Card>
             )}
 
-            {/* Step: Generate key (only when FB is connected) */}
-            {!newKey && fbConnected ? (
+            {/* Step: Generate key */}
+            {!newKey ? (
               <Card className="bg-white/[0.02] border-white/10">
                 <CardHeader className="text-center pb-4">
                   <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/20">
@@ -479,7 +684,7 @@ const Developer = () => {
                       </>
                     )}
                   </Button>
-                  <p className="mt-4 text-xs text-gray-600">Free tier: 10 req/min, 100 req/day</p>
+                  <p className="mt-4 text-xs text-gray-600">Free tier: 10 req/min, 100 req/day. Facebook can be connected later for launch.</p>
                 </CardContent>
               </Card>
             ) : (
@@ -539,6 +744,149 @@ const Developer = () => {
                       </Badge>
                       <span className="text-xs text-gray-500">ID: {newKey.id}</span>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Test API runner */}
+                <Card className="bg-white/[0.02] border-white/10">
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">Test API</Badge>
+                      <CardTitle className="text-white text-lg">Run live demo and launch flow</CardTitle>
+                    </div>
+                    <CardDescription className="text-gray-400 mt-1">
+                      Create your first wow moment in under a minute: generate creatives, create a draft, then launch after Facebook is connected.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {runnerError && (
+                      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+                        {runnerError}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        onClick={handleRunLiveDemo}
+                        disabled={demoStatus === "running"}
+                        className="bg-blue-600 hover:bg-blue-500 text-white border-0"
+                      >
+                        {demoStatus === "running" ? "Running demo..." : "Run live demo (30–60s)"}
+                      </Button>
+                      <Button
+                        onClick={handleCreateCampaignDraft}
+                        disabled={demoStatus !== "success" || draftStatus === "running"}
+                        variant="outline"
+                        className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white"
+                      >
+                        {draftStatus === "running" ? "Creating draft..." : "Create campaign draft"}
+                      </Button>
+                    </div>
+
+                    {demoResult?.creatives?.length ? (
+                      <div className="grid gap-3 md:grid-cols-3">
+                        {demoResult.creatives.slice(0, 3).map((creative, index) => (
+                          <div key={`${creative.url || "creative"}-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                            <div className="aspect-square overflow-hidden rounded-md bg-black/30 mb-3">
+                              {creative.url ? (
+                                <img src={creative.url} alt={`Creative ${index + 1}`} className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="h-full w-full flex items-center justify-center text-xs text-gray-500">No preview URL</div>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <div className="text-xs text-gray-400 line-clamp-2">{creative.prompt || "Generated creative variant"}</div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={!creative.url}
+                                  className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white"
+                                  onClick={() => {
+                                    if (!creative.url) return;
+                                    navigator.clipboard.writeText(creative.url);
+                                    toast({ title: "Copied image URL" });
+                                  }}
+                                >
+                                  Copy image URL
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={!creative.url}
+                                  className="border-white/10 text-gray-300 hover:bg-white/5 hover:text-white"
+                                  onClick={() => {
+                                    if (!creative.url) return;
+                                    window.open(creative.url, "_blank", "noopener,noreferrer");
+                                  }}
+                                >
+                                  Download
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedVariantIndex(index);
+                                    toast({ title: `Variant ${index + 1} selected` });
+                                  }}
+                                  className={selectedVariantIndex === index ? "bg-green-600 hover:bg-green-500 text-white border-0" : "bg-white/10 hover:bg-white/20 text-white border-0"}
+                                >
+                                  Use this variant
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {draftCampaignId && (
+                      <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3 text-sm">
+                        <div className="text-green-300 font-medium">Draft ready</div>
+                        <div className="text-gray-300 mt-1">Campaign ID: <code className="text-green-400">{draftCampaignId}</code></div>
+                        {draftSummary?.objective && (
+                          <div className="text-gray-400 mt-1">Objective: {draftSummary.objective}</div>
+                        )}
+                      </div>
+                    )}
+
+                    {metaStatus?.connected === false && (
+                      <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <p className="text-sm text-yellow-200">
+                          Connect Facebook once to launch campaigns without pasting tokens into chat.
+                        </p>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (metaStatus.connect_url) {
+                              window.location.href = metaStatus.connect_url;
+                              return;
+                            }
+                            if (session) window.location.href = buildFbOAuthUrl(session.access_token);
+                          }}
+                          className="bg-[#1877F2] hover:bg-[#166FE5] text-white border-0"
+                        >
+                          Connect Facebook to launch
+                        </Button>
+                      </div>
+                    )}
+
+                    {metaStatus?.connected && draftCampaignId && (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Badge className="bg-green-500/10 text-green-400 border-green-500/20">Facebook connected</Badge>
+                        <Button
+                          onClick={handleLaunchNow}
+                          disabled={launchStatus === "running"}
+                          className="bg-green-600 hover:bg-green-500 text-white border-0"
+                        >
+                          {launchStatus === "running" ? "Launching..." : "Launch now"}
+                        </Button>
+                      </div>
+                    )}
+
+                    {launchResult && (
+                      <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3 text-sm text-green-100">
+                        Launch successful{launchResult?.meta_campaign_id ? ` — Meta campaign: ${launchResult.meta_campaign_id}` : "."}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 

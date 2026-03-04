@@ -7,10 +7,40 @@ export const config = { maxDuration: 60 };
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://bqqmkiocynvlaianwisd.supabase.co';
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const PURCHASE_CREDITS_URL = 'https://zuckerbot.ai/pricing?credits=1';
+const EXECUTE_APPROVAL_ACTION_COST = 1;
 
 // Budget safety constants
 const MIN_DAILY_BUDGET_CENTS = 500;   // $5
 const DEFAULT_MAX_DAILY_BUDGET_CENTS = 10_000; // $100, overridden by automation_config if present
+
+async function debitCredits(args: {
+  userId: string;
+  businessId?: string | null;
+  cost: number;
+  reason: string;
+  refType: string;
+  refId?: string | null;
+  meta?: Record<string, any>;
+}): Promise<{ ok: boolean; balance: number }> {
+  const { data, error } = await supabaseAdmin.rpc('debit_credits', {
+    p_user_id: args.userId,
+    p_business_id: args.businessId || null,
+    p_cost: args.cost,
+    p_reason: args.reason,
+    p_ref_type: args.refType,
+    p_ref_id: args.refId || null,
+    p_meta: args.meta || {},
+  });
+
+  if (error) throw new Error(`credit_debit_failed: ${error.message}`);
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    ok: !!row?.ok,
+    balance: Number(row?.balance || 0),
+  };
+}
 
 interface ExecutionResult {
   action_type: string;
@@ -222,6 +252,43 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ run_id, action, status: 'dismissed', message: 'Dismissed. No action taken.' });
     }
 
+    // ── Resolve actions — only from THIS run, no cross-run fallback (Patch A) ─
+    const actionsToExecute = resolveActions(run);
+
+    if (actionsToExecute.length === 0) {
+      return res.status(400).json({
+        error: {
+          code: 'no_actions_on_run',
+          message: 'No executable actions attached to this run_id',
+        },
+      });
+    }
+
+    const executableActions = actionsToExecute.filter((a) => !!a.executable);
+    const requiredCredits = executableActions.length * EXECUTE_APPROVAL_ACTION_COST;
+    if (requiredCredits > 0) {
+      const creditDebit = await debitCredits({
+        userId,
+        businessId: run.business_id,
+        cost: requiredCredits,
+        reason: 'execute_approval',
+        refType: 'automation_run_approval',
+        refId: run_id,
+        meta: { executable_action_count: executableActions.length },
+      });
+      if (!creditDebit.ok) {
+        return res.status(402).json({
+          error: {
+            code: 'insufficient_credits',
+            message: `Insufficient credits. ${requiredCredits} credit(s) required.`,
+            required_credits: requiredCredits,
+            current_balance: creditDebit.balance,
+            purchase_url: PURCHASE_CREDITS_URL,
+          },
+        });
+      }
+    }
+
     // ── APPROVE: set executing status before touching Meta ───────────────────
     // We set 'executing' (not 'approved') immediately so that a crash mid-execution
     // leaves the run in a clear failed/executing state rather than stuck in 'approved'.
@@ -237,25 +304,6 @@ export default async function handler(req: any, res: any) {
       .eq('id', run_id);
 
     if (execStartError) throw new Error(`Failed to update run to executing: ${execStartError.message}`);
-
-    // ── Resolve actions — only from THIS run, no cross-run fallback (Patch A) ─
-    const actionsToExecute = resolveActions(run);
-
-    if (actionsToExecute.length === 0) {
-      // No actions attached to this run_id. Fail clearly rather than silently no-op.
-      await supabaseAdmin.from('automation_runs').update({
-        status: 'failed',
-        error_message: 'no_actions_on_run',
-        output: { ...(run.output || {}), execution_error: 'no_actions_on_run', failed_at: now },
-      }).eq('id', run_id);
-
-      return res.status(400).json({
-        error: {
-          code: 'no_actions_on_run',
-          message: 'No executable actions attached to this run_id',
-        },
-      });
-    }
 
     // ── Resolve Meta access token — business token required (Patch C) ─────────
     // System token fallback is gated behind ALLOW_SYSTEM_TOKEN_EXECUTION=true AND

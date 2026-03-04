@@ -640,6 +640,68 @@ export type Database = {
           },
         ]
       }
+      credit_balances: {
+        Row: {
+          balance: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          balance?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          balance?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      credit_ledger: {
+        Row: {
+          business_id: string | null
+          created_at: string
+          delta: number
+          id: string
+          meta: Json
+          reason: string
+          ref_id: string | null
+          ref_type: string
+          user_id: string
+        }
+        Insert: {
+          business_id?: string | null
+          created_at?: string
+          delta: number
+          id?: string
+          meta?: Json
+          reason: string
+          ref_id?: string | null
+          ref_type: string
+          user_id: string
+        }
+        Update: {
+          business_id?: string | null
+          created_at?: string
+          delta?: number
+          id?: string
+          meta?: Json
+          reason?: string
+          ref_id?: string | null
+          ref_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_ledger_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_reply_log: {
         Row: {
           created_at: string | null
@@ -1007,7 +1069,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      debit_credits: {
+        Args: {
+          p_business_id?: string | null
+          p_cost: number
+          p_meta?: Json
+          p_reason: string
+          p_ref_id?: string | null
+          p_ref_type: string
+          p_user_id: string
+        }
+        Returns: {
+          balance: number
+          ok: boolean
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

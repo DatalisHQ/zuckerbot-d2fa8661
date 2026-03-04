@@ -493,7 +493,7 @@ const Docs = () => {
             method="POST"
             path="/v1/campaigns/:id/launch"
             description="Launch a draft campaign on Meta. Creates the ad campaign, ad set, creative, and ad on Meta, then activates everything. This is the endpoint that spends real money."
-            notes="Meta credentials are optional if the user has connected Facebook on the /developer page (stored credentials flow). Set launch_all_variants: true to create multiple ads under one ad set for A/B testing — Meta auto-optimizes for the winner."
+            notes="Meta credentials are optional if the user has connected Facebook on the /developer page (stored credentials flow). Set launch_all_variants: true to create multiple ads under one ad set for A/B testing — Meta auto-optimizes for the winner. This endpoint consumes 5 credits and can return HTTP 402 with error.code='insufficient_credits'."
             requestBody={`{
   "variant_index": 0,
   "daily_budget_cents": 2000,
@@ -614,6 +614,7 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             method="POST"
             path="/v1/research/reviews"
             description="Get review intelligence for a business. Searches Google Reviews, Yelp, and other review sites, then synthesizes themes, sentiment, and best quotes using AI."
+            notes="Validation errors include error.example_body and error.docs_url to speed up debugging."
             requestBody={`{
   "business_name": "Joe's Pizza",
   "location": "Austin, TX"
@@ -646,6 +647,7 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             method="POST"
             path="/v1/research/competitors"
             description="Analyze competitor ads for a business category and location. Searches Meta Ad Library and web results, then synthesizes insights including common hooks, gaps, and opportunities."
+            notes="Validation errors include error.example_body and error.docs_url to speed up debugging."
             requestBody={`{
   "industry": "pizza restaurant",
   "location": "Austin, TX",
@@ -718,11 +720,14 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             method="POST"
             path="/v1/creatives/generate"
             description="Generate AI-powered ad creative images. Provide a URL or business description and get back Facebook-optimized ad images via Google Imagen 4.0."
+            notes="Alias fields are supported for compatibility: image_count (alias of count) and use_market_intel (alias of use_market_intelligence). Validation errors include example_body and docs_url."
             requestBody={`{
   "url": "https://joes-pizza.com",
   "style": "photo",
   "aspect_ratio": "1:1",
-  "count": 2
+  "count": 2,
+  "image_count": 2,
+  "use_market_intel": false
 }`}
             responseBody={`{
   "creatives": [

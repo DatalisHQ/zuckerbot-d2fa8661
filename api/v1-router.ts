@@ -61,6 +61,12 @@ const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const GRAPH_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const PURCHASE_CREDITS_URL = 'https://zuckerbot.ai/pricing?credits=1';
+const CREDIT_COSTS = {
+  campaign_launch: 5,
+  autonomous_execute_call: 3,
+  autonomous_run_call: 3,
+} as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUTH (inlined from _utils/auth.ts)
@@ -312,6 +318,68 @@ function parseClaudeJson(text: string | null): any {
     }
     return {};
   }
+}
+
+function getValidationDocsUrl(endpointKey: 'research-competitors' | 'research-reviews' | 'creatives-generate'): string {
+  if (endpointKey === 'research-competitors') return 'https://zuckerbot.ai/docs#research-competitors';
+  if (endpointKey === 'research-reviews') return 'https://zuckerbot.ai/docs#research-reviews';
+  return 'https://zuckerbot.ai/docs#creatives-generate';
+}
+
+function validationError(
+  res: VercelResponse,
+  endpointKey: 'research-competitors' | 'research-reviews' | 'creatives-generate',
+  message: string,
+  exampleBody: Record<string, any>,
+) {
+  return res.status(400).json({
+    error: {
+      code: 'validation_error',
+      message,
+      example_body: exampleBody,
+      docs_url: getValidationDocsUrl(endpointKey),
+    },
+  });
+}
+
+async function debitCredits(args: {
+  userId: string;
+  businessId?: string | null;
+  cost: number;
+  reason: string;
+  refType: string;
+  refId?: string | null;
+  meta?: Record<string, any>;
+}): Promise<{ ok: boolean; balance: number }> {
+  const { data, error } = await supabaseAdmin.rpc('debit_credits', {
+    p_user_id: args.userId,
+    p_business_id: args.businessId || null,
+    p_cost: args.cost,
+    p_reason: args.reason,
+    p_ref_type: args.refType,
+    p_ref_id: args.refId || null,
+    p_meta: args.meta || {},
+  });
+
+  if (error) throw new Error(`credit_debit_failed: ${error.message}`);
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    ok: !!row?.ok,
+    balance: Number(row?.balance || 0),
+  };
+}
+
+function paymentRequiredError(requiredCredits: number, currentBalance: number) {
+  return {
+    error: {
+      code: 'insufficient_credits',
+      message: `Insufficient credits. ${requiredCredits} credit(s) required.`,
+      required_credits: requiredCredits,
+      current_balance: currentBalance,
+      purchase_url: PURCHASE_CREDITS_URL,
+    },
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1139,6 +1207,8 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
 
   let { meta_access_token, meta_ad_account_id, meta_page_id, variant_index = 0, daily_budget_cents, radius_km, launch_all_variants = false } = req.body || {};
 
+  let launchBusinessId: string | null = null;
+
   // If credentials not provided, look up from linked business
   if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
     const { data: keyWithBiz } = await supabaseAdmin
@@ -1160,6 +1230,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     }
 
     if (businessId) {
+      launchBusinessId = businessId;
       const { data: biz } = await supabaseAdmin
         .from('businesses')
         .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
@@ -1228,6 +1299,20 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
 
     const campaignName = `${businessName} – API – ${new Date().toISOString().slice(0, 10)}`;
     const adAccountId = meta_ad_account_id.replace(/^act_/, '');
+
+    const creditDebit = await debitCredits({
+      userId: auth.keyRecord.user_id,
+      businessId: launchBusinessId,
+      cost: CREDIT_COSTS.campaign_launch,
+      reason: 'campaign_launch',
+      refType: 'api_campaign',
+      refId: campaignId,
+      meta: { endpoint: '/api/v1/campaigns/:id/launch' },
+    });
+    if (!creditDebit.ok) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 402, responseTimeMs: Date.now() - startTime });
+      return res.status(402).json(paymentRequiredError(CREDIT_COSTS.campaign_launch, creditDebit.balance));
+    }
 
     // Step 1: Create Meta Campaign (objective-aware)
     const campaignResult = await metaPost(`/act_${adAccountId}/campaigns`, { name: campaignName, objective: getMetaCampaignObjective(objective), status: 'PAUSED', special_ad_categories: JSON.stringify([]) }, meta_access_token);
@@ -1837,7 +1922,12 @@ async function handleReviews(req: VercelRequest, res: VercelResponse) {
   const { business_name, location, platform } = req.body || {};
   if (!business_name || typeof business_name !== 'string') {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/research/reviews', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-    return res.status(400).json({ error: { code: 'validation_error', message: '`business_name` is required and must be a string' } });
+    return validationError(
+      res,
+      'research-reviews',
+      '`business_name` is required and must be a string',
+      { business_name: 'Rosebud AI', location: 'Austin, TX', platform: 'google' },
+    );
   }
 
   const validPlatforms = ['google', 'yelp', 'all'];
@@ -1950,11 +2040,21 @@ async function handleCompetitors(req: VercelRequest, res: VercelResponse) {
   const { industry, location, country, limit } = req.body || {};
   if (!industry || typeof industry !== 'string') {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/research/competitors', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-    return res.status(400).json({ error: { code: 'validation_error', message: '`industry` is required and must be a string' } });
+    return validationError(
+      res,
+      'research-competitors',
+      '`industry` is required and must be a string',
+      { industry: 'dental', location: 'Austin', country: 'US', limit: 3 },
+    );
   }
   if (!location || typeof location !== 'string') {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/research/competitors', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-    return res.status(400).json({ error: { code: 'validation_error', message: '`location` is required and must be a string' } });
+    return validationError(
+      res,
+      'research-competitors',
+      '`location` is required and must be a string',
+      { industry: 'dental', location: 'Austin', country: 'US', limit: 3 },
+    );
   }
 
   const selectedCountry = typeof country === 'string' ? country : 'US';
@@ -2484,7 +2584,18 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
   assertAuth(auth);
   applyRateLimitHeaders(res, auth.rateLimitHeaders);
 
-  const { url, business_name, description, style, aspect_ratio, count, model, use_market_intelligence } = req.body || {};
+  const {
+    url,
+    business_name,
+    description,
+    style,
+    aspect_ratio,
+    count,
+    image_count,
+    model,
+    use_market_intelligence,
+    use_market_intel,
+  } = req.body || {};
 
   // Validate style
   const validStyles = ['photo', 'illustration', 'minimal', 'bold'];
@@ -2495,18 +2606,35 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
   const selectedRatio: string = validRatios.includes(aspect_ratio) ? aspect_ratio : '1:1';
 
   // Validate count (1-4)
-  const imageCount = Math.min(Math.max(typeof count === 'number' ? count : 1, 1), 4);
+  const rawCount = typeof count === 'number' ? count : (typeof image_count === 'number' ? image_count : 1);
+  const imageCount = Math.min(Math.max(rawCount, 1), 4);
 
   // Validate model
   const validModels = ['seedream', 'imagen', 'auto'];
   const selectedModel: string = validModels.includes(model) ? model : 'auto';
 
   // Market intelligence flag
-  const useMarketIntel = use_market_intelligence === true;
+  const useMarketIntel =
+    use_market_intelligence === true
+    || (use_market_intelligence === undefined && use_market_intel === true);
 
   if (!url && !business_name && !description) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-    return res.status(400).json({ error: { code: 'validation_error', message: 'At least one of `url`, `business_name`, or `description` is required' } });
+    return validationError(
+      res,
+      'creatives-generate',
+      'At least one of `url`, `business_name`, or `description` is required',
+      {
+        business_name: 'Rosebud AI',
+        description: 'AI assistant that helps teams ship faster.',
+        count: 3,
+        image_count: 3,
+        style: 'photo',
+        aspect_ratio: '1:1',
+        model: 'auto',
+        use_market_intel: false,
+      },
+    );
   }
 
   // Check if we have the required APIs for the selected model
@@ -3593,6 +3721,19 @@ async function handleAutonomousExecute(req: VercelRequest, res: VercelResponse) 
     });
   }
 
+  const executeCreditDebit = await debitCredits({
+    userId: auth.keyRecord.user_id,
+    businessId: business_id,
+    cost: CREDIT_COSTS.autonomous_execute_call,
+    reason: 'autonomous_execute',
+    refType: 'autonomous_execute',
+    refId: business_id,
+    meta: { endpoint: '/api/v1/autonomous/execute', action_count: actions.length },
+  });
+  if (!executeCreditDebit.ok) {
+    return res.status(402).json(paymentRequiredError(CREDIT_COSTS.autonomous_execute_call, executeCreditDebit.balance));
+  }
+
   const results: Array<{ action: any; ok: boolean; status: string; error?: string; meta?: any }> = [];
   for (const action of actions) {
     const result = await executeAutonomousAction(action as AutonomousAction, accessToken);
@@ -3681,6 +3822,43 @@ async function handleAutonomousRun(req: VercelRequest, res: VercelResponse) {
     if (actions.length === 0) {
       summary = 'No actions required. All campaigns within policy thresholds.';
     } else {
+      const runCreditDebit = await debitCredits({
+        userId: business.user_id,
+        businessId: business_id,
+        cost: CREDIT_COSTS.autonomous_run_call,
+        reason: 'autonomous_run',
+        refType: 'autonomous_run',
+        refId: business_id,
+        meta: { endpoint: '/api/v1/autonomous/run', action_count: actions.length },
+      });
+      if (!runCreditDebit.ok) {
+        summary = `${actions.length} action(s) generated but not executed: insufficient_credits.`;
+        supabaseAdmin.from('automation_runs').insert({
+          business_id,
+          user_id: business.user_id,
+          agent_type: 'autonomous_loop',
+          status: 'failed',
+          error_message: 'insufficient_credits',
+          trigger_type: 'scheduled',
+          trigger_reason: 'cron autonomous loop via dispatch-agents',
+          input: { policy_id: policy.id, metrics_count: metrics.length },
+          output: {
+            actions,
+            required_credits: CREDIT_COSTS.autonomous_run_call,
+            current_balance: runCreditDebit.balance,
+            purchase_url: PURCHASE_CREDITS_URL,
+          },
+          summary,
+          first_person_summary: `I could not run the autonomous policy loop due to insufficient credits.`,
+          requires_approval: false,
+          duration_ms: Date.now() - startTime,
+          started_at: new Date(startTime).toISOString(),
+          completed_at: new Date().toISOString(),
+        }).then(() => {});
+
+        return res.status(402).json(paymentRequiredError(CREDIT_COSTS.autonomous_run_call, runCreditDebit.balance));
+      }
+
       // System token fallback requires ALLOW_SYSTEM_TOKEN_EXECUTION=true AND business in allowlist.
       const allowSystemToken = process.env.ALLOW_SYSTEM_TOKEN_EXECUTION === 'true';
       // TODO: add specific business UUIDs here to permit system token execution

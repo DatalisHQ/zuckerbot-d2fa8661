@@ -212,3 +212,41 @@ META_TRANSPORT=off
 - Enhanced auth validation
 - UI design system improvements
 - Structured logging for debugging
+
+---
+
+## Credits Top-Up Runbook (Activation Upgrade v1)
+
+Execution endpoints now consume credits. For MVP, credits are topped up manually.
+
+### Add or initialize user balance
+
+```sql
+INSERT INTO public.credit_balances (user_id, balance)
+VALUES ('<USER_UUID>', 30)
+ON CONFLICT (user_id)
+DO UPDATE SET balance = public.credit_balances.balance + EXCLUDED.balance,
+              updated_at = now();
+```
+
+### Add a positive ledger record
+
+```sql
+INSERT INTO public.credit_ledger (
+  user_id,
+  business_id,
+  delta,
+  reason,
+  ref_type,
+  ref_id,
+  meta
+) VALUES (
+  '<USER_UUID>',
+  '<BUSINESS_UUID_OR_NULL>',
+  30,
+  'manual_top_up',
+  'admin_credit',
+  'support_ticket_123',
+  '{"source":"manual","pack":"mvp"}'::jsonb
+);
+```
