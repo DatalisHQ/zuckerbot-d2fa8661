@@ -376,7 +376,41 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 12. Resolve Launch Credentials ──────────────────────────────
+  // ── 11. List Facebook Pages ────────────────────────────────────
+  server.tool(
+    "zuckerbot_list_meta_pages",
+    "List Facebook pages available to the connected Meta account and indicate which page is currently selected for launch.",
+    {},
+    async () => {
+      try {
+        const result = await client.get("/meta/pages");
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 12. Select Facebook Page ───────────────────────────────────
+  server.tool(
+    "zuckerbot_select_meta_page",
+    "Select and store the Facebook page to use for launches. Use this when multiple pages are available.",
+    {
+      page_id: z.string().describe("Facebook Page ID to use for future launches"),
+    },
+    async ({ page_id }) => {
+      try {
+        const result = await client.post("/meta/select-page", {
+          page_id,
+        });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 13. Resolve Launch Credentials ─────────────────────────────
   server.tool(
     "zuckerbot_get_launch_credentials",
     "Resolve stored Meta launch credentials for the authenticated API key/user and report whether autonomous launch is possible.",
@@ -391,7 +425,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 13. Generate Creatives ──────────────────────────────────────
+  // ── 14. Generate Creatives ──────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
     "Generate ad creatives independently from campaign creation. Supports image creatives (Seedream/Imagen) and video creatives (Kling). If the prompt text asks for a video ad, the tool auto-routes to Kling/video unless explicitly overridden.",
@@ -446,7 +480,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 14. Generate Ad Creative (Legacy Alias) ─────────────────────
+  // ── 15. Generate Ad Creative (Legacy Alias) ─────────────────────
   server.tool(
     "zuckerbot_generate_ad_creative",
     "Legacy alias of zuckerbot_generate_creatives. Supports image creatives and video creatives (Kling).",

@@ -20,6 +20,8 @@
  *   POST /api/v1/creatives/:id/feedback     → handleCreativeFeedback
  *   GET  /api/v1/meta/status                → handleMetaStatus
  *   GET  /api/v1/meta/credentials           → handleMetaCredentials
+ *   GET  /api/v1/meta/pages                 → handleMetaPages
+ *   POST /api/v1/meta/select-page           → handleMetaSelectPage
  *   POST /api/v1/notifications/telegram     → handleSetTelegram
  */
 
@@ -611,6 +613,12 @@ interface ResolvedMetaCredentials {
   source: CredentialSource;
 }
 
+interface MetaPageOption {
+  id: string;
+  name: string;
+  category: string | null;
+}
+
 function normalizeString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -727,6 +735,103 @@ async function resolveMetaCredentials(params: {
     business_id: businessId,
     source,
   };
+}
+
+async function listFacebookPages(accessToken: string): Promise<{ ok: boolean; pages: MetaPageOption[]; error?: string }> {
+  const pages: MetaPageOption[] = [];
+  let nextUrl = `${GRAPH_BASE}/me/accounts?fields=id,name,category&limit=100&access_token=${encodeURIComponent(accessToken)}`;
+
+  try {
+    while (nextUrl && pages.length < 300) {
+      const response = await fetch(nextUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(20000),
+      });
+
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok) {
+        return {
+          ok: false,
+          pages: [],
+          error: data?.error?.message || `Meta pages API error: HTTP ${response.status}`,
+        };
+      }
+
+      if (Array.isArray(data?.data)) {
+        for (const page of data.data) {
+          const id = normalizeString(page?.id);
+          const name = normalizeString(page?.name);
+          if (!id || !name) continue;
+          pages.push({
+            id,
+            name,
+            category: normalizeString(page?.category),
+          });
+        }
+      }
+
+      const pagingNext = normalizeString(data?.paging?.next);
+      nextUrl = pagingNext || '';
+    }
+
+    return { ok: true, pages };
+  } catch (err: any) {
+    return { ok: false, pages: [], error: err?.message || String(err) };
+  }
+}
+
+async function persistBusinessPageId(userId: string, businessId: string | null, pageId: string): Promise<void> {
+  if (!businessId) return;
+  const { error } = await supabaseAdmin
+    .from('businesses')
+    .update({ facebook_page_id: pageId })
+    .eq('id', businessId)
+    .eq('user_id', userId);
+  if (error) {
+    console.warn('[api/meta] Failed to persist facebook_page_id:', error.message);
+  }
+}
+
+async function resolvePageIdForLaunch(params: {
+  userId: string;
+  resolvedMeta: ResolvedMetaCredentials;
+}): Promise<{
+  meta_page_id: string | null;
+  available_pages?: MetaPageOption[];
+  source: 'stored' | 'auto_selected' | 'selection_required' | 'none' | 'meta_error';
+  meta_error?: string;
+}> {
+  const existingPageId = normalizeString(params.resolvedMeta.meta_page_id);
+  if (existingPageId) {
+    return { meta_page_id: existingPageId, source: 'stored' };
+  }
+
+  const accessToken = normalizeString(params.resolvedMeta.meta_access_token);
+  if (!accessToken) {
+    return { meta_page_id: null, source: 'none' };
+  }
+
+  const pageResult = await listFacebookPages(accessToken);
+  if (!pageResult.ok) {
+    return {
+      meta_page_id: null,
+      source: 'meta_error',
+      meta_error: pageResult.error || 'Failed to list Facebook pages',
+    };
+  }
+
+  const pages = pageResult.pages;
+  if (pages.length === 1) {
+    const selected = pages[0].id;
+    await persistBusinessPageId(params.userId, params.resolvedMeta.business_id, selected);
+    return { meta_page_id: selected, available_pages: pages, source: 'auto_selected' };
+  }
+
+  if (pages.length > 1) {
+    return { meta_page_id: null, available_pages: pages, source: 'selection_required' };
+  }
+
+  return { meta_page_id: null, available_pages: [], source: 'none' };
 }
 
 /**
@@ -1210,11 +1315,36 @@ RULES:
       meta_ad_account_id = resolvedMeta.meta_ad_account_id;
       meta_page_id = resolvedMeta.meta_page_id;
 
+      const pageResolution = await resolvePageIdForLaunch({
+        userId: auth.keyRecord.user_id,
+        resolvedMeta: {
+          ...resolvedMeta,
+          meta_access_token,
+          meta_ad_account_id,
+          meta_page_id,
+        },
+      });
+      if (!meta_page_id && pageResolution.meta_page_id) {
+        meta_page_id = pageResolution.meta_page_id;
+      }
+
       const hasToken = typeof meta_access_token === 'string' && meta_access_token.length > 0;
       const hasAdAccount = typeof meta_ad_account_id === 'string' && meta_ad_account_id.length > 0;
       const hasPage = typeof meta_page_id === 'string' && meta_page_id.length > 0;
 
       if (!hasToken || !hasAdAccount || !hasPage) {
+        if (!hasPage && pageResolution.source === 'selection_required') {
+          await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+          return res.status(400).json({
+            error: {
+              code: 'meta_page_selection_required',
+              message: 'Multiple Facebook pages were found. Select one page before launching.',
+              select_page_endpoint: '/api/v1/meta/select-page',
+            },
+            available_pages: (pageResolution.available_pages || []).slice(0, 25),
+          });
+        }
+
         const missing = [
           !hasToken && 'meta_access_token',
           !hasAdAccount && 'meta_ad_account_id',
@@ -1227,6 +1357,7 @@ RULES:
             code: 'missing_meta_credentials',
             message: `Missing: ${missing}. Either pass them in the request body, or connect Facebook at https://zuckerbot.ai/profile to store them automatically.`,
             connect_url: 'https://zuckerbot.ai/profile',
+            ...(pageResolution.source === 'meta_error' ? { meta_error: pageResolution.meta_error } : {}),
           },
         });
       }
@@ -1344,7 +1475,32 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
   meta_ad_account_id = resolvedMeta.meta_ad_account_id;
   meta_page_id = resolvedMeta.meta_page_id;
 
+  const pageResolution = await resolvePageIdForLaunch({
+    userId: auth.keyRecord.user_id,
+    resolvedMeta: {
+      ...resolvedMeta,
+      meta_access_token,
+      meta_ad_account_id,
+      meta_page_id,
+    },
+  });
+  if (!meta_page_id && pageResolution.meta_page_id) {
+    meta_page_id = pageResolution.meta_page_id;
+  }
+
   if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
+    if (!meta_page_id && pageResolution.source === 'selection_required') {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+      return res.status(400).json({
+        error: {
+          code: 'meta_page_selection_required',
+          message: 'Multiple Facebook pages were found. Select one page before launching.',
+          select_page_endpoint: '/api/v1/meta/select-page',
+        },
+        available_pages: (pageResolution.available_pages || []).slice(0, 25),
+      });
+    }
+
     const missing = [
       !meta_access_token && 'meta_access_token',
       !meta_ad_account_id && 'meta_ad_account_id',
@@ -1357,6 +1513,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
         code: 'missing_meta_credentials',
         message: `Missing: ${missing}. Either pass them in the request body, or connect Facebook at https://zuckerbot.ai/profile to store them automatically.`,
         connect_url: 'https://zuckerbot.ai/profile',
+        ...(pageResolution.source === 'meta_error' ? { meta_error: pageResolution.meta_error } : {}),
       }
     });
   }
@@ -2481,6 +2638,143 @@ async function handleMetaCredentials(req: VercelRequest, res: VercelResponse) {
       message: 'Facebook credentials are incomplete. Connect at https://zuckerbot.ai/profile',
       connect_url: 'https://zuckerbot.ai/profile',
     }),
+  });
+}
+
+// ── GET /api/v1/meta/pages ───────────────────────────────────────────────
+
+async function handleMetaPages(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+  });
+
+  const accessToken = normalizeString(resolvedMeta.meta_access_token);
+  if (!accessToken) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/pages', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'missing_meta_credentials',
+        message: 'No stored Meta access token found. Connect Facebook at https://zuckerbot.ai/profile first.',
+        connect_url: 'https://zuckerbot.ai/profile',
+      },
+    });
+  }
+
+  const pagesResult = await listFacebookPages(accessToken);
+  if (!pagesResult.ok) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/pages', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({
+      error: {
+        code: 'meta_api_error',
+        message: pagesResult.error || 'Failed to fetch Facebook pages',
+      },
+    });
+  }
+
+  let selectedPageId = normalizeString(resolvedMeta.meta_page_id);
+  if (!selectedPageId && pagesResult.pages.length === 1) {
+    selectedPageId = pagesResult.pages[0].id;
+    await persistBusinessPageId(auth.keyRecord.user_id, resolvedMeta.business_id, selectedPageId);
+  }
+
+  const pages = pagesResult.pages.map((page) => ({
+    ...page,
+    selected: selectedPageId === page.id,
+  }));
+
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/pages', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
+
+  return res.status(200).json({
+    pages,
+    selected_page_id: selectedPageId,
+    page_count: pages.length,
+  });
+}
+
+// ── POST /api/v1/meta/select-page ────────────────────────────────────────
+
+async function handleMetaSelectPage(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const selectedPageId = normalizeString(req.body?.page_id);
+  if (!selectedPageId) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-page', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: '`page_id` is required',
+      },
+    });
+  }
+
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+  });
+
+  const accessToken = normalizeString(resolvedMeta.meta_access_token);
+  if (!accessToken) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-page', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'missing_meta_credentials',
+        message: 'No stored Meta access token found. Connect Facebook at https://zuckerbot.ai/profile first.',
+        connect_url: 'https://zuckerbot.ai/profile',
+      },
+    });
+  }
+
+  const pagesResult = await listFacebookPages(accessToken);
+  if (!pagesResult.ok) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-page', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({
+      error: {
+        code: 'meta_api_error',
+        message: pagesResult.error || 'Failed to fetch Facebook pages',
+      },
+    });
+  }
+
+  const selectedPage = pagesResult.pages.find((page) => page.id === selectedPageId);
+  if (!selectedPage) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-page', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: 'The provided `page_id` is not available for the connected Meta account.',
+      },
+      available_pages: pagesResult.pages.slice(0, 25),
+    });
+  }
+
+  await persistBusinessPageId(auth.keyRecord.user_id, resolvedMeta.business_id, selectedPage.id);
+
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-page', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({
+    selected_page_id: selectedPage.id,
+    selected_page_name: selectedPage.name,
+    stored: true,
   });
 }
 
@@ -4533,6 +4827,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'creatives/generate') return handleCreativesGenerate(req, res);
   if (route === 'meta/status') return handleMetaStatus(req, res);
   if (route === 'meta/credentials') return handleMetaCredentials(req, res);
+  if (route === 'meta/pages') return handleMetaPages(req, res);
+  if (route === 'meta/select-page') return handleMetaSelectPage(req, res);
   if (route === 'notifications/telegram') return handleSetTelegram(req, res);
 
   // ── Dynamic campaign/:id routes ────────────────────────────────────
@@ -4588,6 +4884,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/autonomous/run',
         'GET  /api/v1/meta/status',
         'GET  /api/v1/meta/credentials',
+        'GET  /api/v1/meta/pages',
+        'POST /api/v1/meta/select-page',
         'POST /api/v1/notifications/telegram',
       ],
     },

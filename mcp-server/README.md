@@ -81,6 +81,8 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot-mcp
 | `zuckerbot_research_competitors` | Analyze competitor ads in a category | `industry`, `location` |
 | `zuckerbot_research_market` | Get market intelligence and ad benchmarks | `industry`, `location` |
 | `zuckerbot_meta_status` | Check whether Meta is connected for this API key/user | none |
+| `zuckerbot_list_meta_pages` | List available Facebook pages and current selected page | none |
+| `zuckerbot_select_meta_page` | Select/save a Facebook page ID for future launches | `page_id` |
 | `zuckerbot_get_launch_credentials` | Resolve stored launch credentials and report missing fields | none |
 | `zuckerbot_generate_creatives` | Generate ad copy and creatives (images or Kling video) | `business_name`, `description` |
 | `zuckerbot_generate_ad_creative` | Legacy alias for creative generation | `business_name`, `description` |
