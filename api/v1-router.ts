@@ -2425,6 +2425,7 @@ function extractImageResult(payload: any): SeedreamResult {
   const b64 =
     payload?.data?.[0]?.b64_json
     || payload?.output?.[0]?.b64_json
+    || payload?.outputs?.[0]?.b64_json
     || payload?.result?.images?.[0]?.b64_json
     || payload?.result?.b64_json
     || payload?.image_base64
@@ -2442,6 +2443,7 @@ function extractImageResult(payload: any): SeedreamResult {
   const imageUrl =
     payload?.data?.[0]?.url
     || payload?.output?.[0]?.url
+    || (typeof payload?.outputs?.[0] === 'string' ? payload?.outputs?.[0] : payload?.outputs?.[0]?.url)
     || payload?.result?.images?.[0]?.url
     || payload?.image_url
     || payload?.url
@@ -2596,26 +2598,21 @@ async function callKlingWavespeed(prompt: string, aspectRatio: string): Promise<
     return { success: false, error: 'WaveSpeed API key not configured' };
   }
 
-  const apiBase = process.env.WAVESPEED_API_BASE_URL || 'https://api.wavespeed.ai/v1';
-  const model = process.env.WAVESPEED_KLING_MODEL || 'kling-image-v1';
-  const imageSize = getImageSizeFromAspectRatio(aspectRatio);
-  const [width, height] = imageSize.split('x').map((v) => Number(v));
+  const apiBase = (process.env.WAVESPEED_API_BASE_URL || 'https://api.wavespeed.ai').replace(/\/$/, '');
+  const model = process.env.WAVESPEED_KLING_MODEL || 'kwaivgi/kling-image-o3/text-to-image';
+  const createUrl = `${apiBase}/api/v3/${model}`;
 
   try {
-    const createResponse = await fetch(`${apiBase}/images/generations`, {
+    const createResponse = await fetch(createUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${WAVESPEED_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model,
         prompt,
-        image_size: imageSize,
-        width,
-        height,
         aspect_ratio: aspectRatio,
-        response_format: 'b64_json',
+        output_format: 'png',
       }),
       signal: AbortSignal.timeout(60000),
     });
@@ -2626,17 +2623,20 @@ async function callKlingWavespeed(prompt: string, aspectRatio: string): Promise<
     }
 
     const createData = await createResponse.json();
-    const directResult = extractImageResult(createData);
+    const createPayload = createData?.data || createData;
+    const directResult = extractImageResult(createPayload);
     if (directResult.success) return directResult;
 
-    const jobId = createData?.id || createData?.job_id || createData?.prediction_id;
-    if (!jobId) {
-      return { success: false, error: directResult.error || 'WaveSpeed returned neither image payload nor job id' };
+    const resultUrl = createPayload?.urls?.get;
+    const jobId = createPayload?.id || createPayload?.job_id || createPayload?.prediction_id;
+    if (!resultUrl && !jobId) {
+      return { success: false, error: directResult.error || 'WaveSpeed returned neither image payload nor prediction id' };
     }
+    const pollUrl = resultUrl || `${apiBase}/api/v3/predictions/${jobId}/result`;
 
     for (let i = 0; i < 30; i++) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      const pollResponse = await fetch(`${apiBase}/images/generations/${jobId}`, {
+      const pollResponse = await fetch(pollUrl, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${WAVESPEED_API_KEY}`,
@@ -2646,13 +2646,14 @@ async function callKlingWavespeed(prompt: string, aspectRatio: string): Promise<
 
       if (!pollResponse.ok) continue;
       const pollData = await pollResponse.json();
-      const status = String(pollData?.status || pollData?.state || '').toLowerCase();
+      const pollPayload = pollData?.data || pollData;
+      const status = String(pollPayload?.status || pollPayload?.state || '').toLowerCase();
 
       if (status === 'failed' || status === 'error' || status === 'cancelled') {
-        return { success: false, error: `WaveSpeed job failed: ${pollData?.error || 'unknown error'}` };
+        return { success: false, error: `WaveSpeed job failed: ${pollPayload?.error || pollData?.message || 'unknown error'}` };
       }
 
-      const pollResult = extractImageResult(pollData);
+      const pollResult = extractImageResult(pollPayload);
       if (pollResult.success) return pollResult;
       if (status === 'succeeded' || status === 'completed' || status === 'finished' || status === 'success') {
         return { success: false, error: pollResult.error || 'WaveSpeed job completed without image payload' };
