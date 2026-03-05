@@ -50,7 +50,11 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const GOOGLE_AI_API_KEY = process.env.GOOGLE_AI_API_KEY || '';
+const GOOGLE_AI_API_KEY =
+  process.env.GOOGLE_AI_API_KEY
+  || process.env.GEMINI_API_KEY
+  || process.env.VITE_GOOGLE_AI_API_KEY
+  || '';
 
 // Seedream 4.5 API credentials (multiple provider support)
 const AIML_API_KEY = process.env.AIML_API_KEY || '';
@@ -2745,23 +2749,26 @@ async function callSeedreamReplicate(prompt: string, aspectRatio: string): Promi
  */
 async function generateWithSeedream(prompt: string, aspectRatio: string): Promise<SeedreamResult> {
   console.log('[Seedream] Attempting generation with AIML API...');
-  let result = await callSeedreamAIML(prompt, aspectRatio);
+  const aimlResult = await callSeedreamAIML(prompt, aspectRatio);
   
-  if (result.success) {
+  if (aimlResult.success) {
     console.log('[Seedream] AIML API succeeded');
-    return result;
+    return aimlResult;
   }
 
-  console.log('[Seedream] AIML API failed, trying Replicate...', result.error);
-  result = await callSeedreamReplicate(prompt, aspectRatio);
+  console.log('[Seedream] AIML API failed, trying Replicate...', aimlResult.error);
+  const replicateResult = await callSeedreamReplicate(prompt, aspectRatio);
   
-  if (result.success) {
+  if (replicateResult.success) {
     console.log('[Seedream] Replicate succeeded');
-    return result;
+    return replicateResult;
   }
 
   console.log('[Seedream] All providers failed');
-  return result;
+  return {
+    success: false,
+    error: `AIML failed: ${aimlResult.error || 'unknown error'}; Replicate failed: ${replicateResult.error || 'unknown error'}`,
+  };
 }
 
 /**
