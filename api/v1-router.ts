@@ -2413,6 +2413,17 @@ interface SeedreamResult {
   error?: string;
 }
 
+function inferMimeTypeFromUrl(url?: string): string {
+  if (!url) return 'image/png';
+  const lower = url.toLowerCase();
+  if (lower.includes('.mp4')) return 'video/mp4';
+  if (lower.includes('.webm')) return 'video/webm';
+  if (lower.includes('.mov')) return 'video/quicktime';
+  if (lower.includes('.jpg') || lower.includes('.jpeg')) return 'image/jpeg';
+  if (lower.includes('.png')) return 'image/png';
+  return 'image/png';
+}
+
 function getImageSizeFromAspectRatio(aspectRatio: string): string {
   if (aspectRatio === '16:9') return '1280x720';
   if (aspectRatio === '9:16') return '720x1280';
@@ -2453,7 +2464,7 @@ function extractImageResult(payload: any): SeedreamResult {
     return {
       success: true,
       imageUrl,
-      mimeType: payload?.data?.[0]?.mime_type || payload?.output?.[0]?.mime_type || payload?.mime_type || 'image/png',
+      mimeType: payload?.data?.[0]?.mime_type || payload?.output?.[0]?.mime_type || payload?.mime_type || inferMimeTypeFromUrl(imageUrl),
     };
   }
 
@@ -2599,8 +2610,11 @@ async function callKlingWavespeed(prompt: string, aspectRatio: string): Promise<
   }
 
   const apiBase = (process.env.WAVESPEED_API_BASE_URL || 'https://api.wavespeed.ai').replace(/\/$/, '');
-  const model = process.env.WAVESPEED_KLING_MODEL || 'kwaivgi/kling-image-o3/text-to-image';
+  const model = process.env.WAVESPEED_KLING_MODEL || 'kwaivgi/kling-video-o3-std/text-to-video';
   const createUrl = `${apiBase}/api/v3/${model}`;
+  const klingAspectRatio = ['16:9', '9:16', '1:1'].includes(aspectRatio) ? aspectRatio : '1:1';
+  const rawDuration = Number(process.env.WAVESPEED_KLING_VIDEO_DURATION || 5);
+  const duration = Number.isFinite(rawDuration) && rawDuration >= 3 && rawDuration <= 15 ? Math.floor(rawDuration) : 5;
 
   try {
     const createResponse = await fetch(createUrl, {
@@ -2611,8 +2625,9 @@ async function callKlingWavespeed(prompt: string, aspectRatio: string): Promise<
       },
       body: JSON.stringify({
         prompt,
-        aspect_ratio: aspectRatio,
-        output_format: 'png',
+        aspect_ratio: klingAspectRatio,
+        duration,
+        sound: false,
       }),
       signal: AbortSignal.timeout(60000),
     });
@@ -3123,13 +3138,18 @@ RULES FOR EACH PROMPT:
       if (!generationSuccess && selectedModel === 'kling' && WAVESPEED_API_KEY) {
         const klingResult = await callKlingWavespeed(imagePrompt, selectedRatio);
         if (klingResult.success) {
-          actualGenerationMethod = 'kling';
+          const klingMimeType = klingResult.mimeType || 'video/mp4';
+          actualGenerationMethod = klingMimeType.startsWith('video/') ? 'kling_video' : 'kling';
           generationSuccess = true;
 
           let publicUrl = '';
           let base64Data = klingResult.base64;
+          const isVideo = klingMimeType.startsWith('video/');
 
-          if (klingResult.imageUrl && !klingResult.base64) {
+          // For video outputs, preserve provider URL directly.
+          if (isVideo && klingResult.imageUrl) {
+            publicUrl = klingResult.imageUrl;
+          } else if (klingResult.imageUrl && !klingResult.base64) {
             try {
               const imageResponse = await fetch(klingResult.imageUrl);
               if (imageResponse.ok) {
@@ -3142,29 +3162,31 @@ RULES FOR EACH PROMPT:
             }
           }
 
-          if (base64Data) {
+          if (publicUrl || base64Data) {
             try {
-              const mimeType = klingResult.mimeType || 'image/png';
-              const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-              const buf = Buffer.from(base64Data, 'base64');
-              const fileName = `creative-kling-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-              const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
+              const mimeType = klingMimeType;
+              const ext = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'video/mp4' ? 'mp4' : 'png';
+              if (!publicUrl && base64Data) {
+                const buf = Buffer.from(base64Data, 'base64');
+                const fileName = `creative-kling-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+                const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
 
-              const uploadRes = await fetch(storageUrl, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                  'Content-Type': mimeType,
-                  'x-upsert': 'true',
-                  'Content-Length': String(buf.length),
-                },
-                body: buf,
-              });
+                const uploadRes = await fetch(storageUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'Content-Type': mimeType,
+                    'x-upsert': 'true',
+                    'Content-Length': String(buf.length),
+                  },
+                  body: buf,
+                });
 
-              if (uploadRes.ok) {
-                publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-              } else {
-                console.error('[api/creatives] Kling upload failed:', await uploadRes.text());
+                if (uploadRes.ok) {
+                  publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
+                } else {
+                  console.error('[api/creatives] Kling upload failed:', await uploadRes.text());
+                }
               }
             } catch (uploadErr: any) {
               console.error('[api/creatives] Kling upload error:', uploadErr);
@@ -3172,11 +3194,11 @@ RULES FOR EACH PROMPT:
 
             creatives.push({
               url: publicUrl || null,
-              base64: base64Data,
-              mimeType: klingResult.mimeType || 'image/png',
+              ...(base64Data ? { base64: base64Data } : {}),
+              mimeType: klingMimeType,
               prompt: imagePrompt,
               aspect_ratio: selectedRatio,
-              generation_method: 'kling',
+              generation_method: actualGenerationMethod,
             });
           }
         } else {

@@ -19,7 +19,7 @@ Get your API key at [zuckerbot.ai/developer](https://zuckerbot.ai/developer). Ke
 ## What It Does
 
 - **Campaign generation** - Give it a URL, get back a full ad strategy with targeting, budget, and copy
-- **Ad creative generation** - AI-generated ad images via Seedream, Imagen, or Kling plus copy via Claude
+- **Ad creative generation** - AI-generated ad media via Seedream/Imagen images or Kling videos, plus copy via Claude
 - **Campaign management** - Launch, pause, and resume campaigns on the Meta Marketing API
 - **Performance tracking** - Real-time metrics from Meta: impressions, clicks, spend, leads, CPL
 - **Conversion feedback** - Feed lead quality back to Meta's algorithm to improve targeting
@@ -150,7 +150,7 @@ curl -X POST https://zuckerbot.ai/api/v1/creatives/generate \
   }'
 ```
 
-Returns ad copy variants with AI-generated images (powered by Seedream, Imagen, or Kling). `quality: "ultra"` is supported only when `model: "kling"`.
+Returns ad copy variants with AI-generated media (images for Seedream/Imagen, short videos for Kling). `quality: "ultra"` is supported only when `model: "kling"`.
 
 ## Credits and Errors
 

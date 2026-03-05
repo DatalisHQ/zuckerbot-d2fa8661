@@ -48,6 +48,7 @@ interface NewKeyResponse {
 
 interface CreativeDemoItem {
   url: string | null;
+  mimeType?: string;
   prompt?: string;
   aspect_ratio?: string;
 }
@@ -835,7 +836,17 @@ const Developer = () => {
                           <div key={`${creative.url || "creative"}-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-3">
                             <div className="aspect-square overflow-hidden rounded-md bg-black/30 mb-3">
                               {creative.url ? (
-                                <img src={creative.url} alt={`Creative ${index + 1}`} className="h-full w-full object-cover" />
+                                (creative.mimeType?.startsWith("video/") || creative.url.toLowerCase().includes(".mp4")) ? (
+                                  <video
+                                    src={creative.url}
+                                    className="h-full w-full object-cover"
+                                    controls
+                                    muted
+                                    playsInline
+                                  />
+                                ) : (
+                                  <img src={creative.url} alt={`Creative ${index + 1}`} className="h-full w-full object-cover" />
+                                )
                               ) : (
                                 <div className="h-full w-full flex items-center justify-center text-xs text-gray-500">No preview URL</div>
                               )}
