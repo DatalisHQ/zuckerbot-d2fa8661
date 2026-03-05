@@ -344,7 +344,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 11. Generate Creatives ──────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
-    "Generate ad creatives independently from campaign creation. Supports image creatives (Seedream/Imagen) and video creatives (Kling). Use media_type='video' for video ads.",
+    "Generate ad creatives independently from campaign creation. Supports image creatives (Seedream/Imagen) and video creatives (Kling). If the prompt text asks for a video ad, the tool auto-routes to Kling/video unless explicitly overridden.",
     {
       business_name: z.string().describe("Business name"),
       description: z.string().describe("Brief description of the business"),
@@ -357,12 +357,12 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         .describe("Number of creative variants to generate (1-5)"),
       model: z
         .enum(["auto", "seedream", "imagen", "kling"])
-        .default("auto")
-        .describe("Model selection. auto/seedream/imagen are image paths, kling is video path."),
+        .optional()
+        .describe("Model selection. auto/seedream/imagen are image paths, kling is video path. Optional; inferred when omitted."),
       media_type: z
         .enum(["image", "video"])
-        .default("image")
-        .describe("Output media type. Set to 'video' for Kling video ads."),
+        .optional()
+        .describe("Output media type. Optional; video intent in text auto-selects 'video'."),
       quality: z
         .enum(["fast", "ultra"])
         .default("fast")
@@ -374,15 +374,20 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
     async ({ business_name, description, count, model, media_type, quality, generate_images }) => {
       try {
-        const resolvedMediaType = model === "kling" ? "video" : media_type;
+        const intentText = `${business_name} ${description}`.toLowerCase();
+        const inferredVideoIntent = /\b(video|video ad|reel|short[- ]form|ugc|clip|tiktok)\b/.test(intentText);
+        const resolvedModel = model ?? (inferredVideoIntent ? "kling" : "auto");
+        const resolvedMediaType = resolvedModel === "kling" || media_type === "video" || inferredVideoIntent
+          ? "video"
+          : "image";
         const result = await client.post("/creatives/generate", {
           business_name,
           description,
           count,
-          model,
+          model: resolvedModel,
           media_type: resolvedMediaType,
-          quality,
-          generate_images,
+          quality: quality ?? "fast",
+          generate_images: generate_images ?? true,
         });
         return formatResult(result);
       } catch (err) {
