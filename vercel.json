@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/v1-router.ts": {
-      "maxDuration": 60
+      "maxDuration": 120
     }
   },
   "rewrites": [
