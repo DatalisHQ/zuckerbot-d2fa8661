@@ -19,6 +19,7 @@
  *   POST /api/v1/creatives/:id/variants     → handleCreativeVariants
  *   POST /api/v1/creatives/:id/feedback     → handleCreativeFeedback
  *   GET  /api/v1/meta/status                → handleMetaStatus
+ *   GET  /api/v1/meta/credentials           → handleMetaCredentials
  *   POST /api/v1/notifications/telegram     → handleSetTelegram
  */
 
@@ -596,6 +597,134 @@ async function metaPost(endpoint: string, data: Record<string, any>, accessToken
   }
 }
 
+type CredentialSource = 'request' | 'businesses' | 'meta_profiles' | 'mixed' | null;
+
+interface ResolvedMetaCredentials {
+  meta_access_token: string | null;
+  meta_ad_account_id: string | null;
+  meta_page_id: string | null;
+  business_id: string | null;
+  source: CredentialSource;
+}
+
+function normalizeString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function resolveMetaCredentials(params: {
+  apiKeyId: string;
+  userId: string;
+  meta_access_token?: string | null;
+  meta_ad_account_id?: string | null;
+  meta_page_id?: string | null;
+}): Promise<ResolvedMetaCredentials> {
+  let accessToken = normalizeString(params.meta_access_token);
+  let adAccountId = normalizeString(params.meta_ad_account_id);
+  let pageId = normalizeString(params.meta_page_id);
+
+  const sources = new Set<string>();
+  if (accessToken || adAccountId || pageId) {
+    sources.add('request');
+  }
+
+  let businessId: string | null = null;
+  const { data: keyWithBiz } = await supabaseAdmin
+    .from('api_keys')
+    .select('business_id')
+    .eq('id', params.apiKeyId)
+    .maybeSingle();
+
+  businessId = normalizeString(keyWithBiz?.business_id);
+
+  if (!businessId) {
+    const { data: userBiz } = await supabaseAdmin
+      .from('businesses')
+      .select('id')
+      .eq('user_id', params.userId)
+      .limit(1)
+      .maybeSingle();
+    businessId = normalizeString(userBiz?.id);
+  }
+
+  if (businessId) {
+    const { data: biz } = await supabaseAdmin
+      .from('businesses')
+      .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
+      .eq('id', businessId)
+      .maybeSingle();
+
+    const businessAccessToken = normalizeString(biz?.facebook_access_token);
+    const businessAdAccountId = normalizeString(biz?.facebook_ad_account_id);
+    const businessPageId = normalizeString(biz?.facebook_page_id);
+
+    if (businessAccessToken || businessAdAccountId || businessPageId) {
+      sources.add('businesses');
+    }
+
+    accessToken = accessToken || businessAccessToken;
+    adAccountId = adAccountId || businessAdAccountId;
+    pageId = pageId || businessPageId;
+  }
+
+  if (!accessToken || !adAccountId || !pageId) {
+    const { data: metaProfile, error: metaProfileError } = await supabaseAdmin
+      .from('meta_profiles')
+      .select('*')
+      .eq('user_id', params.userId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (metaProfileError && metaProfileError.code !== '42P01' && metaProfileError.code !== 'PGRST205') {
+      console.warn('[api/meta] Could not read meta_profiles:', metaProfileError.message);
+    }
+
+    if (metaProfile) {
+      const profileAccessToken = normalizeString(
+        metaProfile.meta_access_token
+        || metaProfile.access_token
+        || metaProfile.facebook_access_token
+        || metaProfile.token,
+      );
+      const profileAdAccountId = normalizeString(
+        metaProfile.meta_ad_account_id
+        || metaProfile.ad_account_id
+        || metaProfile.facebook_ad_account_id,
+      );
+      const profilePageId = normalizeString(
+        metaProfile.meta_page_id
+        || metaProfile.page_id
+        || metaProfile.facebook_page_id,
+      );
+
+      if (profileAccessToken || profileAdAccountId || profilePageId) {
+        sources.add('meta_profiles');
+      }
+
+      accessToken = accessToken || profileAccessToken;
+      adAccountId = adAccountId || profileAdAccountId;
+      pageId = pageId || profilePageId;
+    }
+  }
+
+  let source: CredentialSource = null;
+  if (sources.size === 1) {
+    source = Array.from(sources)[0] as CredentialSource;
+  } else if (sources.size > 1) {
+    source = 'mixed';
+  }
+
+  return {
+    meta_access_token: accessToken,
+    meta_ad_account_id: adAccountId,
+    meta_page_id: pageId,
+    business_id: businessId,
+    source,
+  };
+}
+
 /**
  * Internal campaign launch logic (used by both /create with auto_launch and /launch)
  */
@@ -1065,42 +1194,17 @@ RULES:
 
     // Auto-launch if requested
     if (auto_launch === true) {
-      let autoLaunchBusinessId: string | null = null;
-      // If credentials not provided, look up from linked business (same logic as /campaigns/:id/launch)
-      if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
-        const { data: keyWithBiz } = await supabaseAdmin
-          .from('api_keys')
-          .select('business_id')
-          .eq('id', auth.keyRecord.id)
-          .single();
-
-        let businessId = keyWithBiz?.business_id;
-
-        if (!businessId) {
-          const { data: userBiz } = await supabaseAdmin
-            .from('businesses')
-            .select('id')
-            .eq('user_id', auth.keyRecord.user_id)
-            .limit(1)
-            .single();
-          businessId = userBiz?.id;
-        }
-
-        if (businessId) {
-          autoLaunchBusinessId = businessId;
-          const { data: biz } = await supabaseAdmin
-            .from('businesses')
-            .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
-            .eq('id', businessId)
-            .single();
-
-          if (biz) {
-            meta_access_token = meta_access_token || biz.facebook_access_token;
-            meta_ad_account_id = meta_ad_account_id || biz.facebook_ad_account_id;
-            meta_page_id = meta_page_id || biz.facebook_page_id;
-          }
-        }
-      }
+      const resolvedMeta = await resolveMetaCredentials({
+        apiKeyId: auth.keyRecord.id,
+        userId: auth.keyRecord.user_id,
+        meta_access_token,
+        meta_ad_account_id,
+        meta_page_id,
+      });
+      const autoLaunchBusinessId: string | null = resolvedMeta.business_id;
+      meta_access_token = resolvedMeta.meta_access_token;
+      meta_ad_account_id = resolvedMeta.meta_ad_account_id;
+      meta_page_id = resolvedMeta.meta_page_id;
 
       const hasToken = typeof meta_access_token === 'string' && meta_access_token.length > 0;
       const hasAdAccount = typeof meta_ad_account_id === 'string' && meta_ad_account_id.length > 0;
@@ -1223,43 +1327,18 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
 
   let { meta_access_token, meta_ad_account_id, meta_page_id, variant_index = 0, daily_budget_cents, radius_km, launch_all_variants = false } = req.body || {};
 
-  let launchBusinessId: string | null = null;
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+    meta_access_token,
+    meta_ad_account_id,
+    meta_page_id,
+  });
 
-  // If credentials not provided, look up from linked business
-  if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
-    const { data: keyWithBiz } = await supabaseAdmin
-      .from('api_keys')
-      .select('business_id')
-      .eq('id', auth.keyRecord.id)
-      .single();
-
-    let businessId = keyWithBiz?.business_id;
-
-    if (!businessId) {
-      const { data: userBiz } = await supabaseAdmin
-        .from('businesses')
-        .select('id')
-        .eq('user_id', auth.keyRecord.user_id)
-        .limit(1)
-        .single();
-      businessId = userBiz?.id;
-    }
-
-    if (businessId) {
-      launchBusinessId = businessId;
-      const { data: biz } = await supabaseAdmin
-        .from('businesses')
-        .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
-        .eq('id', businessId)
-        .single();
-
-      if (biz) {
-        meta_access_token = meta_access_token || biz.facebook_access_token;
-        meta_ad_account_id = meta_ad_account_id || biz.facebook_ad_account_id;
-        meta_page_id = meta_page_id || biz.facebook_page_id;
-      }
-    }
-  }
+  const launchBusinessId: string | null = resolvedMeta.business_id;
+  meta_access_token = resolvedMeta.meta_access_token;
+  meta_ad_account_id = resolvedMeta.meta_ad_account_id;
+  meta_page_id = resolvedMeta.meta_page_id;
 
   if (!meta_access_token || !meta_ad_account_id || !meta_page_id) {
     const missing = [
@@ -2304,57 +2383,98 @@ async function handleMetaStatus(req: VercelRequest, res: VercelResponse) {
   assertAuth(auth);
   applyRateLimitHeaders(res, auth.rateLimitHeaders);
 
-  const { data: keyRecord } = await supabaseAdmin
-    .from('api_keys')
-    .select('business_id')
-    .eq('id', auth.keyRecord.id)
-    .single();
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+  });
 
-  let businessId = keyRecord?.business_id;
-  if (!businessId) {
-    const { data: userBiz } = await supabaseAdmin
+  let businessName: string | null = null;
+  if (resolvedMeta.business_id) {
+    const { data: business } = await supabaseAdmin
       .from('businesses')
-      .select('id')
-      .eq('user_id', auth.keyRecord.user_id)
-      .limit(1)
-      .single();
-    businessId = userBiz?.id;
+      .select('name')
+      .eq('id', resolvedMeta.business_id)
+      .maybeSingle();
+    businessName = normalizeString(business?.name);
   }
 
-  if (!businessId) {
-    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/status', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
-    return res.status(200).json({
-      connected: false,
-      has_business: false,
-      message: 'No business profile found. Create one at https://zuckerbot.ai/profile',
-      connect_url: 'https://zuckerbot.ai/profile',
-    });
-  }
-
-  const { data: biz } = await supabaseAdmin
-    .from('businesses')
-    .select('facebook_access_token, facebook_ad_account_id, facebook_page_id, name')
-    .eq('id', businessId)
-    .single();
-
-  const hasToken = !!biz?.facebook_access_token;
-  const hasAdAccount = !!biz?.facebook_ad_account_id;
-  const hasPage = !!biz?.facebook_page_id;
+  const hasToken = !!resolvedMeta.meta_access_token;
+  const hasAdAccount = !!resolvedMeta.meta_ad_account_id;
+  const hasPage = !!resolvedMeta.meta_page_id;
   const connected = hasToken && hasAdAccount && hasPage;
+
+  const missing = [
+    !hasToken ? 'meta_access_token' : null,
+    !hasAdAccount ? 'meta_ad_account_id' : null,
+    !hasPage ? 'meta_page_id' : null,
+  ].filter(Boolean);
 
   await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/status', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
 
   return res.status(200).json({
     connected,
-    has_business: true,
-    business_name: biz?.name || null,
+    has_business: !!resolvedMeta.business_id,
+    business_name: businessName,
     credentials: {
       access_token: hasToken,
       ad_account_id: hasAdAccount,
       page_id: hasPage,
+      resolved_ad_account_id: resolvedMeta.meta_ad_account_id,
+      resolved_page_id: resolvedMeta.meta_page_id,
+      source: resolvedMeta.source,
     },
+    missing,
     ...(connected ? {} : {
       message: 'Facebook not fully connected. Connect at https://zuckerbot.ai/profile',
+      connect_url: 'https://zuckerbot.ai/profile',
+    }),
+  });
+}
+
+// ── GET /api/v1/meta/credentials ────────────────────────────────────────
+
+async function handleMetaCredentials(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+  });
+
+  const canLaunchAutonomously = !!(
+    resolvedMeta.meta_access_token
+    && resolvedMeta.meta_ad_account_id
+    && resolvedMeta.meta_page_id
+  );
+
+  const missing = [
+    !resolvedMeta.meta_access_token ? 'meta_access_token' : null,
+    !resolvedMeta.meta_ad_account_id ? 'meta_ad_account_id' : null,
+    !resolvedMeta.meta_page_id ? 'meta_page_id' : null,
+  ].filter(Boolean);
+
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/credentials', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
+
+  return res.status(200).json({
+    can_launch_autonomously: canLaunchAutonomously,
+    source: resolvedMeta.source,
+    credentials: {
+      access_token: !!resolvedMeta.meta_access_token,
+      ad_account_id: resolvedMeta.meta_ad_account_id,
+      page_id: resolvedMeta.meta_page_id,
+    },
+    missing,
+    ...(canLaunchAutonomously ? {} : {
+      message: 'Facebook credentials are incomplete. Connect at https://zuckerbot.ai/profile',
       connect_url: 'https://zuckerbot.ai/profile',
     }),
   });
@@ -2453,7 +2573,7 @@ function extractImageResult(payload: any): SeedreamResult {
 
   const imageUrl =
     payload?.data?.[0]?.url
-    || payload?.output?.[0]?.url
+    || (typeof payload?.output?.[0] === 'string' ? payload?.output?.[0] : payload?.output?.[0]?.url)
     || (typeof payload?.outputs?.[0] === 'string' ? payload?.outputs?.[0] : payload?.outputs?.[0]?.url)
     || payload?.result?.images?.[0]?.url
     || payload?.image_url
@@ -2479,7 +2599,7 @@ async function callSeedreamAIML(prompt: string, aspectRatio: string): Promise<Se
     return { success: false, error: 'AIML API key not configured' };
   }
 
-  try {
+  const requestSeedream = async (ratio: string): Promise<SeedreamResult> => {
     const response = await fetch('https://api.aimlapi.com/v1/images/generations', {
       method: 'POST',
       headers: {
@@ -2488,8 +2608,8 @@ async function callSeedreamAIML(prompt: string, aspectRatio: string): Promise<Se
       },
       body: JSON.stringify({
         model: 'bytedance/seedream-4-5',
-        prompt: prompt,
-        image_size: getImageSizeFromAspectRatio(aspectRatio),
+        prompt,
+        image_size: getImageSizeFromAspectRatio(ratio),
         response_format: 'b64_json',
       }),
       signal: AbortSignal.timeout(60000),
@@ -2501,15 +2621,29 @@ async function callSeedreamAIML(prompt: string, aspectRatio: string): Promise<Se
     }
 
     const data = await response.json();
-    if (data.data && data.data[0] && data.data[0].b64_json) {
-      return {
-        success: true,
-        base64: data.data[0].b64_json,
-        mimeType: 'image/png',
+    const normalized = extractImageResult(data);
+    if (normalized.success) {
+      return normalized;
+    }
+
+    return { success: false, error: normalized.error || 'No image payload found in AIML response' };
+  };
+
+  try {
+    let result = await requestSeedream(aspectRatio);
+    if (result.success) return result;
+
+    // Safety fallback for provider-side ratio rejections.
+    if (aspectRatio !== '1:1') {
+      const retryResult = await requestSeedream('1:1');
+      if (retryResult.success) return retryResult;
+      result = {
+        success: false,
+        error: `${result.error}; retry 1:1 failed: ${retryResult.error}`,
       };
     }
 
-    return { success: false, error: 'No image data in response' };
+    return result;
   } catch (error: any) {
     return { success: false, error: `AIML API call failed: ${error.message}` };
   }
@@ -2523,31 +2657,55 @@ async function callSeedreamReplicate(prompt: string, aspectRatio: string): Promi
     return { success: false, error: 'Replicate API token not configured' };
   }
 
-  try {
-    // Start prediction
-    const startResponse = await fetch('https://api.replicate.com/v1/predictions', {
+  const mapReplicateAspectRatio = (ratio: string): string => {
+    if (['1:1', '16:9', '9:16', '3:2', '2:3', '4:3', '3:4'].includes(ratio)) return ratio;
+    return '1:1';
+  };
+
+  const startPrediction = async (ratio: string): Promise<{ id?: string; error?: string }> => {
+    const startResponse = await fetch('https://api.replicate.com/v1/models/bytedance/seedream-4.5/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${REPLICATE_API_TOKEN}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        version: 'bytedance/seedream-4.5',
         input: {
-          prompt: prompt,
-          width: aspectRatio === '16:9' ? 1280 : aspectRatio === '9:16' ? 720 : 1024,
-          height: aspectRatio === '16:9' ? 720 : aspectRatio === '9:16' ? 1280 : 1024,
+          prompt,
+          aspect_ratio: mapReplicateAspectRatio(ratio),
         },
       }),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!startResponse.ok) {
       const errorText = await startResponse.text();
-      return { success: false, error: `Replicate start error: ${startResponse.status} ${errorText}` };
+      return { error: `Replicate start error: ${startResponse.status} ${errorText}` };
     }
 
     const prediction = await startResponse.json();
-    const predictionId = prediction.id;
+    return { id: prediction.id };
+  };
+
+  try {
+    let startResult = await startPrediction(aspectRatio);
+    if (!startResult.id && aspectRatio !== '1:1') {
+      const retryStart = await startPrediction('1:1');
+      if (retryStart.id) {
+        startResult = retryStart;
+      } else {
+        return {
+          success: false,
+          error: `${startResult.error}; retry 1:1 failed: ${retryStart.error}`,
+        };
+      }
+    }
+
+    if (!startResult.id) {
+      return { success: false, error: startResult.error || 'Replicate failed to start prediction' };
+    }
+
+    const predictionId = startResult.id;
 
     // Poll for completion (max 60 seconds)
     for (let i = 0; i < 30; i++) {
@@ -2559,12 +2717,17 @@ async function callSeedreamReplicate(prompt: string, aspectRatio: string): Promi
 
       if (statusResponse.ok) {
         const status = await statusResponse.json();
-        if (status.status === 'succeeded' && status.output && status.output.length > 0) {
-          return {
-            success: true,
-            imageUrl: status.output[0],
-            mimeType: 'image/png',
-          };
+        if (status.status === 'succeeded') {
+          const normalized = extractImageResult(status);
+          if (normalized.success) return normalized;
+          const output = status?.output;
+          if (typeof output === 'string' && output.length > 0) {
+            return { success: true, imageUrl: output, mimeType: inferMimeTypeFromUrl(output) };
+          }
+          if (Array.isArray(output) && typeof output[0] === 'string' && output[0].length > 0) {
+            return { success: true, imageUrl: output[0], mimeType: inferMimeTypeFromUrl(output[0]) };
+          }
+          return { success: false, error: normalized.error || 'Replicate succeeded without media output' };
         } else if (status.status === 'failed') {
           return { success: false, error: `Replicate prediction failed: ${status.error}` };
         }
@@ -2763,7 +2926,10 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
 
   // Validate model
   const validModels = ['seedream', 'imagen', 'kling', 'auto'];
-  const selectedModel: string = validModels.includes(model) ? model : 'auto';
+  const requestedModel: string = validModels.includes(model) ? model : 'auto';
+  const intentText = `${business_name || ''} ${description || ''}`.toLowerCase();
+  const inferredVideoIntent = !model && !media_type && /\b(video|video ad|reel|short[- ]form|ugc|clip|tiktok)\b/.test(intentText);
+  const selectedModel: string = inferredVideoIntent ? 'kling' : requestedModel;
   const isVideoRequest = media_type === 'video' || selectedModel === 'kling';
 
   // Validate quality
@@ -2991,6 +3157,7 @@ RULES FOR EACH PROMPT:
       aspect_ratio: string;
       generation_method?: string;
     }> = [];
+    const providerErrors: Array<{ provider: string; error: string }> = [];
     let actualGenerationMethod = 'unknown';
 
     if (isVideoRequest) {
@@ -2999,6 +3166,7 @@ RULES FOR EACH PROMPT:
         const klingResult = await callKlingWavespeed(videoPrompt, selectedRatio);
         if (!klingResult.success) {
           console.warn('[api/creatives] Kling generation failed:', klingResult.error);
+          providerErrors.push({ provider: 'kling', error: String(klingResult.error || 'unknown error') });
           continue;
         }
 
@@ -3110,6 +3278,8 @@ RULES FOR EACH PROMPT:
                 generation_method: 'seedream',
               });
             }
+          } else if (seedreamResult.error) {
+            providerErrors.push({ provider: 'seedream', error: String(seedreamResult.error) });
           }
         }
         
@@ -3187,7 +3357,9 @@ RULES FOR EACH PROMPT:
               }
             }
           } else {
-            console.error('[api/creatives] Imagen API error:', await imagenResponse.text());
+            const imagenError = await imagenResponse.text();
+            console.error('[api/creatives] Imagen API error:', imagenError);
+            providerErrors.push({ provider: 'imagen', error: `HTTP ${imagenResponse.status}: ${imagenError}` });
           }
         }
       }
@@ -3196,6 +3368,11 @@ RULES FOR EACH PROMPT:
     const candidateCount = creatives.length;
 
     if (creatives.length === 0) {
+      const failureCode = isVideoRequest ? 'video_generation_failed' : 'image_generation_failed';
+      const failureMessage = isVideoRequest
+        ? 'Video generation service failed to produce any videos. Try again or use a different description.'
+        : 'Image generation service failed to produce any images. Try again or use a different description.';
+
       await logUsage({ 
         apiKeyId: auth.keyRecord.id, 
         endpoint: '/v1/creatives/generate', 
@@ -3205,7 +3382,10 @@ RULES FOR EACH PROMPT:
   
   
       });
-      return res.status(502).json({ error: { code: 'image_generation_failed', message: 'Image generation service failed to produce any images. Try again or use a different description.' } });
+      return res.status(502).json({
+        error: { code: failureCode, message: failureMessage },
+        diagnostics: providerErrors.slice(0, 5),
+      });
     }
 
     // Ultra mode for Kling: best-of-N selection (N=6 generated, return top requested count)
@@ -4345,6 +4525,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'research/market') return handleMarket(req, res);
   if (route === 'creatives/generate') return handleCreativesGenerate(req, res);
   if (route === 'meta/status') return handleMetaStatus(req, res);
+  if (route === 'meta/credentials') return handleMetaCredentials(req, res);
   if (route === 'notifications/telegram') return handleSetTelegram(req, res);
 
   // ── Dynamic campaign/:id routes ────────────────────────────────────
@@ -4399,6 +4580,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/autonomous/execute',
         'POST /api/v1/autonomous/run',
         'GET  /api/v1/meta/status',
+        'GET  /api/v1/meta/credentials',
         'POST /api/v1/notifications/telegram',
       ],
     },

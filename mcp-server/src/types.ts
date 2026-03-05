@@ -88,12 +88,13 @@ export interface CreateCampaignResponse {
 
 export interface LaunchCampaignRequest {
   campaign_id: string;
-  meta_access_token: string;
-  meta_ad_account_id: string;
-  meta_page_id: string;
+  meta_access_token?: string;
+  meta_ad_account_id?: string;
+  meta_page_id?: string;
   variant_index?: number;
   daily_budget_cents?: number;
   radius_km?: number;
+  launch_all_variants?: boolean;
 }
 
 export interface LaunchCampaignResponse {
@@ -207,6 +208,9 @@ export interface GenerateCreativesRequest {
   business_name: string;
   description: string;
   count?: number;
+  model?: "auto" | "seedream" | "imagen" | "kling";
+  media_type?: "image" | "video";
+  quality?: "fast" | "ultra";
   generate_images?: boolean;
 }
 

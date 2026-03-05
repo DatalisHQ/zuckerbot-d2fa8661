@@ -72,14 +72,18 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot-mcp
 |------|-------------|-----------------|
 | `zuckerbot_preview_campaign` | Generate ad preview from a URL (no Meta account needed) | `url` |
 | `zuckerbot_create_campaign` | Create full campaign with strategy, targeting, and creatives | `url` |
-| `zuckerbot_launch_campaign` | Launch a draft campaign on Meta (spends real money) | `campaign_id`, `meta_access_token`, `meta_ad_account_id`, `meta_page_id` |
+| `zuckerbot_launch_campaign` | Launch one variant from a draft campaign on Meta (uses stored credentials when available) | `campaign_id` |
+| `zuckerbot_launch_all_variants` | Launch all variants for A/B testing in one call | `campaign_id` |
 | `zuckerbot_pause_campaign` | Pause or resume a live campaign | `campaign_id` |
 | `zuckerbot_get_performance` | Get real-time campaign metrics | `campaign_id` |
 | `zuckerbot_sync_conversion` | Send lead conversion feedback to Meta's algorithm | `campaign_id`, `lead_id`, `quality`, `meta_access_token` |
 | `zuckerbot_research_reviews` | Get review intelligence for a business | `business_name` |
 | `zuckerbot_research_competitors` | Analyze competitor ads in a category | `industry`, `location` |
 | `zuckerbot_research_market` | Get market intelligence and ad benchmarks | `industry`, `location` |
-| `zuckerbot_generate_creatives` | Generate ad copy and images independently | `business_name`, `description` |
+| `zuckerbot_meta_status` | Check whether Meta is connected for this API key/user | none |
+| `zuckerbot_get_launch_credentials` | Resolve stored launch credentials and report missing fields | none |
+| `zuckerbot_generate_creatives` | Generate ad copy and creatives (images or Kling video) | `business_name`, `description` |
+| `zuckerbot_generate_ad_creative` | Legacy alias for creative generation | `business_name`, `description` |
 
 ## Example Conversation
 

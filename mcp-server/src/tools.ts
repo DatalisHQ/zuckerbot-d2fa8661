@@ -131,7 +131,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 3. Launch Campaign ──────────────────────────────────────────
   server.tool(
     "zuckerbot_launch_campaign",
-    "Launch a draft campaign on Meta (Facebook/Instagram). This is the money endpoint — it creates real ads on the user's Meta ad account and starts spending their budget. Requires Meta credentials.",
+    "Launch a draft campaign on Meta (Facebook/Instagram). This is the money endpoint — it creates real ads on the user's Meta ad account and starts spending their budget. Stored credentials are auto-resolved when available.",
     {
       campaign_id: z.string().describe("ZuckerBot campaign ID from the create step"),
       meta_access_token: z.string().optional().describe("User's Meta/Facebook access token. Optional if Facebook is connected on zuckerbot.ai"),
@@ -177,7 +177,42 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 4. Pause / Resume Campaign ─────────────────────────────────
+  // ── 4. Launch All Variants ─────────────────────────────────────
+  server.tool(
+    "zuckerbot_launch_all_variants",
+    "Launch all creative variants from a draft campaign as separate ads for A/B testing. Uses stored Meta credentials when available.",
+    {
+      campaign_id: z.string().describe("ZuckerBot campaign ID from the create step"),
+      meta_access_token: z.string().optional().describe("Optional Meta/Facebook access token override"),
+      meta_ad_account_id: z.string().optional().describe("Optional Meta ad account ID override (format: act_XXXXX)"),
+      meta_page_id: z.string().optional().describe("Optional Facebook Page ID override"),
+      daily_budget_cents: z
+        .number()
+        .int()
+        .optional()
+        .describe("Optional daily budget override in cents"),
+      radius_km: z.number().int().optional().describe("Optional targeting radius override in km"),
+    },
+    async ({ campaign_id, meta_access_token, meta_ad_account_id, meta_page_id, daily_budget_cents, radius_km }) => {
+      try {
+        const body: Record<string, unknown> = {
+          launch_all_variants: true,
+        };
+        if (meta_access_token) body.meta_access_token = meta_access_token;
+        if (meta_ad_account_id) body.meta_ad_account_id = meta_ad_account_id;
+        if (meta_page_id) body.meta_page_id = meta_page_id;
+        if (daily_budget_cents !== undefined) body.daily_budget_cents = daily_budget_cents;
+        if (radius_km !== undefined) body.radius_km = radius_km;
+
+        const result = await client.post(`/campaigns/${campaign_id}/launch`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 5. Pause / Resume Campaign ─────────────────────────────────
   server.tool(
     "zuckerbot_pause_campaign",
     "Pause or resume a running campaign on Meta. Pausing stops ad delivery and spend immediately. Resuming restarts delivery.",
@@ -200,7 +235,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 5. Get Performance ──────────────────────────────────────────
+  // ── 6. Get Performance ──────────────────────────────────────────
   server.tool(
     "zuckerbot_get_performance",
     "Get real-time performance metrics for a campaign. Returns impressions, clicks, spend, leads, cost-per-lead, click-through rate, and a performance status (learning/healthy/underperforming/paused).",
@@ -217,7 +252,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 6. Sync Conversion ─────────────────────────────────────────
+  // ── 7. Sync Conversion ─────────────────────────────────────────
   server.tool(
     "zuckerbot_sync_conversion",
     "Send conversion feedback to Meta's algorithm. When a lead converts (or doesn't), this teaches Meta to find more (or fewer) people like them. Critical for improving lead quality over time.",
@@ -341,7 +376,22 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 11. Generate Creatives ──────────────────────────────────────
+  // ── 12. Resolve Launch Credentials ──────────────────────────────
+  server.tool(
+    "zuckerbot_get_launch_credentials",
+    "Resolve stored Meta launch credentials for the authenticated API key/user and report whether autonomous launch is possible.",
+    {},
+    async () => {
+      try {
+        const result = await client.get("/meta/credentials");
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 13. Generate Creatives ──────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
     "Generate ad creatives independently from campaign creation. Supports image creatives (Seedream/Imagen) and video creatives (Kling). If the prompt text asks for a video ad, the tool auto-routes to Kling/video unless explicitly overridden.",
@@ -359,6 +409,61 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         .enum(["auto", "seedream", "imagen", "kling"])
         .optional()
         .describe("Model selection. auto/seedream/imagen are image paths, kling is video path. Optional; inferred when omitted."),
+      media_type: z
+        .enum(["image", "video"])
+        .optional()
+        .describe("Output media type. Optional; video intent in text auto-selects 'video'."),
+      quality: z
+        .enum(["fast", "ultra"])
+        .default("fast")
+        .describe('Generation quality. "ultra" is supported only when model is "kling".'),
+      generate_images: z
+        .boolean()
+        .default(true)
+        .describe("Whether to generate AI images (set false for copy-only)"),
+    },
+    async ({ business_name, description, count, model, media_type, quality, generate_images }) => {
+      try {
+        const intentText = `${business_name} ${description}`.toLowerCase();
+        const inferredVideoIntent = /\b(video|video ad|reel|short[- ]form|ugc|clip|tiktok)\b/.test(intentText);
+        const resolvedModel = model ?? (inferredVideoIntent ? "kling" : "auto");
+        const resolvedMediaType = resolvedModel === "kling" || media_type === "video" || inferredVideoIntent
+          ? "video"
+          : "image";
+        const result = await client.post("/creatives/generate", {
+          business_name,
+          description,
+          count,
+          model: resolvedModel,
+          media_type: resolvedMediaType,
+          quality: quality ?? "fast",
+          generate_images: generate_images ?? true,
+        });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 14. Generate Ad Creative (Legacy Alias) ─────────────────────
+  server.tool(
+    "zuckerbot_generate_ad_creative",
+    "Legacy alias of zuckerbot_generate_creatives. Supports image creatives and video creatives (Kling).",
+    {
+      business_name: z.string().describe("Business name"),
+      description: z.string().describe("Brief description of the business"),
+      count: z
+        .number()
+        .int()
+        .min(1)
+        .max(5)
+        .default(2)
+        .describe("Number of creative variants to generate (1-5)"),
+      model: z
+        .enum(["auto", "seedream", "imagen", "kling"])
+        .optional()
+        .describe("Model selection. Optional; inferred when omitted."),
       media_type: z
         .enum(["image", "video"])
         .optional()
