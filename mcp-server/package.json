@@ -1,6 +1,6 @@
 {
   "name": "zuckerbot-mcp",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "MCP server for ZuckerBot — let AI agents run Facebook ad campaigns",
   "type": "module",
   "bin": {
@@ -42,7 +42,7 @@
     "url": "https://github.com/DatalisHQ/zuckerbot/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1"
+    "@modelcontextprotocol/sdk": "1.12.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
