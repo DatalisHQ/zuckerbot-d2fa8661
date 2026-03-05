@@ -2548,12 +2548,12 @@ function inferMimeTypeFromUrl(url?: string): string {
   return 'image/png';
 }
 
-function getImageSizeFromAspectRatio(aspectRatio: string): string {
-  if (aspectRatio === '16:9') return '1280x720';
-  if (aspectRatio === '9:16') return '720x1280';
-  if (aspectRatio === '4:3') return '1024x768';
-  if (aspectRatio === '3:4') return '768x1024';
-  return '1024x1024';
+function getImageSizeFromAspectRatio(aspectRatio: string): { width: number; height: number } {
+  if (aspectRatio === '16:9') return { width: 1280, height: 720 };
+  if (aspectRatio === '9:16') return { width: 720, height: 1280 };
+  if (aspectRatio === '4:3') return { width: 1024, height: 768 };
+  if (aspectRatio === '3:4') return { width: 768, height: 1024 };
+  return { width: 1024, height: 1024 };
 }
 
 function extractImageResult(payload: any): SeedreamResult {
