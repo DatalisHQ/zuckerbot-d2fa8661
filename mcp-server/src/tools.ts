@@ -344,7 +344,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 11. Generate Creatives ──────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
-    "Generate ad creatives (copy + images) independently from campaign creation. Useful for refreshing creatives on an existing campaign or generating options to show a user.",
+    "Generate ad creatives independently from campaign creation. Supports image creatives (Seedream/Imagen) and video creatives (Kling). Use media_type='video' for video ads.",
     {
       business_name: z.string().describe("Business name"),
       description: z.string().describe("Brief description of the business"),
@@ -358,7 +358,11 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
       model: z
         .enum(["auto", "seedream", "imagen", "kling"])
         .default("auto")
-        .describe("Image model selection. auto uses existing Seedream->Imagen chain."),
+        .describe("Model selection. auto/seedream/imagen are image paths, kling is video path."),
+      media_type: z
+        .enum(["image", "video"])
+        .default("image")
+        .describe("Output media type. Set to 'video' for Kling video ads."),
       quality: z
         .enum(["fast", "ultra"])
         .default("fast")
@@ -368,13 +372,15 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         .default(true)
         .describe("Whether to generate AI images (set false for copy-only)"),
     },
-    async ({ business_name, description, count, model, quality, generate_images }) => {
+    async ({ business_name, description, count, model, media_type, quality, generate_images }) => {
       try {
+        const resolvedMediaType = model === "kling" ? "video" : media_type;
         const result = await client.post("/creatives/generate", {
           business_name,
           description,
           count,
           model,
+          media_type: resolvedMediaType,
           quality,
           generate_images,
         });

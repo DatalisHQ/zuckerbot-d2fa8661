@@ -81,7 +81,7 @@ export class ZuckerBotClient {
           throw new ZuckerBotApiError(
             502,
             code,
-            `Meta API error: ${message}`,
+            `Upstream generation error: ${message}`,
           );
         default:
           throw new ZuckerBotApiError(response.status, code, message, retryAfter);
