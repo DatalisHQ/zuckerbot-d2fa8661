@@ -2549,11 +2549,11 @@ function inferMimeTypeFromUrl(url?: string): string {
 }
 
 function getImageSizeFromAspectRatio(aspectRatio: string): { width: number; height: number } {
-  if (aspectRatio === '16:9') return { width: 1280, height: 720 };
-  if (aspectRatio === '9:16') return { width: 720, height: 1280 };
-  if (aspectRatio === '4:3') return { width: 1024, height: 768 };
-  if (aspectRatio === '3:4') return { width: 768, height: 1024 };
-  return { width: 1024, height: 1024 };
+  if (aspectRatio === '16:9') return { width: 2560, height: 1440 };
+  if (aspectRatio === '9:16') return { width: 1440, height: 2560 };
+  if (aspectRatio === '4:3') return { width: 1920, height: 1440 };
+  if (aspectRatio === '3:4') return { width: 1440, height: 1920 };
+  return { width: 2048, height: 2048 };
 }
 
 function extractImageResult(payload: any): SeedreamResult {
