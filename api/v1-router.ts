@@ -2740,6 +2740,7 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
     description,
     style,
     aspect_ratio,
+    media_type,
     count,
     image_count,
     model,
@@ -2763,6 +2764,7 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
   // Validate model
   const validModels = ['seedream', 'imagen', 'kling', 'auto'];
   const selectedModel: string = validModels.includes(model) ? model : 'auto';
+  const isVideoRequest = media_type === 'video' || selectedModel === 'kling';
 
   // Validate quality
   const validQualities = ['fast', 'ultra'];
@@ -2793,12 +2795,12 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
     );
   }
 
-  if (selectedQuality === 'ultra' && selectedModel !== 'kling') {
+  if (selectedQuality === 'ultra' && !isVideoRequest) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
     return validationError(
       res,
       'creatives-generate',
-      '`quality` can be "ultra" only when `model` is "kling"',
+      '`quality` can be "ultra" only for video generation (`media_type: "video"` or `model: "kling"`)',
       {
         business_name: 'Rosebud AI',
         description: 'AI assistant that helps teams ship faster.',
@@ -2812,21 +2814,23 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
     );
   }
 
-  // Check if we have the required APIs for the selected model
-  const needsSeedream = selectedModel === 'seedream' || selectedModel === 'auto';
-  const needsImagen = selectedModel === 'imagen' || selectedModel === 'auto';
-  
-  if (needsSeedream && !AIML_API_KEY && !REPLICATE_API_TOKEN) {
-    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
-    return res.status(500).json({ error: { code: 'config_error', message: 'Seedream API credentials not configured' } });
+  // Check provider availability while preserving fallback chains
+  const hasSeedreamProvider = !!(AIML_API_KEY || REPLICATE_API_TOKEN);
+  const hasImagenProvider = !!GOOGLE_AI_API_KEY;
+
+  if (!isVideoRequest) {
+    if (selectedModel === 'imagen' && !hasImagenProvider) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
+      return res.status(500).json({ error: { code: 'config_error', message: 'Google AI API key not configured' } });
+    }
+
+    if ((selectedModel === 'seedream' || selectedModel === 'auto') && !hasSeedreamProvider && !hasImagenProvider) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
+      return res.status(500).json({ error: { code: 'config_error', message: 'No image generation providers configured (Seedream or Imagen)' } });
+    }
   }
 
-  if (needsImagen && !GOOGLE_AI_API_KEY) {
-    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
-    return res.status(500).json({ error: { code: 'config_error', message: 'Google AI API key not configured' } });
-  }
-
-  if (selectedModel === 'kling' && !WAVESPEED_API_KEY) {
+  if (isVideoRequest && !WAVESPEED_API_KEY) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
     return res.status(500).json({ error: { code: 'config_error', message: 'WaveSpeed API key not configured for Kling model' } });
   }
@@ -2934,7 +2938,7 @@ Respond with ONLY the industry category (e.g., "restaurant", "dental", "ecommerc
       bold: 'Bold and high-impact. Saturated colors, strong contrast, dynamic compositions. Think attention-grabbing billboard or social media thumb-stopper.',
     };
 
-    const requestedPromptCount = selectedModel === 'kling' && selectedQuality === 'ultra' ? 6 : imageCount;
+    const requestedPromptCount = isVideoRequest && selectedQuality === 'ultra' ? 6 : imageCount;
     const promptGenerationRequest = `You are an expert at writing image generation prompts for Facebook ad creatives. Generate ${requestedPromptCount} distinct image prompt(s) for this business.
 
 BUSINESS:
@@ -2978,7 +2982,7 @@ RULES FOR EACH PROMPT:
       return res.status(502).json({ error: { code: 'parse_error', message: 'Failed to generate image prompts from AI' } });
     }
 
-    // Step 4: Generate images using selected model
+    // Step 4: Generate media using selected model routing
     const creatives: Array<{ 
       url: string | null; 
       base64?: string; 
@@ -2989,123 +2993,99 @@ RULES FOR EACH PROMPT:
     }> = [];
     let actualGenerationMethod = 'unknown';
 
-    for (const imagePrompt of prompts) {
-      let generationSuccess = false;
-      
-      // Try Seedream first if auto or explicitly requested
-      if ((selectedModel === 'auto' || selectedModel === 'seedream') && (AIML_API_KEY || REPLICATE_API_TOKEN)) {
-        const seedreamResult = await generateWithSeedream(imagePrompt, selectedRatio);
-        
-        if (seedreamResult.success) {
-          actualGenerationMethod = 'seedream';
-          generationSuccess = true;
-          
-          let publicUrl = '';
-          let base64Data = seedreamResult.base64;
-          
-          // Handle URL-based result (from Replicate)
-          if (seedreamResult.imageUrl && !seedreamResult.base64) {
-            try {
-              const imageResponse = await fetch(seedreamResult.imageUrl);
-              if (imageResponse.ok) {
-                const buffer = await imageResponse.arrayBuffer();
-                base64Data = Buffer.from(buffer).toString('base64');
-              }
-            } catch (err) {
-              console.error('[api/creatives] Failed to download Replicate image:', err);
-              continue;
-            }
-          }
-          
-          // Upload to Supabase Storage
-          if (base64Data) {
-            try {
-              const buf = Buffer.from(base64Data, 'base64');
-              const fileName = `creative-seedream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-              const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
-              
-              const uploadRes = await fetch(storageUrl, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                  'Content-Type': seedreamResult.mimeType || 'image/png',
-                  'x-upsert': 'true',
-                  'Content-Length': String(buf.length),
-                },
-                body: buf,
-              });
-              
-              if (uploadRes.ok) {
-                publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-              } else {
-                console.error('[api/creatives] Seedream upload failed:', await uploadRes.text());
-              }
-            } catch (uploadErr: any) {
-              console.error('[api/creatives] Seedream upload error:', uploadErr);
-            }
-            
-            creatives.push({
-              url: publicUrl || null,
-              base64: base64Data,
-              mimeType: seedreamResult.mimeType || 'image/png',
-              prompt: imagePrompt,
-              aspect_ratio: selectedRatio,
-              generation_method: 'seedream',
+    if (isVideoRequest) {
+      // Dedicated video path: Kling only
+      for (const videoPrompt of prompts) {
+        const klingResult = await callKlingWavespeed(videoPrompt, selectedRatio);
+        if (!klingResult.success) {
+          console.warn('[api/creatives] Kling generation failed:', klingResult.error);
+          continue;
+        }
+
+        const mimeType = klingResult.mimeType || 'video/mp4';
+        let publicUrl = klingResult.imageUrl || null;
+        let base64Data = klingResult.base64;
+
+        if (!publicUrl && base64Data) {
+          try {
+            const ext = mimeType === 'video/mp4' ? 'mp4' : mimeType === 'video/webm' ? 'webm' : 'bin';
+            const fileName = `creative-kling-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+            const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
+            const buf = Buffer.from(base64Data, 'base64');
+            const uploadRes = await fetch(storageUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': mimeType,
+                'x-upsert': 'true',
+                'Content-Length': String(buf.length),
+              },
+              body: buf,
             });
+            if (uploadRes.ok) {
+              publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
+            } else {
+              console.error('[api/creatives] Kling upload failed:', await uploadRes.text());
+            }
+          } catch (uploadErr: any) {
+            console.error('[api/creatives] Kling upload error:', uploadErr);
           }
         }
-      }
-      
-      // Fallback to Imagen if Seedream failed or if explicitly requested
-      if (!generationSuccess && (selectedModel === 'auto' || selectedModel === 'imagen') && GOOGLE_AI_API_KEY) {
-        console.log('[api/creatives] Falling back to Imagen...');
-        
-        const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
-        const imagenBody = {
-          instances: [{ prompt: imagePrompt }],
-          parameters: { sampleCount: 1, aspectRatio: selectedRatio },
-        };
 
-        let imagenResponse = await fetch(imagenUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(imagenBody),
-          signal: AbortSignal.timeout(60000),
-        });
-
-        // Fallback to fast model if standard fails
-        if (!imagenResponse.ok) {
-          console.warn('[api/creatives] Standard Imagen model failed, trying fast model');
-          const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
-          imagenResponse = await fetch(fallbackUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(imagenBody),
-            signal: AbortSignal.timeout(60000),
+        if (publicUrl || base64Data) {
+          actualGenerationMethod = 'kling_video';
+          creatives.push({
+            url: publicUrl,
+            ...(base64Data ? { base64: base64Data } : {}),
+            mimeType,
+            prompt: videoPrompt,
+            aspect_ratio: selectedRatio,
+            generation_method: 'kling_video',
           });
         }
-
-        if (imagenResponse.ok) {
-          const imagenData = await imagenResponse.json();
-          const predictions = imagenData.predictions || [];
-
-          for (const prediction of predictions) {
-            if (prediction.bytesBase64Encoded) {
-              actualGenerationMethod = 'imagen';
-              const mimeType = prediction.mimeType || 'image/png';
-              const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-              const fileName = `creative-imagen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-
-              // Upload to Supabase Storage
-              let publicUrl = '';
+      }
+    } else {
+      // Dedicated image path: Seedream -> Imagen fallback
+      for (const imagePrompt of prompts) {
+        let generationSuccess = false;
+        
+        // Try Seedream first if auto or explicitly requested
+        if ((selectedModel === 'auto' || selectedModel === 'seedream') && (AIML_API_KEY || REPLICATE_API_TOKEN)) {
+          const seedreamResult = await generateWithSeedream(imagePrompt, selectedRatio);
+          
+          if (seedreamResult.success) {
+            actualGenerationMethod = 'seedream';
+            generationSuccess = true;
+            
+            let publicUrl = '';
+            let base64Data = seedreamResult.base64;
+            
+            // Handle URL-based result (from Replicate)
+            if (seedreamResult.imageUrl && !seedreamResult.base64) {
               try {
-                const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
+                const imageResponse = await fetch(seedreamResult.imageUrl);
+                if (imageResponse.ok) {
+                  const buffer = await imageResponse.arrayBuffer();
+                  base64Data = Buffer.from(buffer).toString('base64');
+                }
+              } catch (err) {
+                console.error('[api/creatives] Failed to download Replicate image:', err);
+                continue;
+              }
+            }
+            
+            // Upload to Supabase Storage
+            if (base64Data) {
+              try {
+                const buf = Buffer.from(base64Data, 'base64');
+                const fileName = `creative-seedream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
                 const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
+                
                 const uploadRes = await fetch(storageUrl, {
                   method: 'POST',
                   headers: {
                     'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                    'Content-Type': mimeType,
+                    'Content-Type': seedreamResult.mimeType || 'image/png',
                     'x-upsert': 'true',
                     'Content-Length': String(buf.length),
                   },
@@ -3114,95 +3094,101 @@ RULES FOR EACH PROMPT:
                 
                 if (uploadRes.ok) {
                   publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
+                } else {
+                  console.error('[api/creatives] Seedream upload failed:', await uploadRes.text());
                 }
               } catch (uploadErr: any) {
-                console.error('[api/creatives] Imagen upload error:', uploadErr);
+                console.error('[api/creatives] Seedream upload error:', uploadErr);
               }
-
+              
               creatives.push({
                 url: publicUrl || null,
-                base64: prediction.bytesBase64Encoded,
-                mimeType,
+                base64: base64Data,
+                mimeType: seedreamResult.mimeType || 'image/png',
                 prompt: imagePrompt,
                 aspect_ratio: selectedRatio,
-                generation_method: 'imagen',
+                generation_method: 'seedream',
               });
             }
           }
-        } else {
-          console.error('[api/creatives] Imagen API error:', await imagenResponse.text());
         }
-      }
+        
+        // Fallback to Imagen if Seedream failed or if explicitly requested
+        if (!generationSuccess && (selectedModel === 'auto' || selectedModel === 'seedream' || selectedModel === 'imagen') && GOOGLE_AI_API_KEY) {
+          console.log('[api/creatives] Falling back to Imagen...');
+          
+          const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
+          const imagenBody = {
+            instances: [{ prompt: imagePrompt }],
+            parameters: { sampleCount: 1, aspectRatio: selectedRatio },
+          };
 
-      // Kling path (explicit only, auto is intentionally unchanged)
-      if (!generationSuccess && selectedModel === 'kling' && WAVESPEED_API_KEY) {
-        const klingResult = await callKlingWavespeed(imagePrompt, selectedRatio);
-        if (klingResult.success) {
-          const klingMimeType = klingResult.mimeType || 'video/mp4';
-          actualGenerationMethod = klingMimeType.startsWith('video/') ? 'kling_video' : 'kling';
-          generationSuccess = true;
+          let imagenResponse = await fetch(imagenUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(imagenBody),
+            signal: AbortSignal.timeout(60000),
+          });
 
-          let publicUrl = '';
-          let base64Data = klingResult.base64;
-          const isVideo = klingMimeType.startsWith('video/');
-
-          // For video outputs, preserve provider URL directly.
-          if (isVideo && klingResult.imageUrl) {
-            publicUrl = klingResult.imageUrl;
-          } else if (klingResult.imageUrl && !klingResult.base64) {
-            try {
-              const imageResponse = await fetch(klingResult.imageUrl);
-              if (imageResponse.ok) {
-                const buffer = await imageResponse.arrayBuffer();
-                base64Data = Buffer.from(buffer).toString('base64');
-              }
-            } catch (err) {
-              console.error('[api/creatives] Failed to download Kling image:', err);
-              continue;
-            }
-          }
-
-          if (publicUrl || base64Data) {
-            try {
-              const mimeType = klingMimeType;
-              const ext = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'video/mp4' ? 'mp4' : 'png';
-              if (!publicUrl && base64Data) {
-                const buf = Buffer.from(base64Data, 'base64');
-                const fileName = `creative-kling-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-                const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
-
-                const uploadRes = await fetch(storageUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                    'Content-Type': mimeType,
-                    'x-upsert': 'true',
-                    'Content-Length': String(buf.length),
-                  },
-                  body: buf,
-                });
-
-                if (uploadRes.ok) {
-                  publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-                } else {
-                  console.error('[api/creatives] Kling upload failed:', await uploadRes.text());
-                }
-              }
-            } catch (uploadErr: any) {
-              console.error('[api/creatives] Kling upload error:', uploadErr);
-            }
-
-            creatives.push({
-              url: publicUrl || null,
-              ...(base64Data ? { base64: base64Data } : {}),
-              mimeType: klingMimeType,
-              prompt: imagePrompt,
-              aspect_ratio: selectedRatio,
-              generation_method: actualGenerationMethod,
+          // Fallback to fast model if standard fails
+          if (!imagenResponse.ok) {
+            console.warn('[api/creatives] Standard Imagen model failed, trying fast model');
+            const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict?key=${GOOGLE_AI_API_KEY}`;
+            imagenResponse = await fetch(fallbackUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(imagenBody),
+              signal: AbortSignal.timeout(60000),
             });
           }
-        } else {
-          console.warn('[api/creatives] Kling generation failed:', klingResult.error);
+
+          if (imagenResponse.ok) {
+            const imagenData = await imagenResponse.json();
+            const predictions = imagenData.predictions || [];
+
+            for (const prediction of predictions) {
+              if (prediction.bytesBase64Encoded) {
+                actualGenerationMethod = 'imagen';
+                const mimeType = prediction.mimeType || 'image/png';
+                const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+                const fileName = `creative-imagen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+                // Upload to Supabase Storage
+                let publicUrl = '';
+                try {
+                  const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
+                  const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
+                  const uploadRes = await fetch(storageUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                      'Content-Type': mimeType,
+                      'x-upsert': 'true',
+                      'Content-Length': String(buf.length),
+                    },
+                    body: buf,
+                  });
+                  
+                  if (uploadRes.ok) {
+                    publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
+                  }
+                } catch (uploadErr: any) {
+                  console.error('[api/creatives] Imagen upload error:', uploadErr);
+                }
+
+                creatives.push({
+                  url: publicUrl || null,
+                  base64: prediction.bytesBase64Encoded,
+                  mimeType,
+                  prompt: imagePrompt,
+                  aspect_ratio: selectedRatio,
+                  generation_method: 'imagen',
+                });
+              }
+            }
+          } else {
+            console.error('[api/creatives] Imagen API error:', await imagenResponse.text());
+          }
         }
       }
     }
@@ -3223,7 +3209,7 @@ RULES FOR EACH PROMPT:
     }
 
     // Ultra mode for Kling: best-of-N selection (N=6 generated, return top requested count)
-    if (selectedModel === 'kling' && selectedQuality === 'ultra' && creatives.length > imageCount) {
+    if (isVideoRequest && selectedQuality === 'ultra' && creatives.length > imageCount) {
       try {
         const rankingPrompt = `Rank these ${creatives.length} ad creative prompts for likely Facebook/Instagram ad performance.
 
