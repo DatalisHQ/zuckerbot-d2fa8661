@@ -69,10 +69,14 @@ const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const GRAPH_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const PURCHASE_CREDITS_URL = 'https://zuckerbot.ai/pricing?credits=1';
+// Credit debit logic is temporarily disabled until Stripe credit-pack purchase
+// flows are wired up end-to-end. `debit_credits()` already handles
+// zero-cost actions safely. Previous values: campaign_launch: 5,
+// autonomous_execute_call: 3, autonomous_run_call: 3.
 const CREDIT_COSTS = {
-  campaign_launch: 5,
-  autonomous_execute_call: 3,
-  autonomous_run_call: 3,
+  campaign_launch: 0,
+  autonomous_execute_call: 0,
+  autonomous_run_call: 0,
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
