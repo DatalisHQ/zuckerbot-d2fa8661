@@ -62,6 +62,7 @@ const GOOGLE_AI_API_KEY =
 const AIML_API_KEY = process.env.AIML_API_KEY || '';
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 const WAVESPEED_API_KEY = process.env.WAVESPEED_API_KEY || '';
+const CREATIVE_STORAGE_BUCKET = 'creatives';
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -2835,6 +2836,93 @@ interface SeedreamResult {
   error?: string;
 }
 
+let creativeBucketInitialized = false;
+
+async function ensureCreativeBucket(): Promise<void> {
+  if (creativeBucketInitialized) return;
+  try {
+    const { data: buckets, error } = await supabaseAdmin.storage.listBuckets();
+    if (error) {
+      console.error('[api/creatives] Failed to list storage buckets:', error);
+      return;
+    }
+
+    const existing = buckets?.find((bucket) => bucket.name === CREATIVE_STORAGE_BUCKET);
+    if (!existing) {
+      const { error: createError } = await supabaseAdmin.storage.createBucket(CREATIVE_STORAGE_BUCKET, {
+        public: true,
+      });
+      if (createError) {
+        console.error('[api/creatives] Failed to create creatives bucket:', createError);
+        return;
+      }
+    } else if (!existing.public) {
+      const { error: updateError } = await supabaseAdmin.storage.updateBucket(CREATIVE_STORAGE_BUCKET, {
+        public: true,
+      });
+      if (updateError) {
+        console.error('[api/creatives] Failed to update creatives bucket to public:', updateError);
+      }
+    }
+
+    creativeBucketInitialized = true;
+  } catch (err) {
+    console.error('[api/creatives] Failed to ensure creatives bucket:', err);
+  }
+}
+
+function getCreativeFileExtension(mimeType: string): string {
+  if (mimeType === 'image/jpeg') return 'jpg';
+  if (mimeType === 'video/mp4') return 'mp4';
+  if (mimeType === 'video/webm') return 'webm';
+  return 'png';
+}
+
+async function uploadCreativeMedia(
+  source: { path?: string; base64?: string; mimeType?: string },
+  prefix: string,
+): Promise<string | null> {
+  try {
+    await ensureCreativeBucket();
+
+    let buffer: Buffer | null = null;
+    let mimeType = source.mimeType || 'image/png';
+    if (source.base64) {
+      buffer = Buffer.from(source.base64, 'base64');
+    } else if (source.path) {
+      const response = await fetch(source.path);
+      if (!response.ok) {
+        console.error('[api/creatives] Failed to download generated media:', await response.text());
+        return null;
+      }
+      if (!mimeType && response.headers.get('content-type')) {
+        mimeType = response.headers.get('content-type')!.split(';')[0] || mimeType;
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+    }
+
+    if (!buffer) return null;
+
+    const fileName = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${getCreativeFileExtension(mimeType)}`;
+    const { error } = await supabaseAdmin.storage.from(CREATIVE_STORAGE_BUCKET).upload(fileName, buffer, {
+      contentType: mimeType || 'image/png',
+      upsert: true,
+    });
+
+    if (error) {
+      console.error('[api/creatives] Failed to upload to creatives bucket:', error);
+      return null;
+    }
+
+    const { data } = supabaseAdmin.storage.from(CREATIVE_STORAGE_BUCKET).getPublicUrl(fileName);
+    return data?.publicUrl || null;
+  } catch (err) {
+    console.error('[api/creatives] Failed to store generated media:', err);
+    return null;
+  }
+}
+
 function inferMimeTypeFromUrl(url?: string): string {
   if (!url) return 'image/png';
   const lower = url.toLowerCase();
@@ -3074,7 +3162,7 @@ async function generateWithSeedream(prompt: string, aspectRatio: string): Promis
  */
 async function callKlingWavespeed(prompt: string, aspectRatio: string): Promise<SeedreamResult> {
   if (!WAVESPEED_API_KEY) {
-    return { success: false, error: 'WaveSpeed API key not configured' };
+    return { success: false, error: 'WAVESPEED_API_KEY is not set. Add it to your Vercel environment variables.' };
   }
 
   const apiBase = (process.env.WAVESPEED_API_BASE_URL || 'https://api.wavespeed.ai').replace(/\/$/, '');
@@ -3303,7 +3391,12 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
 
   if (isVideoRequest && !WAVESPEED_API_KEY) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
-    return res.status(500).json({ error: { code: 'config_error', message: 'WaveSpeed API key not configured for Kling model' } });
+    return res.status(500).json({
+      error: {
+        code: 'config_error',
+        message: 'WAVESPEED_API_KEY is not set. Add it to your Vercel environment variables.',
+      },
+    });
   }
 
   if (!ANTHROPIC_API_KEY) {
@@ -3455,8 +3548,8 @@ RULES FOR EACH PROMPT:
 
     // Step 4: Generate media using selected model routing
     const creatives: Array<{ 
-      url: string | null; 
-      base64?: string; 
+      url: string | null;
+      image_url: string | null;
       mimeType: string; 
       prompt: string; 
       aspect_ratio: string;
@@ -3480,36 +3573,20 @@ RULES FOR EACH PROMPT:
         let base64Data = klingResult.base64;
 
         if (!publicUrl && base64Data) {
-          try {
-            const ext = mimeType === 'video/mp4' ? 'mp4' : mimeType === 'video/webm' ? 'webm' : 'bin';
-            const fileName = `creative-kling-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-            const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
-            const buf = Buffer.from(base64Data, 'base64');
-            const uploadRes = await fetch(storageUrl, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': mimeType,
-                'x-upsert': 'true',
-                'Content-Length': String(buf.length),
-              },
-              body: buf,
-            });
-            if (uploadRes.ok) {
-              publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-            } else {
-              console.error('[api/creatives] Kling upload failed:', await uploadRes.text());
-            }
-          } catch (uploadErr: any) {
-            console.error('[api/creatives] Kling upload error:', uploadErr);
+          publicUrl = await uploadCreativeMedia({
+            base64: base64Data,
+            mimeType,
+          }, `creative-kling`);
+          if (!publicUrl) {
+            console.error('[api/creatives] Kling upload failed');
           }
         }
 
-        if (publicUrl || base64Data) {
+        if (publicUrl) {
           actualGenerationMethod = 'kling_video';
           creatives.push({
             url: publicUrl,
-            ...(base64Data ? { base64: base64Data } : {}),
+            image_url: publicUrl,
             mimeType,
             prompt: videoPrompt,
             aspect_ratio: selectedRatio,
@@ -3531,57 +3608,32 @@ RULES FOR EACH PROMPT:
             generationSuccess = true;
             
             let publicUrl = '';
-            let base64Data = seedreamResult.base64;
-            
-            // Handle URL-based result (from Replicate)
+            // Upload generated image to Supabase Storage and always return URL
             if (seedreamResult.imageUrl && !seedreamResult.base64) {
-              try {
-                const imageResponse = await fetch(seedreamResult.imageUrl);
-                if (imageResponse.ok) {
-                  const buffer = await imageResponse.arrayBuffer();
-                  base64Data = Buffer.from(buffer).toString('base64');
-                }
-              } catch (err) {
-                console.error('[api/creatives] Failed to download Replicate image:', err);
-                continue;
-              }
+              const imageUrl = await uploadCreativeMedia({
+                path: seedreamResult.imageUrl,
+                mimeType: seedreamResult.mimeType || 'image/png',
+              }, 'creative-seedream');
+              publicUrl = imageUrl || '';
+            } else if (seedreamResult.base64) {
+              const base64Url = await uploadCreativeMedia({
+                base64: seedreamResult.base64,
+                mimeType: seedreamResult.mimeType || 'image/png',
+              }, 'creative-seedream');
+              publicUrl = base64Url || '';
             }
-            
-            // Upload to Supabase Storage
-            if (base64Data) {
-              try {
-                const buf = Buffer.from(base64Data, 'base64');
-                const fileName = `creative-seedream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-                const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
-                
-                const uploadRes = await fetch(storageUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                    'Content-Type': seedreamResult.mimeType || 'image/png',
-                    'x-upsert': 'true',
-                    'Content-Length': String(buf.length),
-                  },
-                  body: buf,
-                });
-                
-                if (uploadRes.ok) {
-                  publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-                } else {
-                  console.error('[api/creatives] Seedream upload failed:', await uploadRes.text());
-                }
-              } catch (uploadErr: any) {
-                console.error('[api/creatives] Seedream upload error:', uploadErr);
-              }
-              
+
+            if (publicUrl) {
               creatives.push({
                 url: publicUrl || null,
-                base64: base64Data,
+                image_url: publicUrl || null,
                 mimeType: seedreamResult.mimeType || 'image/png',
                 prompt: imagePrompt,
                 aspect_ratio: selectedRatio,
                 generation_method: 'seedream',
               });
+            } else {
+              console.error('[api/creatives] Failed to upload Seedream image result:', seedreamResult.imageUrl || 'inline base64');
             }
           } else if (seedreamResult.error) {
             providerErrors.push({ provider: 'seedream', error: String(seedreamResult.error) });
@@ -3625,40 +3677,24 @@ RULES FOR EACH PROMPT:
               if (prediction.bytesBase64Encoded) {
                 actualGenerationMethod = 'imagen';
                 const mimeType = prediction.mimeType || 'image/png';
-                const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-                const fileName = `creative-imagen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-
-                // Upload to Supabase Storage
-                let publicUrl = '';
-                try {
-                  const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
-                  const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
-                  const uploadRes = await fetch(storageUrl, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                      'Content-Type': mimeType,
-                      'x-upsert': 'true',
-                      'Content-Length': String(buf.length),
-                    },
-                    body: buf,
-                  });
-                  
-                  if (uploadRes.ok) {
-                    publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-                  }
-                } catch (uploadErr: any) {
-                  console.error('[api/creatives] Imagen upload error:', uploadErr);
-                }
-
-                creatives.push({
-                  url: publicUrl || null,
+                const uploadedUrl = await uploadCreativeMedia({
                   base64: prediction.bytesBase64Encoded,
                   mimeType,
-                  prompt: imagePrompt,
-                  aspect_ratio: selectedRatio,
-                  generation_method: 'imagen',
-                });
+                }, `creative-imagen`);
+                const publicUrl = uploadedUrl || '';
+
+                if (publicUrl) {
+                  creatives.push({
+                    url: publicUrl,
+                    image_url: publicUrl,
+                    mimeType,
+                    prompt: imagePrompt,
+                    aspect_ratio: selectedRatio,
+                    generation_method: 'imagen',
+                  });
+                } else {
+                  console.error('[api/creatives] Imagen upload failed:', prediction.mimeType);
+                }
               }
             }
           } else {
