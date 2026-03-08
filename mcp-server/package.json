@@ -1,6 +1,6 @@
 {
   "name": "zuckerbot-mcp",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "MCP server for ZuckerBot — let AI agents run Facebook ad campaigns",
   "type": "module",
   "bin": {
