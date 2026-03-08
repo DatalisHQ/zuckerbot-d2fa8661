@@ -59,10 +59,52 @@ interface ApiUsageRow {
   created_at: string;
 }
 
+interface Subscriber {
+  id: string;
+  user_id: string | null;
+  email: string;
+  stripe_customer_id: string | null;
+  subscribed: boolean;
+  subscription_tier: string | null;
+  subscription_end: string | null;
+  created_at: string;
+}
+
+interface CreditBalance {
+  user_id: string;
+  balance: number;
+  updated_at: string;
+}
+
+interface CreditLedgerEntry {
+  id: string;
+  user_id: string;
+  delta: number;
+  reason: string;
+  ref_type: string;
+  ref_id: string | null;
+  created_at: string;
+}
+
+interface ApiCampaign {
+  id: string;
+  user_id: string | null;
+  api_key_id: string | null;
+  business_url: string | null;
+  objective: string | null;
+  status: string | null;
+  meta_campaign_id: string | null;
+  created_at: string;
+}
+
 interface AdminData {
   users: AuthUser[];
   apiKeys: ApiKey[];
   apiUsage: ApiUsageRow[];
+  subscribers: Subscriber[];
+  creditBalances: CreditBalance[];
+  creditLedger: CreditLedgerEntry[];
+  apiCampaigns: ApiCampaign[];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -192,6 +234,10 @@ const Admin = () => {
           users: authUsers,
           apiKeys: apiKeysAll,
           apiUsage: apiUsageAll,
+          subscribers: (debugData.subscribers || []) as Subscriber[],
+          creditBalances: (debugData.credit_balances || []) as CreditBalance[],
+          creditLedger: (debugData.credit_ledger || []) as CreditLedgerEntry[],
+          apiCampaigns: (debugData.api_campaigns || []) as ApiCampaign[],
         });
       } catch (err: any) {
         console.error("Admin fetch error:", err);
@@ -220,7 +266,24 @@ const Admin = () => {
       ? Math.round(data.apiUsage.reduce((sum, u) => sum + (u.response_time_ms || 0), 0) / data.apiUsage.filter((u) => u.response_time_ms).length)
       : 0;
 
-    return { totalUsers, signupsToday, totalKeys, activeKeys, totalCalls, successCalls, failedCalls, avgResponseMs };
+    // Subscriber & revenue stats
+    const payingSubscribers = data.subscribers.filter((s) => s.subscribed).length;
+    const stripeCustomers = data.subscribers.filter((s) => s.stripe_customer_id).length;
+    const totalCreditBalance = data.creditBalances.reduce((sum, cb) => sum + cb.balance, 0);
+    const usersWithCredits = data.creditBalances.filter((cb) => cb.balance > 0).length;
+    const creditPurchases = data.creditLedger.filter((e) => e.delta > 0);
+    const totalCreditsSpent = data.creditLedger.filter((e) => e.delta < 0).reduce((sum, e) => sum + Math.abs(e.delta), 0);
+
+    // Campaign stats
+    const totalApiCampaigns = data.apiCampaigns.length;
+    const launchedCampaigns = data.apiCampaigns.filter((c) => c.meta_campaign_id).length;
+    const draftCampaigns = data.apiCampaigns.filter((c) => !c.meta_campaign_id).length;
+
+    return {
+      totalUsers, signupsToday, totalKeys, activeKeys, totalCalls, successCalls, failedCalls, avgResponseMs,
+      payingSubscribers, stripeCustomers, totalCreditBalance, usersWithCredits, creditPurchases: creditPurchases.length, totalCreditsSpent,
+      totalApiCampaigns, launchedCampaigns, draftCampaigns,
+    };
   }, [data]);
 
   // Build lookup maps
@@ -277,6 +340,22 @@ const Admin = () => {
           map.set(userId, u.created_at);
         }
       }
+    }
+    return map;
+  }, [data]);
+
+  // Credit balance by user
+  const creditByUser = useMemo(() => {
+    if (!data) return new Map<string, number>();
+    return new Map(data.creditBalances.map((cb) => [cb.user_id, cb.balance]));
+  }, [data]);
+
+  // Subscriber status by user
+  const subscriberByUser = useMemo(() => {
+    if (!data) return new Map<string, Subscriber>();
+    const map = new Map<string, Subscriber>();
+    for (const s of data.subscribers) {
+      if (s.user_id) map.set(s.user_id, s);
     }
     return map;
   }, [data]);
@@ -390,7 +469,7 @@ const Admin = () => {
       <main className="pt-20 pb-16 px-6 max-w-7xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-extrabold tracking-tight text-white">Admin Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Platform overview — users, keys, and usage</p>
+          <p className="text-sm text-gray-500 mt-1">Users, subscribers, credits, campaigns, and API usage</p>
         </div>
 
         {error && (
@@ -400,16 +479,58 @@ const Admin = () => {
         )}
 
         {/* ── Overview Cards ───────────────────────────────────────────── */}
-        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 mb-8">
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 mb-4">
           {[
             { label: "Total Users", value: stats?.totalUsers, icon: "👥" },
             { label: "Signups Today", value: stats?.signupsToday, icon: "📈" },
-            { label: "Total API Keys", value: stats?.totalKeys, icon: "🔑" },
-            { label: "Active Keys (7d)", value: stats?.activeKeys, icon: "⚡" },
-            { label: "API Calls", value: stats?.totalCalls, icon: "📡" },
-            { label: "Successful", value: stats?.successCalls, icon: "✅", color: "text-green-400" },
-            { label: "Failed", value: stats?.failedCalls, icon: "❌", color: "text-red-400" },
+            { label: "Paying Subscribers", value: stats?.payingSubscribers, icon: "💳", color: "text-green-400" },
+            { label: "Stripe Customers", value: stats?.stripeCustomers, icon: "🏦" },
+          ].map(({ label, value, icon, color }) => (
+            <Card key={label} className="bg-white/[0.02] border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">{label}</span>
+                  <span className="text-lg">{icon}</span>
+                </div>
+                {dataLoading ? (
+                  <Skeleton className="h-8 w-16 bg-white/5" />
+                ) : (
+                  <p className={`text-2xl font-bold tabular-nums ${(color as string) || "text-white"}`}>{value ?? 0}</p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 mb-4">
+          {[
+            { label: "Total API Calls", value: stats?.totalCalls, icon: "📡" },
+            { label: "Success Rate", value: stats?.totalCalls ? `${Math.round(((stats?.successCalls || 0) / stats.totalCalls) * 100)}%` : "—", icon: "✅", color: "text-green-400" },
             { label: "Avg Response", value: stats?.avgResponseMs ? `${stats.avgResponseMs}ms` : "0ms", icon: "⏱️" },
+            { label: "Active Keys (7d)", value: stats?.activeKeys, icon: "⚡" },
+          ].map(({ label, value, icon, color }) => (
+            <Card key={label} className="bg-white/[0.02] border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">{label}</span>
+                  <span className="text-lg">{icon}</span>
+                </div>
+                {dataLoading ? (
+                  <Skeleton className="h-8 w-16 bg-white/5" />
+                ) : (
+                  <p className={`text-2xl font-bold tabular-nums ${(color as string) || "text-white"}`}>{value ?? 0}</p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 mb-8">
+          {[
+            { label: "API Campaigns", value: stats?.totalApiCampaigns, icon: "🎯" },
+            { label: "Launched", value: stats?.launchedCampaigns, icon: "🚀", color: "text-blue-400" },
+            { label: "Credits in Circulation", value: stats?.totalCreditBalance, icon: "🪙", color: "text-amber-400" },
+            { label: "Credits Spent (All Time)", value: stats?.totalCreditsSpent, icon: "🔥", color: "text-orange-400" },
           ].map(({ label, value, icon, color }) => (
             <Card key={label} className="bg-white/[0.02] border-white/10">
               <CardContent className="p-4">
@@ -508,6 +629,8 @@ const Admin = () => {
                       <TableRow className="border-white/5 hover:bg-transparent">
                         <TableHead className="text-gray-500 text-xs">Email</TableHead>
                         <TableHead className="text-gray-500 text-xs">Signed Up</TableHead>
+                        <TableHead className="text-gray-500 text-xs">Subscription</TableHead>
+                        <TableHead className="text-gray-500 text-xs text-right">Credits</TableHead>
                         <TableHead className="text-gray-500 text-xs text-right">Keys</TableHead>
                         <TableHead className="text-gray-500 text-xs text-right">API Calls</TableHead>
                         <TableHead className="text-gray-500 text-xs">Last Active</TableHead>
@@ -516,32 +639,58 @@ const Admin = () => {
                     <TableBody>
                       {filteredUsers.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center text-gray-600 py-8">
+                          <TableCell colSpan={7} className="text-center text-gray-600 py-8">
                             No users found
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredUsers.map((u) => (
-                          <TableRow key={u.id} className="border-white/5 hover:bg-white/[0.02]">
-                            <TableCell className="text-sm text-gray-300 font-mono">
-                              {u.email || "—"}
-                            </TableCell>
-                            <TableCell className="text-xs text-gray-500">
-                              {formatDate(u.created_at)}
-                            </TableCell>
-                            <TableCell className="text-xs text-gray-400 text-right tabular-nums">
-                              {keysByUser.get(u.id) || 0}
-                            </TableCell>
-                            <TableCell className="text-xs text-gray-400 text-right tabular-nums">
-                              {(usageByUser.get(u.id) || 0).toLocaleString()}
-                            </TableCell>
-                            <TableCell className="text-xs text-gray-500">
-                              {lastActiveByUser.get(u.id)
-                                ? timeAgo(lastActiveByUser.get(u.id)!)
-                                : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))
+                        filteredUsers.map((u) => {
+                          const sub = subscriberByUser.get(u.id);
+                          const credits = creditByUser.get(u.id);
+                          return (
+                            <TableRow key={u.id} className="border-white/5 hover:bg-white/[0.02]">
+                              <TableCell className="text-sm text-gray-300 font-mono">
+                                {u.email || "—"}
+                              </TableCell>
+                              <TableCell className="text-xs text-gray-500">
+                                {formatDate(u.created_at)}
+                              </TableCell>
+                              <TableCell>
+                                {sub?.subscribed ? (
+                                  <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px]">
+                                    {sub.subscription_tier || "active"}
+                                  </Badge>
+                                ) : sub?.stripe_customer_id ? (
+                                  <Badge className="bg-yellow-500/10 text-yellow-400 border-yellow-500/20 text-[10px]">
+                                    churned
+                                  </Badge>
+                                ) : (
+                                  <span className="text-[10px] text-gray-600">free</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs text-right tabular-nums">
+                                {credits != null ? (
+                                  <span className={credits > 0 ? "text-amber-400" : "text-gray-600"}>
+                                    {credits}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-600">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs text-gray-400 text-right tabular-nums">
+                                {keysByUser.get(u.id) || 0}
+                              </TableCell>
+                              <TableCell className="text-xs text-gray-400 text-right tabular-nums">
+                                {(usageByUser.get(u.id) || 0).toLocaleString()}
+                              </TableCell>
+                              <TableCell className="text-xs text-gray-500">
+                                {lastActiveByUser.get(u.id)
+                                  ? timeAgo(lastActiveByUser.get(u.id)!)
+                                  : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
                       )}
                     </TableBody>
                   </Table>
