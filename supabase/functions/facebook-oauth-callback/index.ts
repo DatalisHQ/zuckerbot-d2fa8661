@@ -242,6 +242,31 @@ serve(async (req: Request) => {
       }
     }
 
+    // ── Ensure a business record exists (create if user skipped onboarding) ─
+    const { data: existingBiz } = await supabase
+      .from("businesses")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!existingBiz) {
+      console.log(`[fb-oauth] No business record found for user ${user.id} — creating one`);
+      const { error: createError } = await supabase
+        .from("businesses")
+        .insert({
+          user_id: user.id,
+          name: user.email?.split("@")[0] || "My Business",
+          trade: "Other",
+          phone: "",
+        });
+
+      if (createError) {
+        console.error("[fb-oauth] Failed to create business record:", createError);
+        const errDetail = encodeURIComponent(createError.message || "unknown");
+        return Response.redirect(`${SITE_URL}/profile?fb_error=save_failed&detail=${errDetail}`, 302);
+      }
+    }
+
     // ── Update the business record ───────────────────────────────────────
     const updateData: Record<string, any> = {
       facebook_access_token: accessToken,
@@ -262,11 +287,13 @@ serve(async (req: Request) => {
       return Response.redirect(`${SITE_URL}/profile?fb_error=save_failed&detail=${errDetail}`, 302);
     }
 
-    // Also update profiles.facebook_connected flag
+    // Also update profiles.facebook_connected flag (upsert in case profile doesn't exist)
     await supabase
       .from("profiles")
-      .update({ facebook_connected: true })
-      .eq("user_id", user.id);
+      .upsert(
+        { user_id: user.id, email: user.email || null, facebook_connected: true },
+        { onConflict: "user_id" }
+      );
 
     // Auto-link any unlinked API keys to this business
     const { data: bizRecord } = await supabase
