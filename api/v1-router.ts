@@ -104,6 +104,7 @@ interface AuthSuccess {
   error: false;
   keyRecord: ApiKeyRecord;
   rateLimitHeaders: Record<string, string>;
+  usageRowId: string | null;
 }
 
 interface AuthFailure {
@@ -126,6 +127,7 @@ function hashKey(raw: string): string {
 
 async function authenticateRequest(
   req: { headers: Record<string, string | string[] | undefined> },
+  endpointHint?: string,
 ): Promise<AuthResult> {
   const authHeader =
     (req.headers['authorization'] as string) ||
@@ -215,6 +217,20 @@ async function authenticateRequest(
     .eq('id', keyRecord.id)
     .then(() => {});
 
+  // Log usage immediately on auth success (before handler runs)
+  // This ensures the request is recorded even if the handler times out
+  let usageRowId: string | null = null;
+  if (endpointHint) {
+    const { data: usageRow } = await supabaseAdmin.from('api_usage').insert({
+      api_key_id: keyRecord.id,
+      endpoint: endpointHint,
+      method: 'POST',
+      status_code: 0, // 0 = in-flight, updated on completion
+      response_time_ms: null,
+    }).select('id').single();
+    usageRowId = usageRow?.id || null;
+  }
+
   return {
     error: false,
     keyRecord: {
@@ -227,6 +243,7 @@ async function authenticateRequest(
       name: keyRecord.name,
     },
     rateLimitHeaders,
+    usageRowId,
   };
 }
 
@@ -238,16 +255,28 @@ async function logUsage(opts: {
   responseTimeMs: number;
   generation_method?: string;
   detected_industry?: string;
+  usageRowId?: string | null;
 }): Promise<void> {
-  await supabaseAdmin.from('api_usage').insert({
-    api_key_id: opts.apiKeyId,
-    endpoint: opts.endpoint,
-    method: opts.method,
-    status_code: opts.statusCode,
-    response_time_ms: opts.responseTimeMs,
-    generation_method: opts.generation_method || null,
-    detected_industry: opts.detected_industry || null,
-  });
+  if (opts.usageRowId) {
+    // Update the in-flight row created during auth
+    await supabaseAdmin.from('api_usage').update({
+      status_code: opts.statusCode,
+      response_time_ms: opts.responseTimeMs,
+      generation_method: opts.generation_method || null,
+      detected_industry: opts.detected_industry || null,
+    }).eq('id', opts.usageRowId);
+  } else {
+    // Fallback: insert a new row (for endpoints that don't pass usageRowId)
+    await supabaseAdmin.from('api_usage').insert({
+      api_key_id: opts.apiKeyId,
+      endpoint: opts.endpoint,
+      method: opts.method,
+      status_code: opts.statusCode,
+      response_time_ms: opts.responseTimeMs,
+      generation_method: opts.generation_method || null,
+      detected_industry: opts.detected_industry || null,
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -404,7 +433,7 @@ async function handlePreview(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/campaigns/preview');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -1113,7 +1142,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/campaigns/create');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -1452,7 +1481,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/campaigns/launch');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -1734,7 +1763,7 @@ async function handlePause(req: VercelRequest, res: VercelResponse, campaignId: 
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/campaigns/pause');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -1859,7 +1888,7 @@ async function handlePerformance(req: VercelRequest, res: VercelResponse, campai
   if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/campaigns/performance');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -1979,7 +2008,7 @@ async function handleConversions(req: VercelRequest, res: VercelResponse, campai
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/campaigns/conversions');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -2172,7 +2201,7 @@ async function handleReviews(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/research/reviews');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -2290,7 +2319,7 @@ async function handleCompetitors(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/research/competitors');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -2406,7 +2435,7 @@ async function handleMarket(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/research/market');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -2541,7 +2570,7 @@ async function handleMetaStatus(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/meta/status');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -2603,7 +2632,7 @@ async function handleMetaCredentials(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/meta/credentials');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -2652,7 +2681,7 @@ async function handleMetaPages(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/meta/pages');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -2714,7 +2743,7 @@ async function handleMetaSelectPage(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/meta/select-page');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -2788,7 +2817,7 @@ async function handleMetaSelectPage(req: VercelRequest, res: VercelResponse) {
 async function handleSetTelegram(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/notifications/telegram');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -3282,7 +3311,7 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/creatives/generate');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -3853,7 +3882,7 @@ async function handleCreativeVariants(req: VercelRequest, res: VercelResponse, c
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/creatives/variants');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -4029,7 +4058,7 @@ async function handleCreativeFeedback(req: VercelRequest, res: VercelResponse, c
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
   const startTime = Date.now();
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/creatives/feedback');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -4313,7 +4342,7 @@ async function executeAutonomousAction(
 async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/autonomous/policies/upsert');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -4396,7 +4425,7 @@ async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelRes
 async function handleAutonomousMetrics(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
 
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/autonomous/metrics');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -4437,7 +4466,7 @@ async function handleAutonomousMetrics(req: VercelRequest, res: VercelResponse) 
 async function handleAutonomousEvaluate(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/autonomous/evaluate');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);
@@ -4499,7 +4528,7 @@ async function handleAutonomousEvaluate(req: VercelRequest, res: VercelResponse)
 async function handleAutonomousExecute(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
-  const auth = await authenticateRequest(req);
+  const auth = await authenticateRequest(req, '/v1/autonomous/execute');
   if (auth.error) {
     if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
     return res.status(auth.status).json(auth.body);

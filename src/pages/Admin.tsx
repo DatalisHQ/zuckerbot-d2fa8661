@@ -260,8 +260,9 @@ const Admin = () => {
     const totalKeys = data.apiKeys.length;
     const activeKeys = data.apiKeys.filter((k) => isWithinDays(k.last_used_at, 7)).length;
     const totalCalls = data.apiUsage.length;
-    const successCalls = data.apiUsage.filter((u) => u.status_code && u.status_code < 400).length;
+    const successCalls = data.apiUsage.filter((u) => u.status_code && u.status_code > 0 && u.status_code < 400).length;
     const failedCalls = data.apiUsage.filter((u) => u.status_code && u.status_code >= 400).length;
+    const inFlightCalls = data.apiUsage.filter((u) => u.status_code === 0 || u.status_code === null).length;
     const avgResponseMs = data.apiUsage.length > 0
       ? Math.round(data.apiUsage.reduce((sum, u) => sum + (u.response_time_ms || 0), 0) / data.apiUsage.filter((u) => u.response_time_ms).length)
       : 0;
