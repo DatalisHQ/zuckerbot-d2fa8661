@@ -132,6 +132,23 @@ serve(async (req: Request) => {
       console.warn("[fb-oauth] No ad accounts found for this user");
     }
 
+    // ── Fetch pixel for the ad account ──────────────────────────────────
+    let pixelId: string | null = null;
+    if (adAccountId) {
+      try {
+        const pixelRes = await fetch(
+          `https://graph.facebook.com/v21.0/${adAccountId}/adspixels?access_token=${accessToken}&fields=id,name`
+        );
+        const pixelData = await pixelRes.json();
+        if (pixelData.data && pixelData.data.length > 0) {
+          pixelId = pixelData.data[0].id;
+          console.log(`[fb-oauth] Found pixel: ${pixelData.data[0].name} (${pixelId})`);
+        }
+      } catch (e) {
+        console.warn("[fb-oauth] Failed to fetch pixels:", e.message);
+      }
+    }
+
     // ── Fetch campaign history if ad account exists ─────────────────────
     let adHistory: any = null;
     if (adAccountId) {
@@ -252,6 +269,7 @@ serve(async (req: Request) => {
 
     if (pageId) upsertData.facebook_page_id = pageId;
     if (adAccountId) upsertData.facebook_ad_account_id = adAccountId;
+    if (pixelId) upsertData.meta_pixel_id = pixelId;
     if (adHistory) upsertData.facebook_ad_history = adHistory;
 
     // First try a plain update (covers the common case where the row exists)

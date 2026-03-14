@@ -11,9 +11,9 @@ import {
   Save,
   X,
   Facebook,
-  ExternalLink,
   Image as ImageIcon,
   Globe,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Navbar } from "@/components/Navbar";
@@ -56,6 +63,12 @@ interface Business {
   website: string | null;
   facebook_page_id: string | null;
   facebook_ad_account_id: string | null;
+  meta_pixel_id: string | null;
+}
+
+interface FacebookPageOption {
+  id: string;
+  name: string;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -77,9 +90,15 @@ export default function Profile() {
     postcode: "",
     state: "",
     website: "",
+    meta_pixel_id: "",
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [availablePages, setAvailablePages] = useState<FacebookPageOption[]>([]);
+  const [selectedPageId, setSelectedPageId] = useState("");
+  const [showPageSelector, setShowPageSelector] = useState(false);
+  const [isLoadingPages, setIsLoadingPages] = useState(false);
+  const [isUpdatingPage, setIsUpdatingPage] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -153,6 +172,7 @@ export default function Profile() {
           postcode: biz.postcode || "",
           state: biz.state || "",
           website: biz.website || "",
+          meta_pixel_id: biz.meta_pixel_id || "",
         }));
       }
     } catch (error: any) {
@@ -193,6 +213,7 @@ export default function Profile() {
         if (formData.postcode.trim()) bizUpdate.postcode = formData.postcode.trim();
         if (formData.state.trim()) bizUpdate.state = formData.state.trim();
         bizUpdate.website = formData.website.trim() || null;
+        bizUpdate.meta_pixel_id = formData.meta_pixel_id.trim() || null;
 
         const { error: bizError } = await supabase
           .from("businesses" as any)
@@ -211,6 +232,7 @@ export default function Profile() {
                 postcode: formData.postcode.trim() || prev.postcode,
                 state: formData.state.trim() || prev.state,
                 website: formData.website.trim() || null,
+                meta_pixel_id: formData.meta_pixel_id.trim() || null,
               }
             : null
         );
@@ -274,12 +296,130 @@ export default function Profile() {
     }
   };
 
+  const handleLoadFacebookPages = async () => {
+    setIsLoadingPages(true);
+
+    try {
+      const userId = currentUser?.id;
+      if (!userId) throw new Error("Not authenticated");
+
+      const { data: biz, error: bizError } = await supabase
+        .from("businesses" as any)
+        .select("facebook_access_token, facebook_page_id")
+        .eq("user_id", userId)
+        .single();
+
+      if (bizError) throw bizError;
+      if (!biz?.facebook_access_token) {
+        throw new Error("No Facebook access token found. Reconnect Facebook first.");
+      }
+
+      const pagesRes = await fetch(
+        `https://graph.facebook.com/v21.0/me/accounts?access_token=${encodeURIComponent(
+          biz.facebook_access_token
+        )}&fields=id,name`
+      );
+      const pagesData = await pagesRes.json();
+
+      if (!pagesRes.ok) {
+        throw new Error(
+          pagesData?.error?.message || "Failed to fetch Facebook pages."
+        );
+      }
+
+      const pages: FacebookPageOption[] = Array.isArray(pagesData?.data)
+        ? pagesData.data
+            .filter(
+              (page: any) =>
+                typeof page?.id === "string" && typeof page?.name === "string"
+            )
+            .map((page: any) => ({ id: page.id, name: page.name }))
+        : [];
+
+      if (pages.length === 0) {
+        throw new Error("No Facebook pages found for this account.");
+      }
+
+      const currentPageId =
+        pages.find((page) => page.id === biz.facebook_page_id)?.id || pages[0].id;
+
+      setAvailablePages(pages);
+      setSelectedPageId(currentPageId);
+
+      if (pages.length === 1) {
+        setShowPageSelector(false);
+        toast({
+          title: "Only one page available",
+          description: `${pages[0].name} is the only Facebook Page on this account.`,
+        });
+        return;
+      }
+
+      setShowPageSelector(true);
+    } catch (error: any) {
+      toast({
+        title: "Error loading Facebook pages",
+        description: error.message || "Unable to fetch your Facebook pages.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingPages(false);
+    }
+  };
+
+  const handleUpdateFacebookPage = async () => {
+    if (!selectedPageId || !currentUser?.id) return;
+    if (selectedPageId === business?.facebook_page_id) {
+      setShowPageSelector(false);
+      return;
+    }
+
+    setIsUpdatingPage(true);
+
+    try {
+      const { data: updatedBusiness, error } = await supabase
+        .from("businesses" as any)
+        .update({ facebook_page_id: selectedPageId })
+        .eq("user_id", currentUser.id)
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      if (updatedBusiness) {
+        setBusiness(updatedBusiness as unknown as Business);
+      }
+
+      setShowPageSelector(false);
+
+      const selectedPage = availablePages.find((page) => page.id === selectedPageId);
+      toast({
+        title: "Facebook page updated",
+        description: selectedPage
+          ? `Now using ${selectedPage.name}.`
+          : "Your Facebook Page has been updated.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error updating Facebook page",
+        description: error.message || "Unable to update the selected Facebook Page.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingPage(false);
+    }
+  };
+
   const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString("en-AU", {
       year: "numeric",
       month: "long",
       day: "numeric",
     });
+
+  const currentFacebookPage = availablePages.find(
+    (page) => page.id === business?.facebook_page_id
+  );
 
   // ── Loading / empty states ────────────────────────────────────────────
 
@@ -395,6 +535,7 @@ export default function Profile() {
                             postcode: business?.postcode || "",
                             state: business?.state || "",
                             website: business?.website || "",
+                            meta_pixel_id: business?.meta_pixel_id || "",
                           });
                         }}
                       >
@@ -622,11 +763,104 @@ export default function Profile() {
                   {!!business?.facebook_page_id && (
                     <>
                       <Separator />
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                              Facebook Page
+                            </Label>
+                            <p className="text-sm font-medium">
+                              {currentFacebookPage
+                                ? `${currentFacebookPage.name} (${business.facebook_page_id})`
+                                : business.facebook_page_id}
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleLoadFacebookPages}
+                            disabled={isLoadingPages || isUpdatingPage}
+                          >
+                            {isLoadingPages ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : null}
+                            Change Page
+                          </Button>
+                        </div>
+
+                        {showPageSelector && (
+                          <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                            <div className="space-y-1">
+                              <Label>Select a Facebook Page</Label>
+                              <Select
+                                value={selectedPageId}
+                                onValueChange={setSelectedPageId}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select a Facebook Page" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availablePages.map((page) => (
+                                    <SelectItem key={page.id} value={page.id}>
+                                      {page.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={handleUpdateFacebookPage}
+                                disabled={!selectedPageId || isUpdatingPage}
+                              >
+                                {isUpdatingPage ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : null}
+                                Save Page
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowPageSelector(false)}
+                                disabled={isUpdatingPage}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {business?.facebook_ad_account_id && (
                         <div className="text-xs text-muted-foreground">
                           Ad Account: {business.facebook_ad_account_id}
                         </div>
                       )}
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Meta Pixel ID
+                        </Label>
+                        {editMode ? (
+                          <Input
+                            value={formData.meta_pixel_id}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                meta_pixel_id: e.target.value,
+                              }))
+                            }
+                            placeholder="123456789012345"
+                          />
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                            {business.meta_pixel_id || "Not set"}
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          Required for conversion tracking campaigns
+                        </p>
+                      </div>
                       <Button
                         className="w-full"
                         variant="outline"
