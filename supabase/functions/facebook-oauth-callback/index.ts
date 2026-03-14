@@ -242,24 +242,50 @@ serve(async (req: Request) => {
       }
     }
 
-    // ── Update the business record ───────────────────────────────────────
-    const updateData: Record<string, any> = {
+    // ── Upsert the business record ──────────────────────────────────────
+    // If the user skipped onboarding (no businesses row), we create one
+    // with sensible defaults so the OAuth credentials are still saved.
+    const upsertData: Record<string, any> = {
+      user_id: user.id,
       facebook_access_token: accessToken,
     };
 
-    if (pageId) updateData.facebook_page_id = pageId;
-    if (adAccountId) updateData.facebook_ad_account_id = adAccountId;
-    if (adHistory) updateData.facebook_ad_history = adHistory;
+    if (pageId) upsertData.facebook_page_id = pageId;
+    if (adAccountId) upsertData.facebook_ad_account_id = adAccountId;
+    if (adHistory) upsertData.facebook_ad_history = adHistory;
 
-    const { error: updateError } = await supabase
+    // First try a plain update (covers the common case where the row exists)
+    const { data: updated, error: updateError } = await supabase
       .from("businesses")
-      .update(updateData)
-      .eq("user_id", user.id);
+      .update(upsertData)
+      .eq("user_id", user.id)
+      .select("id");
 
     if (updateError) {
       console.error("[fb-oauth] Failed to update business:", updateError);
       const errDetail = encodeURIComponent(updateError.message || "unknown");
       return Response.redirect(`${SITE_URL}/profile?fb_error=save_failed&detail=${errDetail}`, 302);
+    }
+
+    // If no row was updated, the user has no businesses record yet — insert one
+    if (!updated || updated.length === 0) {
+      console.log("[fb-oauth] No existing business row found, creating one");
+      const pageName = pagesData?.data?.[0]?.name || "My Business";
+      const { error: insertError } = await supabase
+        .from("businesses")
+        .insert({
+          ...upsertData,
+          name: pageName,
+          trade: "Unknown",
+          phone: "",
+        });
+
+      if (insertError) {
+        console.error("[fb-oauth] Failed to insert business:", insertError);
+        const errDetail = encodeURIComponent(insertError.message || "unknown");
+        return Response.redirect(`${SITE_URL}/profile?fb_error=save_failed&detail=${errDetail}`, 302);
+      }
+      console.log(`[fb-oauth] Created business row for user ${user.id} with name "${pageName}"`);
     }
 
     // Also update profiles.facebook_connected flag
