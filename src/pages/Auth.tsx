@@ -172,23 +172,28 @@ const Auth = () => {
       // Create profile if it doesn't exist
       const { data: profile } = await supabase
         .from("profiles")
-        .select("onboarding_completed")
+        .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
 
       if (!profile) {
-        await supabase.from("profiles").insert({
+        console.warn("Missing profile row after email sign-in, creating fallback profile", {
+          userId: user.id,
+        });
+
+        const { error: insertError } = await supabase.from("profiles").insert({
           user_id: user.id,
           email: user.email,
-          full_name: user.user_metadata?.full_name || null,
+          full_name: user.user_metadata?.full_name || user.user_metadata?.name || null,
           onboarding_completed: false,
         });
-        navigate("/developer");
-      } else if (profile.onboarding_completed) {
-        navigate("/developer");
-      } else {
-        navigate("/developer");
+
+        if (insertError) {
+          console.error("Failed to create fallback profile after email sign-in:", insertError);
+        }
       }
+
+      navigate("/developer");
     } catch (error: any) {
       toast({
         title: "Error",
