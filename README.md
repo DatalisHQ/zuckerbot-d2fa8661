@@ -1,8 +1,8 @@
 # 🤖 ZuckerBot
 
-**Facebook Ads infrastructure for AI agents.**
+**Facebook Ads infrastructure for developers, terminal users, and AI agents.**
 
-Build, launch, and manage Meta ad campaigns programmatically. ZuckerBot wraps the Meta Marketing API into a clean REST API and MCP server so AI agents and developers can run Facebook and Instagram ads without touching Business Manager.
+Build, launch, and manage Meta ad campaigns programmatically. ZuckerBot wraps the Meta Marketing API into a clean REST API, human CLI, and MCP server so AI agents and developers can run Facebook and Instagram ads without touching Business Manager.
 
 [![npm version](https://img.shields.io/npm/v/zuckerbot-mcp?style=flat-square&color=blue)](https://www.npmjs.com/package/zuckerbot-mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](./LICENSE)
@@ -11,10 +11,19 @@ Build, launch, and manage Meta ad campaigns programmatically. ZuckerBot wraps th
 ## Quick Start
 
 ```bash
-npx zuckerbot-mcp
+npm install -g zuckerbot-mcp
+export ZUCKERBOT_API_KEY=zb_live_your_key_here
+
+zuckerbot preview https://example.com
 ```
 
 Get your API key at [zuckerbot.ai/developer](https://zuckerbot.ai/developer). Keys use the format `zb_live_` (production) or `zb_test_` (sandbox).
+
+After global install, the package gives you:
+
+- `zuckerbot` for the human-facing CLI
+- `zuckerbot-mcp` for MCP server mode
+- `zuckerbot serve` as an alternative way to start MCP mode from the unified CLI
 
 ## What It Does
 
@@ -25,6 +34,26 @@ Get your API key at [zuckerbot.ai/developer](https://zuckerbot.ai/developer). Ke
 - **Conversion feedback** - Feed lead quality back to Meta's algorithm to improve targeting
 - **Market research** - Competitor ad analysis, review intelligence, and market benchmarks
 - **API key provisioning** - Create and manage API keys programmatically
+
+## Human CLI
+
+Run campaigns directly from your terminal:
+
+```bash
+zuckerbot preview https://example.com
+zuckerbot create https://example.com --budget 2000 --objective leads
+zuckerbot launch camp_abc123
+zuckerbot status camp_abc123
+zuckerbot meta status
+```
+
+Key command groups:
+
+- `preview`, `create`, `launch`, `status`, `pause`, `resume`
+- `creatives`, `conversion`
+- `research reviews`, `research competitors`, `research market`
+- `meta status`, `meta pages`, `meta select-page`, `meta credentials`
+- `serve` to start MCP server mode from the same CLI
 
 ## API Endpoints
 
@@ -48,7 +77,13 @@ All endpoints require `Authorization: Bearer zb_live_...` except where noted.
 
 ## MCP Server
 
-ZuckerBot ships as an MCP server for AI agents that support the [Model Context Protocol](https://modelcontextprotocol.io). One `npx` command connects any MCP client to the full Facebook Ads API.
+ZuckerBot ships as an MCP server for AI agents that support the [Model Context Protocol](https://modelcontextprotocol.io). Use `zuckerbot-mcp` directly, or `zuckerbot serve` if you want a single CLI entrypoint for both human and agent workflows.
+
+Standalone with `npx`:
+
+```bash
+ZUCKERBOT_API_KEY=zb_live_your_key_here npx zuckerbot-mcp
+```
 
 ### Claude Desktop
 

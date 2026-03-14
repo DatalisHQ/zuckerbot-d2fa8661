@@ -1,12 +1,41 @@
 # zuckerbot-mcp
 
-**MCP server for ZuckerBot — let AI agents run Facebook ad campaigns.**
+**CLI + MCP server for ZuckerBot — run Facebook ad campaigns from your terminal or AI agent.**
 
-Give any MCP-compatible AI agent (Claude Desktop, OpenClaw, Cursor, etc.) the ability to create, launch, optimize, and monitor Meta ad campaigns through natural conversation.
+Install one package and get both:
+
+- `zuckerbot` for humans running campaigns from the terminal
+- `zuckerbot-mcp` for MCP-compatible AI agents
+- `zuckerbot serve` as an alternative way to start MCP server mode
+
+The CLI and MCP server both use the same ZuckerBot API client, authentication, and endpoints.
 
 ## Quick Start
 
-### Claude Desktop
+### Human CLI
+
+```bash
+npm install -g zuckerbot-mcp
+export ZUCKERBOT_API_KEY=zb_live_your_key_here
+
+zuckerbot preview https://example.com
+zuckerbot create https://example.com --budget 2000 --objective leads
+zuckerbot meta status
+```
+
+### Global install
+
+```bash
+npm install -g zuckerbot-mcp
+```
+
+After global install, these commands are available:
+
+- `zuckerbot`
+- `zuckerbot-mcp`
+- `zuckerbot serve`
+
+### MCP Server: Claude Desktop
 
 Add to your `claude_desktop_config.json`:
 
@@ -24,7 +53,7 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-### OpenClaw
+### MCP Server: OpenClaw
 
 ```
 /skill install zuckerbot
@@ -46,17 +75,18 @@ Or add to your OpenClaw config:
 }
 ```
 
-### npx (standalone)
+### MCP Server: npx (standalone)
 
 ```bash
 ZUCKERBOT_API_KEY=zb_live_your_key_here npx zuckerbot-mcp
 ```
 
-### Install globally
+### MCP Server: global install
 
 ```bash
 npm install -g zuckerbot-mcp
 ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot-mcp
+ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 ```
 
 ## Environment Variables
@@ -66,7 +96,28 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot-mcp
 | `ZUCKERBOT_API_KEY` | ✅ | — | Your ZuckerBot API key. Get one at [zuckerbot.ai/dashboard](https://zuckerbot.ai/dashboard). |
 | `ZUCKERBOT_API_URL` | — | `https://zuckerbot.ai/api/v1` | API base URL (override for self-hosted or staging). |
 
-## Tools
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `zuckerbot preview <url>` | Generate an ad preview from a business URL |
+| `zuckerbot create <url>` | Create a full campaign with strategy, targeting, and creatives |
+| `zuckerbot launch <campaign_id>` | Launch a draft campaign on Meta |
+| `zuckerbot status <campaign_id>` | Get real-time campaign performance metrics |
+| `zuckerbot pause <campaign_id>` | Pause a running campaign |
+| `zuckerbot resume <campaign_id>` | Resume a paused campaign |
+| `zuckerbot creatives <business_name> <description>` | Generate ad creatives |
+| `zuckerbot conversion <campaign_id> <lead_id> <quality>` | Sync lead quality feedback to Meta |
+| `zuckerbot research reviews <url>` | Review intelligence |
+| `zuckerbot research competitors <category> <location>` | Competitor analysis |
+| `zuckerbot research market <industry> <location>` | Market intelligence |
+| `zuckerbot meta status` | Check Meta connection status |
+| `zuckerbot meta pages` | List Facebook pages |
+| `zuckerbot meta select-page <page_id>` | Select a Facebook page |
+| `zuckerbot meta credentials` | Check stored launch credentials |
+| `zuckerbot serve` | Start MCP server mode from the unified CLI |
+
+## MCP Tools
 
 | Tool | Description | Required Inputs |
 |------|-------------|-----------------|
@@ -128,6 +179,14 @@ cd zuckerbot/mcp-server
 npm install
 npm run build
 npm start
+```
+
+Human CLI development:
+
+```bash
+node dist/cli.js --help
+node dist/cli.js preview https://example.com
+node dist/cli.js serve
 ```
 
 ## API Documentation
