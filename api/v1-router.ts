@@ -609,6 +609,7 @@ interface ResolvedMetaCredentials {
   meta_access_token: string | null;
   meta_ad_account_id: string | null;
   meta_page_id: string | null;
+  meta_pixel_id: string | null;
   business_id: string | null;
   source: CredentialSource;
 }
@@ -635,6 +636,7 @@ async function resolveMetaCredentials(params: {
   let accessToken = normalizeString(params.meta_access_token);
   let adAccountId = normalizeString(params.meta_ad_account_id);
   let pageId = normalizeString(params.meta_page_id);
+  let pixelId: string | null = null;
 
   const sources = new Set<string>();
   if (accessToken || adAccountId || pageId) {
@@ -663,21 +665,23 @@ async function resolveMetaCredentials(params: {
   if (businessId) {
     const { data: biz } = await supabaseAdmin
       .from('businesses')
-      .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
+      .select('facebook_access_token, facebook_ad_account_id, facebook_page_id, meta_pixel_id')
       .eq('id', businessId)
       .maybeSingle();
 
     const businessAccessToken = normalizeString(biz?.facebook_access_token);
     const businessAdAccountId = normalizeString(biz?.facebook_ad_account_id);
     const businessPageId = normalizeString(biz?.facebook_page_id);
+    const businessPixelId = normalizeString(biz?.meta_pixel_id);
 
-    if (businessAccessToken || businessAdAccountId || businessPageId) {
+    if (businessAccessToken || businessAdAccountId || businessPageId || businessPixelId) {
       sources.add('businesses');
     }
 
     accessToken = accessToken || businessAccessToken;
     adAccountId = adAccountId || businessAdAccountId;
     pageId = pageId || businessPageId;
+    pixelId = businessPixelId || null;
   }
 
   if (!accessToken || !adAccountId || !pageId) {
@@ -732,6 +736,7 @@ async function resolveMetaCredentials(params: {
     meta_access_token: accessToken,
     meta_ad_account_id: adAccountId,
     meta_page_id: pageId,
+    meta_pixel_id: pixelId,
     business_id: businessId,
     source,
   };
@@ -842,6 +847,7 @@ async function launchCampaignInternal(params: {
   meta_access_token: string;
   meta_ad_account_id: string;
   meta_page_id: string;
+  meta_pixel_id?: string | null;
   variant_index: number;
   daily_budget_cents: number;
   radius_km: number;
@@ -851,7 +857,7 @@ async function launchCampaignInternal(params: {
   
   const {
     campaignId, meta_access_token, meta_ad_account_id, meta_page_id,
-    variant_index, daily_budget_cents, radius_km, campaign, auth
+    meta_pixel_id, variant_index, daily_budget_cents, radius_km, campaign, auth
   } = params;
 
   try {
@@ -859,14 +865,15 @@ async function launchCampaignInternal(params: {
     const objective: ZuckerObjective = isValidObjective(campaign.objective) ? campaign.objective : 'traffic';
     console.log('[api/launchInternal] Launching campaign with objective:', objective);
     console.log('[api/launchInternal] Meta objective:', getMetaCampaignObjective(objective));
+    const pixelId = normalizeString(meta_pixel_id) || normalizeString(process.env.META_PIXEL_ID) || null;
 
     // Validation: traffic and conversions require a URL
     if (needsUrl(objective) && !campaign.url) {
       return { success: false, error: { code: 'validation_error', message: `The '${objective}' objective requires a campaign URL.` } };
     }
-    // Validation: conversions requires META_PIXEL_ID
-    if (needsPixel(objective) && !process.env.META_PIXEL_ID) {
-      return { success: false, error: { code: 'validation_error', message: 'Conversions objective requires META_PIXEL_ID configured' } };
+    // Validation: conversions requires a Meta Pixel ID
+    if (needsPixel(objective) && !pixelId) {
+      return { success: false, error: { code: 'validation_error', message: 'Conversions objective requires a Meta Pixel ID configured' } };
     }
 
     const businessName = campaign.business_name || 'Campaign';
@@ -930,7 +937,7 @@ async function launchCampaignInternal(params: {
       optimization_goal: adsetParams.optimization_goal,
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
-      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id)),
+      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id, pixelId)),
       ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
       status: 'PAUSED',
       start_time: new Date().toISOString(),
@@ -1383,6 +1390,7 @@ RULES:
           meta_access_token,
           meta_ad_account_id,
           meta_page_id,
+          meta_pixel_id: resolvedMeta.meta_pixel_id,
           variant_index: variant_index || 0,
           daily_budget_cents: budgetCents,
           radius_km: radius_km || response.targeting.radius_km || 25,
@@ -1474,6 +1482,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
   meta_access_token = resolvedMeta.meta_access_token;
   meta_ad_account_id = resolvedMeta.meta_ad_account_id;
   meta_page_id = resolvedMeta.meta_page_id;
+  const pixelId = resolvedMeta.meta_pixel_id || normalizeString(process.env.META_PIXEL_ID) || null;
 
   const pageResolution = await resolvePageIdForLaunch({
     userId: auth.keyRecord.user_id,
@@ -1535,10 +1544,10 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       return res.status(400).json({ error: { code: 'validation_error', message: `The '${objective}' objective requires a campaign URL. Set it during campaign creation.` } });
     }
 
-    // Validation: conversions requires META_PIXEL_ID
-    if (needsPixel(objective) && !process.env.META_PIXEL_ID) {
+    // Validation: conversions requires a Meta Pixel ID
+    if (needsPixel(objective) && !pixelId) {
       await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-      return res.status(400).json({ error: { code: 'validation_error', message: 'Conversions objective requires META_PIXEL_ID configured' } });
+      return res.status(400).json({ error: { code: 'validation_error', message: 'Conversions objective requires a Meta Pixel ID configured' } });
     }
 
     const businessName = campaign?.business_name || 'Campaign';
@@ -1596,7 +1605,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       daily_budget: String(budgetCents), billing_event: 'IMPRESSIONS',
       optimization_goal: adsetParams.optimization_goal, bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
-      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id)),
+      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id, pixelId)),
       ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
       status: 'PAUSED', start_time: new Date().toISOString(),
     }, meta_access_token);
@@ -2000,7 +2009,7 @@ async function handleConversions(req: VercelRequest, res: VercelResponse, campai
 
   try {
     let storedAccessToken: string | null = null;
-    let pixelId: string | null = process.env.META_PIXEL_ID || null;
+    let pixelId: string | null = null;
 
     const { data: apiCampaign } = await supabaseAdmin
       .from('api_campaigns').select('id, meta_campaign_id, meta_access_token')
@@ -2014,10 +2023,13 @@ async function handleConversions(req: VercelRequest, res: VercelResponse, campai
     if (lead) {
       leadData = lead;
       if (lead.business_id) {
-        const { data: biz } = await supabaseAdmin.from('businesses').select('facebook_access_token, facebook_page_id').eq('id', lead.business_id).single();
+        const { data: biz } = await supabaseAdmin.from('businesses').select('facebook_access_token, facebook_page_id, meta_pixel_id').eq('id', lead.business_id).single();
         if (biz?.facebook_access_token) storedAccessToken = storedAccessToken || biz.facebook_access_token;
+        if (biz?.meta_pixel_id) pixelId = normalizeString(biz.meta_pixel_id);
       }
     }
+
+    if (!pixelId) pixelId = normalizeString(process.env.META_PIXEL_ID) || null;
 
     const accessToken = meta_access_token || storedAccessToken || process.env.META_SYSTEM_USER_TOKEN;
     if (!accessToken || !pixelId) {
