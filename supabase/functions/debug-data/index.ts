@@ -45,6 +45,10 @@ serve(async (req) => {
     const { data: leads } = await supabaseAdmin.from("leads").select("*");
     const { data: apiKeys } = await supabaseAdmin.from("api_keys").select("*");
     const { data: apiUsage } = await supabaseAdmin.from("api_usage").select("*").order("created_at", { ascending: false }).limit(1000);
+    const { data: subscribers } = await supabaseAdmin.from("subscribers").select("*");
+    const { data: creditBalances } = await supabaseAdmin.from("credit_balances").select("*");
+    const { data: creditLedger } = await supabaseAdmin.from("credit_ledger").select("*").order("created_at", { ascending: false }).limit(500);
+    const { data: apiCampaigns } = await supabaseAdmin.from("api_campaigns").select("*").order("created_at", { ascending: false }).limit(500);
 
     const response = {
       auth_users_count: authUsers?.users?.length || 0,
@@ -61,6 +65,14 @@ serve(async (req) => {
       api_keys: apiKeys || [],
       api_usage_count: apiUsage?.length || 0,
       api_usage: apiUsage || [],
+      subscribers_count: subscribers?.length || 0,
+      subscribers: subscribers || [],
+      credit_balances_count: creditBalances?.length || 0,
+      credit_balances: creditBalances || [],
+      credit_ledger_count: creditLedger?.length || 0,
+      credit_ledger: creditLedger || [],
+      api_campaigns_count: apiCampaigns?.length || 0,
+      api_campaigns: apiCampaigns || [],
       timestamp: new Date().toISOString(),
     };
 

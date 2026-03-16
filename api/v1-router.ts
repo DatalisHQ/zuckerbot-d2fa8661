@@ -62,6 +62,7 @@ const GOOGLE_AI_API_KEY =
 const AIML_API_KEY = process.env.AIML_API_KEY || '';
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 const WAVESPEED_API_KEY = process.env.WAVESPEED_API_KEY || '';
+const CREATIVE_STORAGE_BUCKET = 'creatives';
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -69,10 +70,14 @@ const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const GRAPH_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const PURCHASE_CREDITS_URL = 'https://zuckerbot.ai/pricing?credits=1';
+// Credit debit logic is temporarily disabled until Stripe credit-pack purchase
+// flows are wired up end-to-end. `debit_credits()` already handles
+// zero-cost actions safely. Previous values: campaign_launch: 5,
+// autonomous_execute_call: 3, autonomous_run_call: 3.
 const CREDIT_COSTS = {
-  campaign_launch: 5,
-  autonomous_execute_call: 3,
-  autonomous_run_call: 3,
+  campaign_launch: 0,
+  autonomous_execute_call: 0,
+  autonomous_run_call: 0,
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -609,6 +614,7 @@ interface ResolvedMetaCredentials {
   meta_access_token: string | null;
   meta_ad_account_id: string | null;
   meta_page_id: string | null;
+  meta_pixel_id: string | null;
   business_id: string | null;
   source: CredentialSource;
 }
@@ -635,6 +641,7 @@ async function resolveMetaCredentials(params: {
   let accessToken = normalizeString(params.meta_access_token);
   let adAccountId = normalizeString(params.meta_ad_account_id);
   let pageId = normalizeString(params.meta_page_id);
+  let pixelId: string | null = null;
 
   const sources = new Set<string>();
   if (accessToken || adAccountId || pageId) {
@@ -663,21 +670,23 @@ async function resolveMetaCredentials(params: {
   if (businessId) {
     const { data: biz } = await supabaseAdmin
       .from('businesses')
-      .select('facebook_access_token, facebook_ad_account_id, facebook_page_id')
+      .select('facebook_access_token, facebook_ad_account_id, facebook_page_id, meta_pixel_id')
       .eq('id', businessId)
       .maybeSingle();
 
     const businessAccessToken = normalizeString(biz?.facebook_access_token);
     const businessAdAccountId = normalizeString(biz?.facebook_ad_account_id);
     const businessPageId = normalizeString(biz?.facebook_page_id);
+    const businessPixelId = normalizeString(biz?.meta_pixel_id);
 
-    if (businessAccessToken || businessAdAccountId || businessPageId) {
+    if (businessAccessToken || businessAdAccountId || businessPageId || businessPixelId) {
       sources.add('businesses');
     }
 
     accessToken = accessToken || businessAccessToken;
     adAccountId = adAccountId || businessAdAccountId;
     pageId = pageId || businessPageId;
+    pixelId = businessPixelId || null;
   }
 
   if (!accessToken || !adAccountId || !pageId) {
@@ -732,6 +741,7 @@ async function resolveMetaCredentials(params: {
     meta_access_token: accessToken,
     meta_ad_account_id: adAccountId,
     meta_page_id: pageId,
+    meta_pixel_id: pixelId,
     business_id: businessId,
     source,
   };
@@ -842,6 +852,7 @@ async function launchCampaignInternal(params: {
   meta_access_token: string;
   meta_ad_account_id: string;
   meta_page_id: string;
+  meta_pixel_id?: string | null;
   variant_index: number;
   daily_budget_cents: number;
   radius_km: number;
@@ -851,7 +862,7 @@ async function launchCampaignInternal(params: {
   
   const {
     campaignId, meta_access_token, meta_ad_account_id, meta_page_id,
-    variant_index, daily_budget_cents, radius_km, campaign, auth
+    meta_pixel_id, variant_index, daily_budget_cents, radius_km, campaign, auth
   } = params;
 
   try {
@@ -859,14 +870,15 @@ async function launchCampaignInternal(params: {
     const objective: ZuckerObjective = isValidObjective(campaign.objective) ? campaign.objective : 'traffic';
     console.log('[api/launchInternal] Launching campaign with objective:', objective);
     console.log('[api/launchInternal] Meta objective:', getMetaCampaignObjective(objective));
+    const pixelId = normalizeString(meta_pixel_id) || normalizeString(process.env.META_PIXEL_ID) || null;
 
     // Validation: traffic and conversions require a URL
     if (needsUrl(objective) && !campaign.url) {
       return { success: false, error: { code: 'validation_error', message: `The '${objective}' objective requires a campaign URL.` } };
     }
-    // Validation: conversions requires META_PIXEL_ID
-    if (needsPixel(objective) && !process.env.META_PIXEL_ID) {
-      return { success: false, error: { code: 'validation_error', message: 'Conversions objective requires META_PIXEL_ID configured' } };
+    // Validation: conversions requires a Meta Pixel ID
+    if (needsPixel(objective) && !pixelId) {
+      return { success: false, error: { code: 'validation_error', message: 'Conversions objective requires a Meta Pixel ID configured' } };
     }
 
     const businessName = campaign.business_name || 'Campaign';
@@ -930,7 +942,7 @@ async function launchCampaignInternal(params: {
       optimization_goal: adsetParams.optimization_goal,
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
-      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id)),
+      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id, pixelId)),
       ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
       status: 'PAUSED',
       start_time: new Date().toISOString(),
@@ -1383,6 +1395,7 @@ RULES:
           meta_access_token,
           meta_ad_account_id,
           meta_page_id,
+          meta_pixel_id: resolvedMeta.meta_pixel_id,
           variant_index: variant_index || 0,
           daily_budget_cents: budgetCents,
           radius_km: radius_km || response.targeting.radius_km || 25,
@@ -1474,6 +1487,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
   meta_access_token = resolvedMeta.meta_access_token;
   meta_ad_account_id = resolvedMeta.meta_ad_account_id;
   meta_page_id = resolvedMeta.meta_page_id;
+  const pixelId = resolvedMeta.meta_pixel_id || normalizeString(process.env.META_PIXEL_ID) || null;
 
   const pageResolution = await resolvePageIdForLaunch({
     userId: auth.keyRecord.user_id,
@@ -1535,10 +1549,10 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       return res.status(400).json({ error: { code: 'validation_error', message: `The '${objective}' objective requires a campaign URL. Set it during campaign creation.` } });
     }
 
-    // Validation: conversions requires META_PIXEL_ID
-    if (needsPixel(objective) && !process.env.META_PIXEL_ID) {
+    // Validation: conversions requires a Meta Pixel ID
+    if (needsPixel(objective) && !pixelId) {
       await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-      return res.status(400).json({ error: { code: 'validation_error', message: 'Conversions objective requires META_PIXEL_ID configured' } });
+      return res.status(400).json({ error: { code: 'validation_error', message: 'Conversions objective requires a Meta Pixel ID configured' } });
     }
 
     const businessName = campaign?.business_name || 'Campaign';
@@ -1596,7 +1610,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       daily_budget: String(budgetCents), billing_event: 'IMPRESSIONS',
       optimization_goal: adsetParams.optimization_goal, bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
-      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id)),
+      promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id, pixelId)),
       ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
       status: 'PAUSED', start_time: new Date().toISOString(),
     }, meta_access_token);
@@ -2000,7 +2014,7 @@ async function handleConversions(req: VercelRequest, res: VercelResponse, campai
 
   try {
     let storedAccessToken: string | null = null;
-    let pixelId: string | null = process.env.META_PIXEL_ID || null;
+    let pixelId: string | null = null;
 
     const { data: apiCampaign } = await supabaseAdmin
       .from('api_campaigns').select('id, meta_campaign_id, meta_access_token')
@@ -2014,10 +2028,13 @@ async function handleConversions(req: VercelRequest, res: VercelResponse, campai
     if (lead) {
       leadData = lead;
       if (lead.business_id) {
-        const { data: biz } = await supabaseAdmin.from('businesses').select('facebook_access_token, facebook_page_id').eq('id', lead.business_id).single();
+        const { data: biz } = await supabaseAdmin.from('businesses').select('facebook_access_token, facebook_page_id, meta_pixel_id').eq('id', lead.business_id).single();
         if (biz?.facebook_access_token) storedAccessToken = storedAccessToken || biz.facebook_access_token;
+        if (biz?.meta_pixel_id) pixelId = normalizeString(biz.meta_pixel_id);
       }
     }
+
+    if (!pixelId) pixelId = normalizeString(process.env.META_PIXEL_ID) || null;
 
     const accessToken = meta_access_token || storedAccessToken || process.env.META_SYSTEM_USER_TOKEN;
     if (!accessToken || !pixelId) {
@@ -2831,6 +2848,93 @@ interface SeedreamResult {
   error?: string;
 }
 
+let creativeBucketInitialized = false;
+
+async function ensureCreativeBucket(): Promise<void> {
+  if (creativeBucketInitialized) return;
+  try {
+    const { data: buckets, error } = await supabaseAdmin.storage.listBuckets();
+    if (error) {
+      console.error('[api/creatives] Failed to list storage buckets:', error);
+      return;
+    }
+
+    const existing = buckets?.find((bucket) => bucket.name === CREATIVE_STORAGE_BUCKET);
+    if (!existing) {
+      const { error: createError } = await supabaseAdmin.storage.createBucket(CREATIVE_STORAGE_BUCKET, {
+        public: true,
+      });
+      if (createError) {
+        console.error('[api/creatives] Failed to create creatives bucket:', createError);
+        return;
+      }
+    } else if (!existing.public) {
+      const { error: updateError } = await supabaseAdmin.storage.updateBucket(CREATIVE_STORAGE_BUCKET, {
+        public: true,
+      });
+      if (updateError) {
+        console.error('[api/creatives] Failed to update creatives bucket to public:', updateError);
+      }
+    }
+
+    creativeBucketInitialized = true;
+  } catch (err) {
+    console.error('[api/creatives] Failed to ensure creatives bucket:', err);
+  }
+}
+
+function getCreativeFileExtension(mimeType: string): string {
+  if (mimeType === 'image/jpeg') return 'jpg';
+  if (mimeType === 'video/mp4') return 'mp4';
+  if (mimeType === 'video/webm') return 'webm';
+  return 'png';
+}
+
+async function uploadCreativeMedia(
+  source: { path?: string; base64?: string; mimeType?: string },
+  prefix: string,
+): Promise<string | null> {
+  try {
+    await ensureCreativeBucket();
+
+    let buffer: Buffer | null = null;
+    let mimeType = source.mimeType || 'image/png';
+    if (source.base64) {
+      buffer = Buffer.from(source.base64, 'base64');
+    } else if (source.path) {
+      const response = await fetch(source.path);
+      if (!response.ok) {
+        console.error('[api/creatives] Failed to download generated media:', await response.text());
+        return null;
+      }
+      if (!mimeType && response.headers.get('content-type')) {
+        mimeType = response.headers.get('content-type')!.split(';')[0] || mimeType;
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+    }
+
+    if (!buffer) return null;
+
+    const fileName = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${getCreativeFileExtension(mimeType)}`;
+    const { error } = await supabaseAdmin.storage.from(CREATIVE_STORAGE_BUCKET).upload(fileName, buffer, {
+      contentType: mimeType || 'image/png',
+      upsert: true,
+    });
+
+    if (error) {
+      console.error('[api/creatives] Failed to upload to creatives bucket:', error);
+      return null;
+    }
+
+    const { data } = supabaseAdmin.storage.from(CREATIVE_STORAGE_BUCKET).getPublicUrl(fileName);
+    return data?.publicUrl || null;
+  } catch (err) {
+    console.error('[api/creatives] Failed to store generated media:', err);
+    return null;
+  }
+}
+
 function inferMimeTypeFromUrl(url?: string): string {
   if (!url) return 'image/png';
   const lower = url.toLowerCase();
@@ -3070,7 +3174,7 @@ async function generateWithSeedream(prompt: string, aspectRatio: string): Promis
  */
 async function callKlingWavespeed(prompt: string, aspectRatio: string): Promise<SeedreamResult> {
   if (!WAVESPEED_API_KEY) {
-    return { success: false, error: 'WaveSpeed API key not configured' };
+    return { success: false, error: 'WAVESPEED_API_KEY is not set. Add it to your Vercel environment variables.' };
   }
 
   const apiBase = (process.env.WAVESPEED_API_BASE_URL || 'https://api.wavespeed.ai').replace(/\/$/, '');
@@ -3299,7 +3403,12 @@ async function handleCreativesGenerate(req: VercelRequest, res: VercelResponse) 
 
   if (isVideoRequest && !WAVESPEED_API_KEY) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/creatives/generate', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
-    return res.status(500).json({ error: { code: 'config_error', message: 'WaveSpeed API key not configured for Kling model' } });
+    return res.status(500).json({
+      error: {
+        code: 'config_error',
+        message: 'WAVESPEED_API_KEY is not set. Add it to your Vercel environment variables.',
+      },
+    });
   }
 
   if (!ANTHROPIC_API_KEY) {
@@ -3451,8 +3560,8 @@ RULES FOR EACH PROMPT:
 
     // Step 4: Generate media using selected model routing
     const creatives: Array<{ 
-      url: string | null; 
-      base64?: string; 
+      url: string | null;
+      image_url: string | null;
       mimeType: string; 
       prompt: string; 
       aspect_ratio: string;
@@ -3476,36 +3585,20 @@ RULES FOR EACH PROMPT:
         let base64Data = klingResult.base64;
 
         if (!publicUrl && base64Data) {
-          try {
-            const ext = mimeType === 'video/mp4' ? 'mp4' : mimeType === 'video/webm' ? 'webm' : 'bin';
-            const fileName = `creative-kling-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-            const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
-            const buf = Buffer.from(base64Data, 'base64');
-            const uploadRes = await fetch(storageUrl, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': mimeType,
-                'x-upsert': 'true',
-                'Content-Length': String(buf.length),
-              },
-              body: buf,
-            });
-            if (uploadRes.ok) {
-              publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-            } else {
-              console.error('[api/creatives] Kling upload failed:', await uploadRes.text());
-            }
-          } catch (uploadErr: any) {
-            console.error('[api/creatives] Kling upload error:', uploadErr);
+          publicUrl = await uploadCreativeMedia({
+            base64: base64Data,
+            mimeType,
+          }, `creative-kling`);
+          if (!publicUrl) {
+            console.error('[api/creatives] Kling upload failed');
           }
         }
 
-        if (publicUrl || base64Data) {
+        if (publicUrl) {
           actualGenerationMethod = 'kling_video';
           creatives.push({
             url: publicUrl,
-            ...(base64Data ? { base64: base64Data } : {}),
+            image_url: publicUrl,
             mimeType,
             prompt: videoPrompt,
             aspect_ratio: selectedRatio,
@@ -3527,57 +3620,32 @@ RULES FOR EACH PROMPT:
             generationSuccess = true;
             
             let publicUrl = '';
-            let base64Data = seedreamResult.base64;
-            
-            // Handle URL-based result (from Replicate)
+            // Upload generated image to Supabase Storage and always return URL
             if (seedreamResult.imageUrl && !seedreamResult.base64) {
-              try {
-                const imageResponse = await fetch(seedreamResult.imageUrl);
-                if (imageResponse.ok) {
-                  const buffer = await imageResponse.arrayBuffer();
-                  base64Data = Buffer.from(buffer).toString('base64');
-                }
-              } catch (err) {
-                console.error('[api/creatives] Failed to download Replicate image:', err);
-                continue;
-              }
+              const imageUrl = await uploadCreativeMedia({
+                path: seedreamResult.imageUrl,
+                mimeType: seedreamResult.mimeType || 'image/png',
+              }, 'creative-seedream');
+              publicUrl = imageUrl || '';
+            } else if (seedreamResult.base64) {
+              const base64Url = await uploadCreativeMedia({
+                base64: seedreamResult.base64,
+                mimeType: seedreamResult.mimeType || 'image/png',
+              }, 'creative-seedream');
+              publicUrl = base64Url || '';
             }
-            
-            // Upload to Supabase Storage
-            if (base64Data) {
-              try {
-                const buf = Buffer.from(base64Data, 'base64');
-                const fileName = `creative-seedream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-                const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
-                
-                const uploadRes = await fetch(storageUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                    'Content-Type': seedreamResult.mimeType || 'image/png',
-                    'x-upsert': 'true',
-                    'Content-Length': String(buf.length),
-                  },
-                  body: buf,
-                });
-                
-                if (uploadRes.ok) {
-                  publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-                } else {
-                  console.error('[api/creatives] Seedream upload failed:', await uploadRes.text());
-                }
-              } catch (uploadErr: any) {
-                console.error('[api/creatives] Seedream upload error:', uploadErr);
-              }
-              
+
+            if (publicUrl) {
               creatives.push({
                 url: publicUrl || null,
-                base64: base64Data,
+                image_url: publicUrl || null,
                 mimeType: seedreamResult.mimeType || 'image/png',
                 prompt: imagePrompt,
                 aspect_ratio: selectedRatio,
                 generation_method: 'seedream',
               });
+            } else {
+              console.error('[api/creatives] Failed to upload Seedream image result:', seedreamResult.imageUrl || 'inline base64');
             }
           } else if (seedreamResult.error) {
             providerErrors.push({ provider: 'seedream', error: String(seedreamResult.error) });
@@ -3621,40 +3689,24 @@ RULES FOR EACH PROMPT:
               if (prediction.bytesBase64Encoded) {
                 actualGenerationMethod = 'imagen';
                 const mimeType = prediction.mimeType || 'image/png';
-                const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
-                const fileName = `creative-imagen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-
-                // Upload to Supabase Storage
-                let publicUrl = '';
-                try {
-                  const buf = Buffer.from(prediction.bytesBase64Encoded, 'base64');
-                  const storageUrl = `${SUPABASE_URL}/storage/v1/object/ad-previews/${fileName}`;
-                  const uploadRes = await fetch(storageUrl, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                      'Content-Type': mimeType,
-                      'x-upsert': 'true',
-                      'Content-Length': String(buf.length),
-                    },
-                    body: buf,
-                  });
-                  
-                  if (uploadRes.ok) {
-                    publicUrl = `${SUPABASE_URL}/storage/v1/object/public/ad-previews/${fileName}`;
-                  }
-                } catch (uploadErr: any) {
-                  console.error('[api/creatives] Imagen upload error:', uploadErr);
-                }
-
-                creatives.push({
-                  url: publicUrl || null,
+                const uploadedUrl = await uploadCreativeMedia({
                   base64: prediction.bytesBase64Encoded,
                   mimeType,
-                  prompt: imagePrompt,
-                  aspect_ratio: selectedRatio,
-                  generation_method: 'imagen',
-                });
+                }, `creative-imagen`);
+                const publicUrl = uploadedUrl || '';
+
+                if (publicUrl) {
+                  creatives.push({
+                    url: publicUrl,
+                    image_url: publicUrl,
+                    mimeType,
+                    prompt: imagePrompt,
+                    aspect_ratio: selectedRatio,
+                    generation_method: 'imagen',
+                  });
+                } else {
+                  console.error('[api/creatives] Imagen upload failed:', prediction.mimeType);
+                }
               }
             }
           } else {

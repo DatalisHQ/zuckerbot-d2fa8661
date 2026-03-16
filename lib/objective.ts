@@ -60,14 +60,12 @@ export function getAdsetParams(objective: ZuckerObjective): {
 export function getPromotedObject(
   objective: ZuckerObjective,
   meta_page_id: string,
+  pixel_id?: string | null,
 ): Record<string, string> {
   const base: Record<string, string> = { page_id: meta_page_id };
 
-  if (objective === 'conversions') {
-    const pixelId = process.env.META_PIXEL_ID;
-    if (pixelId) {
-      base.pixel_id = pixelId;
-    }
+  if (objective === 'conversions' && pixel_id) {
+    base.pixel_id = pixel_id;
   }
 
   return base;

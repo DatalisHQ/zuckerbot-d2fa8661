@@ -27,6 +27,34 @@ const AuthCallback = () => {
           return;
         }
 
+        const { data: existingProfile, error: profileLookupError } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("user_id", session.user.id)
+          .maybeSingle();
+
+        if (profileLookupError) {
+          console.error("Failed to check profile during auth callback:", profileLookupError);
+        } else if (!existingProfile) {
+          console.warn("Missing profile row after auth callback, creating fallback profile", {
+            userId: session.user.id,
+          });
+
+          const { error: insertError } = await supabase.from("profiles").insert({
+            user_id: session.user.id,
+            email: session.user.email,
+            full_name:
+              session.user.user_metadata?.full_name ||
+              session.user.user_metadata?.name ||
+              null,
+            onboarding_completed: false,
+          });
+
+          if (insertError) {
+            console.error("Failed to create fallback profile during auth callback:", insertError);
+          }
+        }
+
         // Check for returnTo param in URL
         const params = new URLSearchParams(window.location.search);
         const returnTo = params.get("returnTo");

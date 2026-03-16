@@ -293,20 +293,13 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 7. Research Reviews ─────────────────────────────────────────
   server.tool(
     "zuckerbot_research_reviews",
-    "Get review intelligence for a business. Searches Google Reviews, Yelp, and other sources, then synthesizes themes, best quotes, and sentiment. Use this data to inform ad copy.",
+    "Get review intelligence for a business. Surfaces sentiment themes and standout proof points usable in ad copy.",
     {
-      business_name: z.string().describe("Business name to research"),
-      location: z
-        .string()
-        .optional()
-        .describe("City/region for more accurate results (e.g., 'Austin, TX')"),
+      url: z.string().describe("Business website URL"),
     },
-    async ({ business_name, location }) => {
+    async ({ url }) => {
       try {
-        const body: Record<string, unknown> = { business_name };
-        if (location) body.location = location;
-
-        const result = await client.post("/research/reviews", body);
+        const result = await client.post("/research/reviews", { url });
         return formatResult(result);
       } catch (err) {
         return formatError(err);
@@ -317,22 +310,14 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 8. Research Competitors ─────────────────────────────────────
   server.tool(
     "zuckerbot_research_competitors",
-    "Analyze competitor ads for a business category and location. Searches Meta Ad Library and web results to find active competitor campaigns, common hooks, and gaps you can exploit.",
+    "Analyse competitor ads for a business category and location. Returns competitor positioning, creative patterns, and gaps to exploit.",
     {
-      industry: z.string().describe("Business category (e.g., 'pizza restaurant', 'yoga studio')"),
+      category: z.string().describe("Business category (e.g., 'online party games')"),
       location: z.string().describe("City/region (e.g., 'Austin, TX')"),
-      country: z
-        .string()
-        .default("US")
-        .describe("Country code (default: US)"),
     },
-    async ({ industry, location, country }) => {
+    async ({ category, location }) => {
       try {
-        const result = await client.post("/research/competitors", {
-          industry,
-          location,
-          country,
-        });
+        const result = await client.post("/research/competitors", { category, location });
         return formatResult(result);
       } catch (err) {
         return formatError(err);
@@ -343,10 +328,10 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 9. Research Market ──────────────────────────────────────────
   server.tool(
     "zuckerbot_research_market",
-    "Get market intelligence for an industry and location. Returns market size, trends, audience demographics, and advertising benchmarks to inform campaign strategy.",
+    "Get market size, audience estimates, and ad benchmarks for an industry and location. Use before creating a campaign to understand the landscape.",
     {
       industry: z.string().describe("Industry/business category (e.g., 'fitness', 'dental')"),
-      location: z.string().describe("City/region (e.g., 'Austin, TX')"),
+      location: z.string().describe("City/region (e.g., 'United States')"),
     },
     async ({ industry, location }) => {
       try {
