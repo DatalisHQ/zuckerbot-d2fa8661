@@ -443,6 +443,7 @@ export type Database = {
           lat: number | null
           lng: number | null
           name: string
+          meta_pixel_id: string | null
           notifications_enabled: boolean
           phone: string
           postcode: string | null
@@ -471,6 +472,7 @@ export type Database = {
           lat?: number | null
           lng?: number | null
           name: string
+          meta_pixel_id?: string | null
           notifications_enabled?: boolean
           phone: string
           postcode?: string | null
@@ -499,6 +501,7 @@ export type Database = {
           lat?: number | null
           lng?: number | null
           name?: string
+          meta_pixel_id?: string | null
           notifications_enabled?: boolean
           phone?: string
           postcode?: string | null

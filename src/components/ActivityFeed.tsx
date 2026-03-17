@@ -25,8 +25,9 @@ export interface AutomationRun {
     | "competitor_analyst"
     | "review_scout"
     | "performance_monitor"
-    | "campaign_optimizer";
-  status: "pending" | "running" | "completed" | "failed" | "needs_approval";
+    | "campaign_optimizer"
+    | "autonomous_loop";
+  status: "pending" | "running" | "completed" | "failed" | "needs_approval" | "executing" | "dismissed";
   trigger_type: "scheduled" | "manual" | "event";
   trigger_reason: string | null;
   input: Record<string, unknown> | null;
@@ -61,6 +62,7 @@ const AGENT_CONFIG: Record<
   review_scout: { icon: Star, label: "Review Scout" },
   performance_monitor: { icon: Activity, label: "Performance Monitor" },
   campaign_optimizer: { icon: SlidersHorizontal, label: "Campaign Optimizer" },
+  autonomous_loop: { icon: Play, label: "Autonomous Loop" },
 };
 
 function getStatusBadge(status: AutomationRun["status"]) {
@@ -88,6 +90,18 @@ function getStatusBadge(status: AutomationRun["status"]) {
       return (
         <Badge className="bg-yellow-500/10 text-yellow-700 dark:text-yellow-300 border-yellow-500/20 hover:bg-yellow-500/20">
           Needs Approval
+        </Badge>
+      );
+    case "executing":
+      return (
+        <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20 hover:bg-blue-500/20">
+          Executing
+        </Badge>
+      );
+    case "dismissed":
+      return (
+        <Badge variant="secondary">
+          Dismissed
         </Badge>
       );
     case "pending":
@@ -135,6 +149,8 @@ function renderExpandedOutput(run: AutomationRun) {
     case "performance_monitor":
       return <PerformanceOutput data={output} />;
     case "campaign_optimizer":
+      return <OptimizerOutput data={output} />;
+    case "autonomous_loop":
       return <OptimizerOutput data={output} />;
     default:
       return (
@@ -276,7 +292,7 @@ function PerformanceOutput({ data }: { data: Record<string, unknown> }) {
 
 function OptimizerOutput({ data }: { data: Record<string, unknown> }) {
   const recommendations = (data.recommendations || data.actions || []) as Array<
-    string | { text?: string; description?: string; action?: string }
+    string | { text?: string; description?: string; action?: string; reason?: string; type?: string }
   >;
   if (recommendations.length === 0) {
     return (
@@ -291,7 +307,7 @@ function OptimizerOutput({ data }: { data: Record<string, unknown> }) {
         const text =
           typeof rec === "string"
             ? rec
-            : rec.text || rec.description || rec.action || JSON.stringify(rec);
+            : rec.text || rec.description || rec.reason || rec.action || rec.type || JSON.stringify(rec);
         return (
           <li key={i} className="text-sm flex items-start gap-2">
             <span className="text-primary font-bold mt-0.5">{i + 1}.</span>

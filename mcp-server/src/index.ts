@@ -25,7 +25,7 @@ async function main(): Promise<void> {
     version: "0.1.0",
   });
 
-  // Register all 10 tools
+  // Register all MCP tools
   registerTools(server, client);
 
   // Connect via stdio

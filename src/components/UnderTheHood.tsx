@@ -20,8 +20,10 @@ function statusDot(status: AutomationRun["status"]) {
   const colors: Record<string, string> = {
     completed: "bg-green-500",
     running: "bg-blue-500 animate-pulse",
+    executing: "bg-blue-500 animate-pulse",
     failed: "bg-red-500",
     needs_approval: "bg-yellow-500",
+    dismissed: "bg-slate-400",
     pending: "bg-gray-400",
   };
   return (

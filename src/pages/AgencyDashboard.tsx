@@ -132,9 +132,21 @@ export default function AgencyDashboard() {
   // Handlers
   const handleApprove = async (runId: string) => {
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        console.error("Approve failed: missing session token");
+        return;
+      }
+
       const res = await fetch("/api/agents/execute-approval", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ run_id: runId, action: "approve" }),
       });
       if (!res.ok) {
@@ -149,9 +161,21 @@ export default function AgencyDashboard() {
 
   const handleDismiss = async (runId: string) => {
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        console.error("Dismiss failed: missing session token");
+        return;
+      }
+
       const res = await fetch("/api/agents/execute-approval", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ run_id: runId, action: "dismiss" }),
       });
       if (!res.ok) {

@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin, handleCors, getBusinessWithConfig } from './_utils.js';
 import { pauseMetaCampaign, updateAdsetDailyBudget } from './meta.js';
 import type { OptimizationAction } from './campaign-optimizer.js';
+import { queueCreativeRefresh } from '../../lib/creative-queue.js';
+import { sendSlackApprovalDecision } from '../../lib/slack.js';
 
 export const config = { maxDuration: 60 };
 
@@ -87,10 +89,37 @@ function mapLegacyRecommendations(recommendations: any[]): OptimizationAction[] 
         return { type: 'increase_budget', campaign_id: r.campaign_id, campaign_name: r.campaign_name, reason: r.reason || '', pct_change: r.pct_change ?? 0.20, executable: true, requires_approval: true };
       case 'shift_budget':
         return { type: 'shift_budget', campaign_id: r.campaign_id, campaign_name: r.campaign_name, reason: r.reason || '', pct_change: r.pct_change ?? 0.30, executable: true, requires_approval: true };
+      case 'refresh_creative':
+        return { type: 'refresh_creative', campaign_id: r.campaign_id, campaign_name: r.campaign_name, reason: r.reason || '', executable: true, requires_approval: true };
       default:
         return { type: r.action || 'monitor', campaign_id: r.campaign_id, campaign_name: r.campaign_name, reason: r.reason || '', executable: false, requires_approval: false };
     }
   });
+}
+
+function summarizeDecisionActions(actions: OptimizationAction[]): { campaignName: string; actionType: string; summary: string } {
+  const first = actions[0];
+  if (!first) {
+    return {
+      campaignName: 'Unknown campaign',
+      actionType: 'monitor',
+      summary: 'No executable actions were attached to this run.',
+    };
+  }
+
+  if (actions.length === 1) {
+    return {
+      campaignName: first.campaign_name,
+      actionType: first.type,
+      summary: first.reason || 'Approval decision recorded.',
+    };
+  }
+
+  return {
+    campaignName: first.campaign_name,
+    actionType: first.type,
+    summary: `${actions.length} actions were included in this approval run.`,
+  };
 }
 
 /** Execute a single OptimizationAction. Never throws — returns a result object. */
@@ -98,6 +127,7 @@ async function executeAction(
   action: OptimizationAction,
   accessToken: string,
   maxBudgetCents: number,
+  context: { businessId: string; runId: string },
 ): Promise<ExecutionResult> {
   const base = {
     action_type: action.type,
@@ -170,6 +200,24 @@ async function executeAction(
         detail: result.ok
           ? { previous_budget_cents: currentCents, new_budget_cents: newBudgetCents, pct_change: pctChange }
           : result.data,
+      };
+    }
+
+    if (action.type === 'refresh_creative') {
+      const result = await queueCreativeRefresh({
+        businessId: context.businessId,
+        campaignId: action.campaign_id,
+        campaignName: action.campaign_name,
+        reason: action.reason,
+        sourceRunId: context.runId,
+      });
+
+      return {
+        ...base,
+        ok: result.ok,
+        status: result.status,
+        error: result.error,
+        detail: result.detail,
       };
     }
 
@@ -249,6 +297,15 @@ export default async function handler(req: any, res: any) {
         .eq('id', run_id);
 
       if (dismissError) throw new Error(`Failed to dismiss run: ${dismissError.message}`);
+      const dismissActions = resolveActions(run);
+      const dismissSummary = summarizeDecisionActions(dismissActions);
+      await sendSlackApprovalDecision({
+        runId: run_id,
+        campaignName: dismissSummary.campaignName,
+        actionType: dismissSummary.actionType,
+        decision: 'denied',
+        summary: 'Dismissed. No action taken.',
+      });
       return res.status(200).json({ run_id, action, status: 'dismissed', message: 'Dismissed. No action taken.' });
     }
 
@@ -329,6 +386,16 @@ export default async function handler(req: any, res: any) {
         },
       }).eq('id', run_id);
 
+      const tokenActions = resolveActions(run);
+      const tokenSummary = summarizeDecisionActions(tokenActions);
+      await sendSlackApprovalDecision({
+        runId: run_id,
+        campaignName: tokenSummary.campaignName,
+        actionType: tokenSummary.actionType,
+        decision: 'failed',
+        summary: 'Execution failed because the business is missing a Meta access token.',
+      });
+
       return res.status(200).json({
         run_id,
         action: 'approve',
@@ -347,7 +414,10 @@ export default async function handler(req: any, res: any) {
     const executionResults: ExecutionResult[] = [];
     try {
       for (const act of actionsToExecute) {
-        const result = await executeAction(act, accessToken, maxBudgetCents);
+        const result = await executeAction(act, accessToken, maxBudgetCents, {
+          businessId: run.business_id,
+          runId: run_id,
+        });
         executionResults.push(result);
       }
     } catch (execError: any) {
@@ -384,6 +454,15 @@ export default async function handler(req: any, res: any) {
         executed_by: userId,
       },
     }).eq('id', run_id);
+
+    const decisionSummary = summarizeDecisionActions(actionsToExecute);
+    await sendSlackApprovalDecision({
+      runId: run_id,
+      campaignName: decisionSummary.campaignName,
+      actionType: decisionSummary.actionType,
+      decision: 'approved',
+      summary: execSummary,
+    });
 
     return res.status(200).json({
       run_id,

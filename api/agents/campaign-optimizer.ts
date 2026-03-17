@@ -317,8 +317,8 @@ function buildActions(recommendations: Recommendation[]): OptimizationAction[] {
           campaign_id: r.campaign_id,
           campaign_name: r.campaign_name,
           reason: r.reason,
-          executable: false, // requires human or separate creative agent
-          requires_approval: false,
+          executable: true,
+          requires_approval: true,
         };
       case 'monitor':
       default:

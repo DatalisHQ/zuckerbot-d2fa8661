@@ -26,6 +26,7 @@ const AGENT_ICONS: Record<AutomationRun["agent_type"], typeof Sparkles> = {
   review_scout: Star,
   performance_monitor: Activity,
   campaign_optimizer: SlidersHorizontal,
+  autonomous_loop: ShieldCheck,
 };
 
 const AGENT_LABELS: Record<AutomationRun["agent_type"], string> = {
@@ -34,6 +35,7 @@ const AGENT_LABELS: Record<AutomationRun["agent_type"], string> = {
   review_scout: "Review Scout",
   performance_monitor: "Performance Monitor",
   campaign_optimizer: "Campaign Optimizer",
+  autonomous_loop: "Autonomous Loop",
 };
 
 function renderOutputPreview(run: AutomationRun) {
@@ -63,11 +65,11 @@ function renderOutputPreview(run: AutomationRun) {
     );
   }
 
-  if (run.agent_type === "campaign_optimizer") {
+  if (run.agent_type === "campaign_optimizer" || run.agent_type === "autonomous_loop") {
     const recommendations = (output.recommendations ||
       output.actions ||
       []) as Array<
-      string | { text?: string; description?: string; action?: string }
+      string | { text?: string; description?: string; action?: string; reason?: string; type?: string }
     >;
     if (recommendations.length === 0) return null;
     return (
@@ -76,7 +78,7 @@ function renderOutputPreview(run: AutomationRun) {
           const text =
             typeof rec === "string"
               ? rec
-              : rec.text || rec.description || rec.action || JSON.stringify(rec);
+              : rec.text || rec.description || rec.reason || rec.action || rec.type || JSON.stringify(rec);
           return (
             <li key={i} className="text-sm flex items-start gap-2">
               <span className="text-primary font-bold mt-0.5">{i + 1}.</span>

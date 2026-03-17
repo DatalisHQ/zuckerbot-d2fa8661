@@ -252,7 +252,36 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 7. Sync Conversion ─────────────────────────────────────────
+  // ── 7. Get Account Insights ───────────────────────────────────
+  server.tool(
+    "zuckerbot_get_account_insights",
+    "Fetch historical Meta ad account insights for a connected business over a date range. Useful for month-over-month spend, clicks, impressions, CTR, CPM, CPC, and frequency analysis without exporting from Ads Manager.",
+    {
+      business_id: z.string().describe("Business ID linked to the connected Meta ad account"),
+      date_from: z.string().describe("Start date in YYYY-MM-DD format"),
+      date_to: z.string().describe("End date in YYYY-MM-DD format"),
+      time_increment: z
+        .enum(["daily", "monthly"])
+        .default("monthly")
+        .describe("Whether to break the results down daily or monthly"),
+    },
+    async ({ business_id, date_from, date_to, time_increment }) => {
+      try {
+        const params = new URLSearchParams({
+          business_id,
+          date_from,
+          date_to,
+          time_increment,
+        });
+        const result = await client.get(`/ad-account/insights?${params.toString()}`);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 8. Sync Conversion ─────────────────────────────────────────
   server.tool(
     "zuckerbot_sync_conversion",
     "Send conversion feedback to Meta's algorithm. When a lead converts (or doesn't), this teaches Meta to find more (or fewer) people like them. Critical for improving lead quality over time.",
@@ -290,7 +319,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 7. Research Reviews ─────────────────────────────────────────
+  // ── 9. Research Reviews ─────────────────────────────────────────
   server.tool(
     "zuckerbot_research_reviews",
     "Get review intelligence for a business. Surfaces sentiment themes and standout proof points usable in ad copy.",
@@ -307,7 +336,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 8. Research Competitors ─────────────────────────────────────
+  // ── 10. Research Competitors ────────────────────────────────────
   server.tool(
     "zuckerbot_research_competitors",
     "Analyse competitor ads for a business category and location. Returns competitor positioning, creative patterns, and gaps to exploit.",
@@ -325,7 +354,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 9. Research Market ──────────────────────────────────────────
+  // ── 11. Research Market ─────────────────────────────────────────
   server.tool(
     "zuckerbot_research_market",
     "Get market size, audience estimates, and ad benchmarks for an industry and location. Use before creating a campaign to understand the landscape.",
@@ -346,7 +375,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 10. Meta Connection Status ─────────────────────────────────
+  // ── 12. Meta Connection Status ─────────────────────────────────
   server.tool(
     "zuckerbot_meta_status",
     "Check if the user has connected their Facebook/Meta account. If not connected, returns a URL where they can connect. Always check this before attempting to launch a campaign.",
@@ -361,7 +390,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 11. List Facebook Pages ────────────────────────────────────
+  // ── 13. List Facebook Pages ────────────────────────────────────
   server.tool(
     "zuckerbot_list_meta_pages",
     "List Facebook pages available to the connected Meta account and indicate which page is currently selected for launch.",
@@ -376,7 +405,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 12. Select Facebook Page ───────────────────────────────────
+  // ── 14. Select Facebook Page ───────────────────────────────────
   server.tool(
     "zuckerbot_select_meta_page",
     "Select and store the Facebook page to use for launches. Use this when multiple pages are available.",
@@ -395,7 +424,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 13. Resolve Launch Credentials ─────────────────────────────
+  // ── 15. Resolve Launch Credentials ─────────────────────────────
   server.tool(
     "zuckerbot_get_launch_credentials",
     "Resolve stored Meta launch credentials for the authenticated API key/user and report whether autonomous launch is possible.",
@@ -410,7 +439,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 14. Generate Creatives ──────────────────────────────────────
+  // ── 16. Generate Creatives ─────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
     "Generate ad creatives independently from campaign creation. Supports image creatives (Seedream/Imagen) and video creatives (Kling). If the prompt text asks for a video ad, the tool auto-routes to Kling/video unless explicitly overridden.",
@@ -465,7 +494,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 15. Generate Ad Creative (Legacy Alias) ─────────────────────
+  // ── 17. Generate Ad Creative (Legacy Alias) ────────────────────
   server.tool(
     "zuckerbot_generate_ad_creative",
     "Legacy alias of zuckerbot_generate_creatives. Supports image creatives and video creatives (Kling).",

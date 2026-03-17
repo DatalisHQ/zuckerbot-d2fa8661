@@ -80,12 +80,18 @@ serve(async (req) => {
       }
     }
 
+    const adsWithUrls = ads.map((ad, index) => ({
+      ...ad,
+      image_url: savedImageUrls[index] || null,
+    }));
+
     return new Response(
       JSON.stringify({
         success: true,
         business_name: brandAnalysis.business_type,
         brand_analysis: brandAnalysis,
-        ads: ads,
+        ads: adsWithUrls,
+        saved_image_urls: savedImageUrls,
         message: "Enhanced ads generated using brand-specific analysis",
       }),
       {
@@ -128,8 +134,8 @@ async function performBrandAnalysis(url: string) {
 async function generateEnhancedAds(brandAnalysis: any, url: string) {
   const ads = [];
   
-  // Generate 2 enhanced ads using brand-specific context
-  for (let i = 0; i < 2; i++) {
+  // Generate 3 enhanced ads using brand-specific context
+  for (let i = 0; i < 3; i++) {
     const adPrompt = buildEnhancedPrompt(brandAnalysis, i);
     const generatedAd = await generateSingleAd(adPrompt, brandAnalysis, i);
     ads.push(generatedAd);
