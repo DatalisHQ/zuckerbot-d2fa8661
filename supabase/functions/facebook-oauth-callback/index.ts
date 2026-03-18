@@ -140,9 +140,11 @@ serve(async (req: Request) => {
           `https://graph.facebook.com/v21.0/${adAccountId}/adspixels?access_token=${accessToken}&fields=id,name`
         );
         const pixelData = await pixelRes.json();
-        if (pixelData.data && pixelData.data.length > 0) {
+        if (pixelData.data && pixelData.data.length === 1) {
           pixelId = pixelData.data[0].id;
           console.log(`[fb-oauth] Found pixel: ${pixelData.data[0].name} (${pixelId})`);
+        } else if (pixelData.data && pixelData.data.length > 1) {
+          console.log(`[fb-oauth] Found ${pixelData.data.length} pixels. Waiting for explicit selection.`);
         }
       } catch (e) {
         console.warn("[fb-oauth] Failed to fetch pixels:", e.message);

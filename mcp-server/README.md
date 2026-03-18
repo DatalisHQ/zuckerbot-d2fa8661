@@ -136,6 +136,8 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 | `zuckerbot_meta_status` | Check whether Meta is connected for this API key/user | none |
 | `zuckerbot_list_ad_accounts` | List available Meta ad accounts and the current selection | none |
 | `zuckerbot_select_ad_account` | Select/save a Meta ad account ID for future launches | `ad_account_id` |
+| `zuckerbot_list_pixels` | List available Meta pixels for the selected ad account and the current selection | none |
+| `zuckerbot_select_pixel` | Select/save a Meta pixel ID for future conversion tracking | `pixel_id` |
 | `zuckerbot_list_meta_pages` | List available Facebook pages and current selected page | none |
 | `zuckerbot_select_meta_page` | Select/save a Facebook page ID for future launches | `page_id` |
 | `zuckerbot_get_launch_credentials` | Resolve stored launch credentials and report missing fields | none |

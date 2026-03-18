@@ -87,7 +87,9 @@ Base URL: `https://zuckerbot.ai/api/v1/`
 | `GET` | `/meta/status` | Check whether stored Meta credentials are complete |
 | `GET` | `/meta/credentials` | Resolve the selected Meta ad account and page for launches |
 | `GET` | `/meta/ad-accounts` | List accessible Meta ad accounts and show the selected one |
-| `POST` | `/meta/select-ad-account` | Select the active Meta ad account and clear the stored page |
+| `POST` | `/meta/select-ad-account` | Select the active Meta ad account, clear the stored page, and auto-select the pixel if only one exists |
+| `GET` | `/pixels` | List accessible Meta pixels for the selected ad account and show the selected one |
+| `POST` | `/pixels/select` | Select the active Meta pixel for conversion tracking |
 | `GET` | `/meta/pages` | List accessible Facebook pages and show the selected one |
 | `POST` | `/meta/select-page` | Select the active Facebook page for future launches |
 | `POST` | `/keys/create` | Create a new API key |

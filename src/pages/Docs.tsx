@@ -22,6 +22,8 @@ const sections = [
   { id: "ep-keys", label: "POST /keys/create", indent: true },
   { id: "ep-meta-ad-accounts", label: "GET /meta/ad-accounts", indent: true },
   { id: "ep-meta-select-ad-account", label: "POST /meta/select-ad-account", indent: true },
+  { id: "ep-pixels", label: "GET /pixels", indent: true },
+  { id: "ep-pixels-select", label: "POST /pixels/select", indent: true },
   { id: "mcp-server", label: "MCP Server" },
   { id: "rate-limits", label: "Rate Limits" },
   { id: "errors", label: "Errors" },
@@ -807,14 +809,15 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             id="ep-meta-select-ad-account"
             method="POST"
             path="/v1/meta/select-ad-account"
-            description="Select the active Meta ad account for future launches. Switching accounts clears the stored Facebook Page and refreshes the stored Meta Pixel ID from the selected account."
+            description="Select the active Meta ad account for future launches. Switching accounts clears the stored Facebook Page and auto-selects the Meta Pixel only when exactly one pixel exists on the account."
             requestBody={`{
   "ad_account_id": "act_2064725353887861"
 }`}
             responseBody={`{
   "selected_ad_account_id": "act_2064725353887861",
   "selected_ad_account_name": "Sophiie.ai",
-  "selected_pixel_id": "123456789012345",
+  "selected_pixel_id": null,
+  "pixel_selection_required": true,
   "page_selection_required": true,
   "page_id_cleared": true,
   "stored": true
@@ -823,6 +826,51 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
   -H "Authorization: Bearer zb_live_abc123" \\
   -H "Content-Type: application/json" \\
   -d '{"ad_account_id": "act_2064725353887861"}'`}
+          />
+
+          {/* GET /v1/pixels */}
+          <EndpointSection
+            id="ep-pixels"
+            method="GET"
+            path="/v1/pixels"
+            description="List every Meta Pixel available on the currently selected Meta ad account and mark which pixel is currently selected for conversion tracking."
+            notes="If the selected ad account contains exactly one pixel and none is stored yet, ZuckerBot auto-selects and persists it."
+            responseBody={`{
+  "selected_ad_account_id": "act_2064725353887861",
+  "pixels": [
+    {
+      "id": "123456789012345",
+      "name": "Main Website Pixel",
+      "selected": true,
+      "is_selected": true
+    }
+  ],
+  "selected_pixel_id": "123456789012345",
+  "pixel_count": 1
+}`}
+            curlExample={`curl https://zuckerbot.ai/api/v1/pixels \\
+  -H "Authorization: Bearer zb_live_abc123"`}
+          />
+
+          {/* POST /v1/pixels/select */}
+          <EndpointSection
+            id="ep-pixels-select"
+            method="POST"
+            path="/v1/pixels/select"
+            description="Select the active Meta Pixel for future conversion tracking and store it on the business record."
+            requestBody={`{
+  "pixel_id": "123456789012345"
+}`}
+            responseBody={`{
+  "selected_ad_account_id": "act_2064725353887861",
+  "selected_pixel_id": "123456789012345",
+  "selected_pixel_name": "Main Website Pixel",
+  "stored": true
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/pixels/select \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"pixel_id": "123456789012345"}'`}
           />
 
           {/* MCP Server */}
@@ -878,6 +926,8 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
                 { name: "zuckerbot_meta_status", desc: "Check Facebook connection status" },
                 { name: "zuckerbot_list_ad_accounts", desc: "List Meta ad accounts and current selection" },
                 { name: "zuckerbot_select_ad_account", desc: "Switch the active Meta ad account" },
+                { name: "zuckerbot_list_pixels", desc: "List Meta Pixels for the selected ad account" },
+                { name: "zuckerbot_select_pixel", desc: "Switch the active Meta Pixel" },
                 { name: "zuckerbot_list_meta_pages", desc: "List Facebook pages for the connected Meta user" },
                 { name: "zuckerbot_select_meta_page", desc: "Switch the active Facebook Page" },
                 { name: "zuckerbot_get_launch_credentials", desc: "Resolve stored Meta launch credentials" },

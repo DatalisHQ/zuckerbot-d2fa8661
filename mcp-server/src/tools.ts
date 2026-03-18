@@ -424,7 +424,41 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 15. List Facebook Pages ────────────────────────────────────
+  // ── 15. List Meta Pixels ───────────────────────────────────────
+  server.tool(
+    "zuckerbot_list_pixels",
+    "List Meta Pixels available to the currently selected Meta ad account and indicate which pixel is currently selected for conversion tracking.",
+    {},
+    async () => {
+      try {
+        const result = await client.get("/pixels");
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 16. Select Meta Pixel ──────────────────────────────────────
+  server.tool(
+    "zuckerbot_select_pixel",
+    "Select and store the Meta Pixel to use for conversion tracking on the currently selected Meta ad account.",
+    {
+      pixel_id: z.string().describe("Meta Pixel ID to use for future conversion tracking"),
+    },
+    async ({ pixel_id }) => {
+      try {
+        const result = await client.post("/pixels/select", {
+          pixel_id,
+        });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 17. List Facebook Pages ────────────────────────────────────
   server.tool(
     "zuckerbot_list_meta_pages",
     "List Facebook pages available to the connected Meta account and indicate which page is currently selected for launch.",
@@ -439,7 +473,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 16. Select Facebook Page ───────────────────────────────────
+  // ── 18. Select Facebook Page ───────────────────────────────────
   server.tool(
     "zuckerbot_select_meta_page",
     "Select and store the Facebook page to use for launches. Use this when multiple pages are available.",

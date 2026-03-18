@@ -110,6 +110,11 @@ interface FacebookAdAccountOption {
   amount_spent: string | null;
 }
 
+interface FacebookPixelOption {
+  id: string;
+  name: string;
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function Profile() {
@@ -148,6 +153,11 @@ export default function Profile() {
   const [showAdAccountSelector, setShowAdAccountSelector] = useState(false);
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false);
   const [isUpdatingAdAccount, setIsUpdatingAdAccount] = useState(false);
+  const [availablePixels, setAvailablePixels] = useState<FacebookPixelOption[]>([]);
+  const [selectedPixelId, setSelectedPixelId] = useState("");
+  const [showPixelSelector, setShowPixelSelector] = useState(false);
+  const [isLoadingPixels, setIsLoadingPixels] = useState(false);
+  const [isUpdatingPixel, setIsUpdatingPixel] = useState(false);
   const [availablePages, setAvailablePages] = useState<FacebookPageOption[]>([]);
   const [selectedPageId, setSelectedPageId] = useState("");
   const [showPageSelector, setShowPageSelector] = useState(false);
@@ -278,6 +288,14 @@ export default function Profile() {
             openSelector: !biz.facebook_ad_account_id,
             silent: true,
           });
+          if (biz.facebook_ad_account_id) {
+            await loadFacebookPixels({
+              userId: user.id,
+              adAccountId: biz.facebook_ad_account_id,
+              openSelector: !biz.meta_pixel_id,
+              silent: true,
+            });
+          }
           if (biz.facebook_ad_account_id || biz.facebook_page_id) {
             await loadFacebookPages({
               userId: user.id,
@@ -624,30 +642,166 @@ export default function Profile() {
     }
   };
 
-  const fetchFirstPixelForAdAccount = async (
+  const persistSelectedPixel = async ({
+    userId,
+    pixelId,
+  }: {
+    userId: string;
+    pixelId: string | null;
+  }) => {
+    const { data: updatedBusiness, error } = await supabase
+      .from("businesses" as any)
+      .update({ meta_pixel_id: pixelId })
+      .eq("user_id", userId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    if (updatedBusiness) {
+      const typedBusiness = updatedBusiness as unknown as Business;
+      setBusiness(typedBusiness);
+      setFormData((prev) => ({
+        ...prev,
+        meta_pixel_id: typedBusiness.meta_pixel_id || "",
+      }));
+    }
+
+    return updatedBusiness as unknown as Business | null;
+  };
+
+  const fetchPixelsForAdAccount = async (
     accessToken: string,
     adAccountId: string
   ) => {
-    try {
-      const pixelRes = await fetch(
-        `https://graph.facebook.com/v21.0/${adAccountId}/adspixels?fields=id,name&limit=1&access_token=${encodeURIComponent(
-          accessToken
-        )}`
-      );
-      const pixelData = await pixelRes.json();
+    const pixelRes = await fetch(
+      `https://graph.facebook.com/v21.0/${adAccountId}/adspixels?fields=id,name&limit=100&access_token=${encodeURIComponent(
+        accessToken
+      )}`
+    );
+    const pixelData = await pixelRes.json();
 
-      if (!pixelRes.ok) {
-        console.warn("Unable to fetch Meta Pixel for selected ad account:", pixelData);
-        return null;
+    if (!pixelRes.ok) {
+      throw new Error(
+        pixelData?.error?.message || "Failed to fetch Meta pixels."
+      );
+    }
+
+    return Array.isArray(pixelData?.data)
+      ? pixelData.data
+          .filter(
+            (pixel: any) =>
+              typeof pixel?.id === "string" && typeof pixel?.name === "string"
+          )
+          .map((pixel: any) => ({
+            id: pixel.id,
+            name: pixel.name,
+          }))
+      : [];
+  };
+
+  const loadFacebookPixels = async ({
+    userId = currentUser?.id,
+    adAccountId,
+    openSelector = true,
+    silent = false,
+  }: {
+    userId?: string;
+    adAccountId?: string | null;
+    openSelector?: boolean;
+    silent?: boolean;
+  } = {}) => {
+    setIsLoadingPixels(true);
+
+    try {
+      if (!userId) throw new Error("Not authenticated");
+
+      const { data: biz, error: bizError } = await supabase
+        .from("businesses" as any)
+        .select("facebook_access_token, facebook_ad_account_id, meta_pixel_id")
+        .eq("user_id", userId)
+        .single();
+
+      if (bizError) throw bizError;
+      if (!biz?.facebook_access_token) {
+        throw new Error("No Facebook access token found. Reconnect Facebook first.");
       }
 
-      return Array.isArray(pixelData?.data) &&
-        typeof pixelData.data[0]?.id === "string"
-        ? pixelData.data[0].id
-        : null;
-    } catch (error) {
-      console.warn("Unable to fetch Meta Pixel for selected ad account:", error);
-      return null;
+      const effectiveAdAccountId = adAccountId || biz.facebook_ad_account_id;
+      if (!effectiveAdAccountId) {
+        setAvailablePixels([]);
+        setSelectedPixelId("");
+        setShowPixelSelector(false);
+        return;
+      }
+
+      const pixels = await fetchPixelsForAdAccount(
+        biz.facebook_access_token,
+        effectiveAdAccountId
+      );
+
+      const storedPixelId =
+        typeof biz.meta_pixel_id === "string" ? biz.meta_pixel_id : null;
+      const resolvedPixelId =
+        pixels.find((pixel) => pixel.id === storedPixelId)?.id ||
+        (pixels.length === 1 ? pixels[0].id : "");
+
+      setAvailablePixels(pixels);
+      setSelectedPixelId(resolvedPixelId);
+
+      if ((resolvedPixelId || null) !== storedPixelId) {
+        await persistSelectedPixel({
+          userId,
+          pixelId: resolvedPixelId || null,
+        });
+      }
+
+      if (pixels.length === 0) {
+        setShowPixelSelector(false);
+        if (!silent) {
+          toast({
+            title: "No Meta Pixels found",
+            description:
+              "Create a Meta Pixel in the selected ad account to enable conversion tracking.",
+          });
+        }
+        return;
+      }
+
+      if (pixels.length === 1) {
+        setShowPixelSelector(false);
+        if (storedPixelId !== pixels[0].id && !silent) {
+          toast({
+            title: "Meta Pixel auto-selected",
+            description: `Now using ${pixels[0].name}.`,
+          });
+        }
+        return;
+      }
+
+      if (openSelector || !resolvedPixelId) {
+        setShowPixelSelector(true);
+        if (!resolvedPixelId && !silent) {
+          toast({
+            title: "Select a Meta Pixel",
+            description:
+              "Choose the Meta Pixel ZuckerBot should use for conversion tracking.",
+          });
+        }
+        return;
+      }
+
+      setShowPixelSelector(false);
+    } catch (error: any) {
+      if (!silent) {
+        toast({
+          title: "Error loading Meta pixels",
+          description: error.message || "Unable to fetch Meta pixels.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsLoadingPixels(false);
     }
   };
 
@@ -794,11 +948,26 @@ export default function Profile() {
     });
   };
 
+  const handleLoadFacebookPixels = async () => {
+    await loadFacebookPixels({
+      openSelector: true,
+      silent: false,
+    });
+  };
+
   const handleUpdateFacebookAdAccount = async () => {
     if (!selectedAdAccountId || !currentUser?.id) return;
 
     if (selectedAdAccountId === business?.facebook_ad_account_id) {
       setShowAdAccountSelector(false);
+      if (!business?.meta_pixel_id) {
+        await loadFacebookPixels({
+          userId: currentUser.id,
+          adAccountId: selectedAdAccountId,
+          openSelector: true,
+          silent: false,
+        });
+      }
       if (!business?.facebook_page_id) {
         await loadFacebookPages({
           userId: currentUser.id,
@@ -824,10 +993,11 @@ export default function Profile() {
         throw new Error("No Facebook access token found. Reconnect Facebook first.");
       }
 
-      const pixelId = await fetchFirstPixelForAdAccount(
+      const pixels = await fetchPixelsForAdAccount(
         biz.facebook_access_token,
         selectedAdAccountId
       );
+      const pixelId = pixels.length === 1 ? pixels[0].id : null;
 
       const { data: updatedBusiness, error } = await supabase
         .from("businesses" as any)
@@ -850,6 +1020,9 @@ export default function Profile() {
           meta_pixel_id: typedBusiness.meta_pixel_id || "",
         }));
       }
+      setAvailablePixels(pixels);
+      setSelectedPixelId(pixelId || "");
+      setShowPixelSelector(pixels.length > 1);
 
       const selectedAdAccount = availableAdAccounts.find(
         (account) => account.id === selectedAdAccountId
@@ -862,7 +1035,11 @@ export default function Profile() {
       toast({
         title: "Meta ad account updated",
         description: selectedAdAccount
-          ? `Now using ${selectedAdAccount.name}. Select a Facebook Page to finish setup.`
+          ? pixels.length > 1
+            ? `Now using ${selectedAdAccount.name}. Select a Meta Pixel and Facebook Page to finish setup.`
+            : `Now using ${selectedAdAccount.name}. Select a Facebook Page to finish setup.`
+          : pixels.length > 1
+          ? "Your Meta ad account has been updated. Select a Meta Pixel and Facebook Page to finish setup."
           : "Your Meta ad account has been updated. Select a Facebook Page to finish setup.",
       });
 
@@ -880,6 +1057,44 @@ export default function Profile() {
       });
     } finally {
       setIsUpdatingAdAccount(false);
+    }
+  };
+
+  const handleUpdateFacebookPixel = async () => {
+    if (!selectedPixelId || !currentUser?.id) return;
+
+    if (selectedPixelId === business?.meta_pixel_id) {
+      setShowPixelSelector(false);
+      return;
+    }
+
+    setIsUpdatingPixel(true);
+
+    try {
+      await persistSelectedPixel({
+        userId: currentUser.id,
+        pixelId: selectedPixelId,
+      });
+
+      setShowPixelSelector(false);
+
+      const selectedPixel = availablePixels.find(
+        (pixel) => pixel.id === selectedPixelId
+      );
+      toast({
+        title: "Meta Pixel updated",
+        description: selectedPixel
+          ? `Now using ${selectedPixel.name}.`
+          : "Your Meta Pixel has been updated.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error updating Meta Pixel",
+        description: error.message || "Unable to update the selected Meta Pixel.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingPixel(false);
     }
   };
 
@@ -938,6 +1153,9 @@ export default function Profile() {
   );
   const currentFacebookAdAccount = availableAdAccounts.find(
     (account) => account.id === business?.facebook_ad_account_id
+  );
+  const currentFacebookPixel = availablePixels.find(
+    (pixel) => pixel.id === business?.meta_pixel_id
   );
   const hasFacebookToken = !!business?.facebook_access_token;
   const hasFacebookAdAccount = !!business?.facebook_ad_account_id;
@@ -1823,6 +2041,107 @@ export default function Profile() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                              Meta Pixel
+                            </Label>
+                            <p className="text-sm font-medium">
+                              {currentFacebookPixel
+                                ? `${currentFacebookPixel.name} (${business?.meta_pixel_id})`
+                                : business?.meta_pixel_id || "Not selected"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Required for website conversion tracking campaigns.
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleLoadFacebookPixels}
+                            disabled={
+                              isLoadingPixels ||
+                              isUpdatingPixel ||
+                              !business?.facebook_ad_account_id
+                            }
+                          >
+                            {isLoadingPixels ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : null}
+                            {business?.meta_pixel_id
+                              ? "Change Pixel"
+                              : "Select Pixel"}
+                          </Button>
+                        </div>
+
+                        {business?.facebook_ad_account_id &&
+                          !business?.meta_pixel_id &&
+                          availablePixels.length !== 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              Select the Meta Pixel ZuckerBot should use for
+                              conversion tracking on this ad account.
+                            </p>
+                          )}
+
+                        {business?.facebook_ad_account_id &&
+                          availablePixels.length === 0 &&
+                          !isLoadingPixels && (
+                            <p className="text-xs text-muted-foreground">
+                              No Meta Pixels were found on the selected ad account.
+                            </p>
+                          )}
+
+                        {showPixelSelector && (
+                          <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                            {availablePixels.length > 0 ? (
+                              <>
+                                <div className="space-y-1">
+                                  <Label>Select a Meta Pixel</Label>
+                                  <Select
+                                    value={selectedPixelId}
+                                    onValueChange={setSelectedPixelId}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select a Meta Pixel" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {availablePixels.map((pixel) => (
+                                        <SelectItem key={pixel.id} value={pixel.id}>
+                                          {pixel.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={handleUpdateFacebookPixel}
+                                    disabled={!selectedPixelId || isUpdatingPixel}
+                                  >
+                                    {isUpdatingPixel ? (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    ) : null}
+                                    Save Pixel
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowPixelSelector(false)}
+                                    disabled={isUpdatingPixel}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">
+                                No Meta Pixels are available on this ad account.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                               Facebook Page
                             </Label>
                             <p className="text-sm font-medium">
@@ -1899,30 +2218,6 @@ export default function Profile() {
                         )}
                       </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Meta Pixel ID
-                        </Label>
-                        {editMode ? (
-                          <Input
-                            value={formData.meta_pixel_id}
-                            onChange={(e) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                meta_pixel_id: e.target.value,
-                              }))
-                            }
-                            placeholder="123456789012345"
-                          />
-                        ) : (
-                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
-                            {business.meta_pixel_id || "Not set"}
-                          </div>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          Required for conversion tracking campaigns
-                        </p>
-                      </div>
                       <Button
                         className="w-full"
                         variant="outline"
