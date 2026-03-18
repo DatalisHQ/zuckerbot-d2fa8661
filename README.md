@@ -52,7 +52,7 @@ Key command groups:
 - `preview`, `create`, `launch`, `status`, `pause`, `resume`
 - `creatives`, `conversion`
 - `research reviews`, `research competitors`, `research market`
-- `meta status`, `meta pages`, `meta select-page`, `meta credentials`
+- `meta status`, `meta accounts`, `meta select-account`, `meta pages`, `meta select-page`, `meta credentials`
 - `serve` to start MCP server mode from the same CLI
 
 ## API Endpoints
@@ -71,6 +71,12 @@ Base URL: `https://zuckerbot.ai/api/v1/`
 | `POST` | `/research/competitors` | Analyze competitor ads in a category and location |
 | `POST` | `/research/market` | Get market size, trends, and ad benchmarks |
 | `POST` | `/creatives/generate` | Generate ad copy and images independently (free, monthly capped) |
+| `GET` | `/meta/status` | Check whether stored Meta credentials are complete |
+| `GET` | `/meta/credentials` | Resolve the selected Meta ad account and page for launches |
+| `GET` | `/meta/ad-accounts` | List accessible Meta ad accounts and show the selected one |
+| `POST` | `/meta/select-ad-account` | Select the active Meta ad account and clear the stored page |
+| `GET` | `/meta/pages` | List accessible Facebook pages and show the selected one |
+| `POST` | `/meta/select-page` | Select the active Facebook page for future launches |
 | `POST` | `/keys/create` | Create a new API key |
 
 All endpoints require `Authorization: Bearer zb_live_...` except where noted.

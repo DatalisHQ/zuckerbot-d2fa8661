@@ -112,6 +112,8 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 | `zuckerbot research competitors <category> <location>` | Competitor analysis |
 | `zuckerbot research market <industry> <location>` | Market intelligence |
 | `zuckerbot meta status` | Check Meta connection status |
+| `zuckerbot meta accounts` | List Meta ad accounts |
+| `zuckerbot meta select-account <ad_account_id>` | Select a Meta ad account |
 | `zuckerbot meta pages` | List Facebook pages |
 | `zuckerbot meta select-page <page_id>` | Select a Facebook page |
 | `zuckerbot meta credentials` | Check stored launch credentials |
@@ -132,6 +134,8 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 | `zuckerbot_research_competitors` | Analyze competitor ads in a category | `industry`, `location` |
 | `zuckerbot_research_market` | Get market intelligence and ad benchmarks | `industry`, `location` |
 | `zuckerbot_meta_status` | Check whether Meta is connected for this API key/user | none |
+| `zuckerbot_list_ad_accounts` | List available Meta ad accounts and the current selection | none |
+| `zuckerbot_select_ad_account` | Select/save a Meta ad account ID for future launches | `ad_account_id` |
 | `zuckerbot_list_meta_pages` | List available Facebook pages and current selected page | none |
 | `zuckerbot_select_meta_page` | Select/save a Facebook page ID for future launches | `page_id` |
 | `zuckerbot_get_launch_credentials` | Resolve stored launch credentials and report missing fields | none |

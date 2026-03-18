@@ -344,7 +344,7 @@ research
 
 const meta = program
   .command("meta")
-  .description("Meta account tools: status, pages, credentials");
+  .description("Meta account tools: status, ad accounts, pages, credentials");
 
 meta
   .command("status")
@@ -355,6 +355,28 @@ meta
       client.get("/meta/status"),
     );
     printFormatted(result, "Meta Status");
+  });
+
+meta
+  .command("accounts")
+  .description("List available Meta ad accounts")
+  .action(async () => {
+    const client = getClient();
+    const result = await run("Fetching ad accounts", () =>
+      client.get("/meta/ad-accounts"),
+    );
+    printFormatted(result, "Meta Ad Accounts");
+  });
+
+meta
+  .command("select-account <ad_account_id>")
+  .description("Select a Meta ad account for future launches")
+  .action(async (adAccountId: string) => {
+    const client = getClient();
+    const result = await run("Selecting ad account", () =>
+      client.post("/meta/select-ad-account", { ad_account_id: adAccountId }),
+    );
+    printFormatted(result, "Ad Account Selected");
   });
 
 meta

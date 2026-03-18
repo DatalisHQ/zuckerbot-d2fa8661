@@ -390,7 +390,41 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 13. List Facebook Pages ────────────────────────────────────
+  // ── 13. List Meta Ad Accounts ──────────────────────────────────
+  server.tool(
+    "zuckerbot_list_ad_accounts",
+    "List Meta ad accounts available to the connected user and indicate which ad account is currently selected for launches and autonomous management.",
+    {},
+    async () => {
+      try {
+        const result = await client.get("/meta/ad-accounts");
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 14. Select Meta Ad Account ─────────────────────────────────
+  server.tool(
+    "zuckerbot_select_ad_account",
+    "Select and store the Meta ad account to use for launches, reporting, and autonomous management. Switching accounts clears the stored page selection so the user can pick a matching page.",
+    {
+      ad_account_id: z.string().describe("Meta ad account ID to use for future launches (format: act_XXXXX)"),
+    },
+    async ({ ad_account_id }) => {
+      try {
+        const result = await client.post("/meta/select-ad-account", {
+          ad_account_id,
+        });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 15. List Facebook Pages ────────────────────────────────────
   server.tool(
     "zuckerbot_list_meta_pages",
     "List Facebook pages available to the connected Meta account and indicate which page is currently selected for launch.",
@@ -405,7 +439,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 14. Select Facebook Page ───────────────────────────────────
+  // ── 16. Select Facebook Page ───────────────────────────────────
   server.tool(
     "zuckerbot_select_meta_page",
     "Select and store the Facebook page to use for launches. Use this when multiple pages are available.",
@@ -424,7 +458,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 15. Resolve Launch Credentials ─────────────────────────────
+  // ── 17. Resolve Launch Credentials ─────────────────────────────
   server.tool(
     "zuckerbot_get_launch_credentials",
     "Resolve stored Meta launch credentials for the authenticated API key/user and report whether autonomous launch is possible.",
@@ -439,7 +473,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 16. Generate Creatives ─────────────────────────────────────
+  // ── 18. Generate Creatives ─────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
     "Generate ad creatives independently from campaign creation. Supports image creatives (Seedream/Imagen) and video creatives (Kling). If the prompt text asks for a video ad, the tool auto-routes to Kling/video unless explicitly overridden.",

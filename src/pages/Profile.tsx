@@ -61,6 +61,7 @@ interface Business {
   state: string;
   phone: string;
   website: string | null;
+  facebook_access_token: string | null;
   facebook_page_id: string | null;
   facebook_ad_account_id: string | null;
   meta_pixel_id: string | null;
@@ -69,6 +70,16 @@ interface Business {
 interface FacebookPageOption {
   id: string;
   name: string;
+}
+
+interface FacebookAdAccountOption {
+  id: string;
+  account_id: string | null;
+  name: string;
+  account_status: number | null;
+  currency: string | null;
+  business_name: string | null;
+  amount_spent: string | null;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -94,6 +105,11 @@ export default function Profile() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [availableAdAccounts, setAvailableAdAccounts] = useState<FacebookAdAccountOption[]>([]);
+  const [selectedAdAccountId, setSelectedAdAccountId] = useState("");
+  const [showAdAccountSelector, setShowAdAccountSelector] = useState(false);
+  const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false);
+  const [isUpdatingAdAccount, setIsUpdatingAdAccount] = useState(false);
   const [availablePages, setAvailablePages] = useState<FacebookPageOption[]>([]);
   const [selectedPageId, setSelectedPageId] = useState("");
   const [showPageSelector, setShowPageSelector] = useState(false);
@@ -174,6 +190,22 @@ export default function Profile() {
           website: biz.website || "",
           meta_pixel_id: biz.meta_pixel_id || "",
         }));
+
+        if (biz.facebook_access_token) {
+          await loadFacebookAdAccounts({
+            userId: user.id,
+            openSelector: !biz.facebook_ad_account_id,
+            silent: true,
+          });
+          if (biz.facebook_ad_account_id || biz.facebook_page_id) {
+            await loadFacebookPages({
+              userId: user.id,
+              openSelector: !biz.facebook_page_id,
+              requireSelection: !biz.facebook_page_id,
+              silent: true,
+            });
+          }
+        }
       }
     } catch (error: any) {
       toast({
@@ -255,6 +287,134 @@ export default function Profile() {
     }
   };
 
+  const loadFacebookAdAccounts = async ({
+    userId = currentUser?.id,
+    openSelector = true,
+    silent = false,
+  }: {
+    userId?: string;
+    openSelector?: boolean;
+    silent?: boolean;
+  } = {}) => {
+    setIsLoadingAdAccounts(true);
+
+    try {
+      if (!userId) throw new Error("Not authenticated");
+
+      const { data: biz, error: bizError } = await supabase
+        .from("businesses" as any)
+        .select("facebook_access_token, facebook_ad_account_id")
+        .eq("user_id", userId)
+        .single();
+
+      if (bizError) throw bizError;
+      if (!biz?.facebook_access_token) {
+        throw new Error("No Facebook access token found. Reconnect Facebook first.");
+      }
+
+      const adAccountsRes = await fetch(
+        `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_id,account_status,currency,business_name,amount_spent&limit=100&access_token=${encodeURIComponent(
+          biz.facebook_access_token
+        )}`
+      );
+      const adAccountsData = await adAccountsRes.json();
+
+      if (!adAccountsRes.ok) {
+        throw new Error(
+          adAccountsData?.error?.message || "Failed to fetch Meta ad accounts."
+        );
+      }
+
+      const adAccounts: FacebookAdAccountOption[] = Array.isArray(adAccountsData?.data)
+        ? adAccountsData.data
+            .filter(
+              (account: any) =>
+                typeof account?.id === "string" &&
+                typeof account?.name === "string"
+            )
+            .map((account: any) => ({
+              id: account.id,
+              account_id:
+                typeof account?.account_id === "string"
+                  ? account.account_id
+                  : null,
+              name: account.name,
+              account_status:
+                typeof account?.account_status === "number"
+                  ? account.account_status
+                  : null,
+              currency:
+                typeof account?.currency === "string"
+                  ? account.currency
+                  : null,
+              business_name:
+                typeof account?.business_name === "string"
+                  ? account.business_name
+                  : null,
+              amount_spent:
+                typeof account?.amount_spent === "string"
+                  ? account.amount_spent
+                  : typeof account?.amount_spent === "number"
+                  ? String(account.amount_spent)
+                  : null,
+            }))
+        : [];
+
+      if (adAccounts.length === 0) {
+        throw new Error("No Meta ad accounts found for this account.");
+      }
+
+      const currentAdAccountId =
+        adAccounts.find((account) => account.id === biz.facebook_ad_account_id)?.id ||
+        biz.facebook_ad_account_id ||
+        adAccounts[0].id;
+
+      setAvailableAdAccounts(adAccounts);
+      setSelectedAdAccountId(currentAdAccountId);
+
+      if (openSelector || !biz.facebook_ad_account_id) {
+        setShowAdAccountSelector(true);
+      }
+    } catch (error: any) {
+      if (!silent) {
+        toast({
+          title: "Error loading Meta ad accounts",
+          description: error.message || "Unable to fetch your Meta ad accounts.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsLoadingAdAccounts(false);
+    }
+  };
+
+  const fetchFirstPixelForAdAccount = async (
+    accessToken: string,
+    adAccountId: string
+  ) => {
+    try {
+      const pixelRes = await fetch(
+        `https://graph.facebook.com/v21.0/${adAccountId}/adspixels?fields=id,name&limit=1&access_token=${encodeURIComponent(
+          accessToken
+        )}`
+      );
+      const pixelData = await pixelRes.json();
+
+      if (!pixelRes.ok) {
+        console.warn("Unable to fetch Meta Pixel for selected ad account:", pixelData);
+        return null;
+      }
+
+      return Array.isArray(pixelData?.data) &&
+        typeof pixelData.data[0]?.id === "string"
+        ? pixelData.data[0].id
+        : null;
+    } catch (error) {
+      console.warn("Unable to fetch Meta Pixel for selected ad account:", error);
+      return null;
+    }
+  };
+
   const handleConnectFacebook = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -296,11 +456,20 @@ export default function Profile() {
     }
   };
 
-  const handleLoadFacebookPages = async () => {
+  const loadFacebookPages = async ({
+    userId = currentUser?.id,
+    openSelector = true,
+    requireSelection = false,
+    silent = false,
+  }: {
+    userId?: string;
+    openSelector?: boolean;
+    requireSelection?: boolean;
+    silent?: boolean;
+  } = {}) => {
     setIsLoadingPages(true);
 
     try {
-      const userId = currentUser?.id;
       if (!userId) throw new Error("Not authenticated");
 
       const { data: biz, error: bizError } = await supabase
@@ -346,7 +515,19 @@ export default function Profile() {
       setAvailablePages(pages);
       setSelectedPageId(currentPageId);
 
-      if (pages.length === 1) {
+      if (requireSelection || openSelector || !biz.facebook_page_id) {
+        setShowPageSelector(true);
+        if (requireSelection && !silent) {
+          toast({
+            title: "Select a Facebook Page",
+            description:
+              "Choose the page to pair with this ad account before launching campaigns.",
+          });
+        }
+        return;
+      }
+
+      if (pages.length === 1 && !silent) {
         setShowPageSelector(false);
         toast({
           title: "Only one page available",
@@ -355,15 +536,114 @@ export default function Profile() {
         return;
       }
 
-      setShowPageSelector(true);
+      setShowPageSelector(false);
+    } catch (error: any) {
+      if (!silent) {
+        toast({
+          title: "Error loading Facebook pages",
+          description: error.message || "Unable to fetch your Facebook pages.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsLoadingPages(false);
+    }
+  };
+
+  const handleLoadFacebookPages = async () => {
+    await loadFacebookPages({
+      openSelector: true,
+      requireSelection: !business?.facebook_page_id,
+      silent: false,
+    });
+  };
+
+  const handleUpdateFacebookAdAccount = async () => {
+    if (!selectedAdAccountId || !currentUser?.id) return;
+
+    if (selectedAdAccountId === business?.facebook_ad_account_id) {
+      setShowAdAccountSelector(false);
+      if (!business?.facebook_page_id) {
+        await loadFacebookPages({
+          userId: currentUser.id,
+          openSelector: true,
+          requireSelection: true,
+          silent: false,
+        });
+      }
+      return;
+    }
+
+    setIsUpdatingAdAccount(true);
+
+    try {
+      const { data: biz, error: bizError } = await supabase
+        .from("businesses" as any)
+        .select("facebook_access_token")
+        .eq("user_id", currentUser.id)
+        .single();
+
+      if (bizError) throw bizError;
+      if (!biz?.facebook_access_token) {
+        throw new Error("No Facebook access token found. Reconnect Facebook first.");
+      }
+
+      const pixelId = await fetchFirstPixelForAdAccount(
+        biz.facebook_access_token,
+        selectedAdAccountId
+      );
+
+      const { data: updatedBusiness, error } = await supabase
+        .from("businesses" as any)
+        .update({
+          facebook_ad_account_id: selectedAdAccountId,
+          facebook_page_id: null,
+          meta_pixel_id: pixelId,
+        })
+        .eq("user_id", currentUser.id)
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      if (updatedBusiness) {
+        const typedBusiness = updatedBusiness as unknown as Business;
+        setBusiness(typedBusiness);
+        setFormData((prev) => ({
+          ...prev,
+          meta_pixel_id: typedBusiness.meta_pixel_id || "",
+        }));
+      }
+
+      const selectedAdAccount = availableAdAccounts.find(
+        (account) => account.id === selectedAdAccountId
+      );
+
+      setShowAdAccountSelector(false);
+      setAvailablePages([]);
+      setSelectedPageId("");
+
+      toast({
+        title: "Meta ad account updated",
+        description: selectedAdAccount
+          ? `Now using ${selectedAdAccount.name}. Select a Facebook Page to finish setup.`
+          : "Your Meta ad account has been updated. Select a Facebook Page to finish setup.",
+      });
+
+      await loadFacebookPages({
+        userId: currentUser.id,
+        openSelector: true,
+        requireSelection: true,
+        silent: true,
+      });
     } catch (error: any) {
       toast({
-        title: "Error loading Facebook pages",
-        description: error.message || "Unable to fetch your Facebook pages.",
+        title: "Error updating Meta ad account",
+        description: error.message || "Unable to update the selected Meta ad account.",
         variant: "destructive",
       });
     } finally {
-      setIsLoadingPages(false);
+      setIsUpdatingAdAccount(false);
     }
   };
 
@@ -420,6 +700,26 @@ export default function Profile() {
   const currentFacebookPage = availablePages.find(
     (page) => page.id === business?.facebook_page_id
   );
+  const currentFacebookAdAccount = availableAdAccounts.find(
+    (account) => account.id === business?.facebook_ad_account_id
+  );
+  const hasFacebookToken = !!business?.facebook_access_token;
+  const hasFacebookAdAccount = !!business?.facebook_ad_account_id;
+  const hasFacebookPage = !!business?.facebook_page_id;
+  const facebookReady = hasFacebookAdAccount && hasFacebookPage;
+
+  const currentAdAccountStatus =
+    currentFacebookAdAccount?.account_status === 1
+      ? "Active"
+      : typeof currentFacebookAdAccount?.account_status === "number"
+      ? `Status ${currentFacebookAdAccount.account_status}`
+      : null;
+  const currentAdAccountMeta = [
+    currentAdAccountStatus,
+    currentFacebookAdAccount?.currency || null,
+  ]
+    .filter(Boolean)
+    .join(" • ");
 
   // ── Loading / empty states ────────────────────────────────────────────
 
@@ -732,18 +1032,16 @@ export default function Profile() {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm">Status</span>
-                    <Badge
-                      variant={
-                        !!business?.facebook_page_id ? "default" : "secondary"
-                      }
-                    >
-                      {!!business?.facebook_page_id
+                    <Badge variant={facebookReady ? "default" : "secondary"}>
+                      {!hasFacebookToken
+                        ? "Not Connected"
+                        : facebookReady
                         ? "Connected"
-                        : "Not Connected"}
+                        : "Setup Required"}
                     </Badge>
                   </div>
 
-                  {!business?.facebook_page_id && (
+                  {!hasFacebookToken && (
                     <>
                       <Separator />
                       <p className="text-xs text-muted-foreground">
@@ -760,10 +1058,96 @@ export default function Profile() {
                     </>
                   )}
 
-                  {!!business?.facebook_page_id && (
+                  {hasFacebookToken && (
                     <>
                       <Separator />
                       <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                              Meta Ad Account
+                            </Label>
+                            <p className="text-sm font-medium">
+                              {currentFacebookAdAccount
+                                ? `${currentFacebookAdAccount.name} (${business?.facebook_ad_account_id})`
+                                : business?.facebook_ad_account_id || "Not selected"}
+                            </p>
+                            {currentAdAccountMeta ? (
+                              <p className="text-xs text-muted-foreground">
+                                {currentAdAccountMeta}
+                              </p>
+                            ) : null}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              loadFacebookAdAccounts({
+                                openSelector: true,
+                                silent: false,
+                              })
+                            }
+                            disabled={isLoadingAdAccounts || isUpdatingAdAccount}
+                          >
+                            {isLoadingAdAccounts ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : null}
+                            {business?.facebook_ad_account_id
+                              ? "Change Account"
+                              : "Select Account"}
+                          </Button>
+                        </div>
+
+                        {!business?.facebook_ad_account_id && (
+                          <p className="text-xs text-muted-foreground">
+                            Select the Meta ad account ZuckerBot should use for launches,
+                            reporting, and autonomous management.
+                          </p>
+                        )}
+
+                        {showAdAccountSelector && (
+                          <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                            <div className="space-y-1">
+                              <Label>Select a Meta Ad Account</Label>
+                              <Select
+                                value={selectedAdAccountId}
+                                onValueChange={setSelectedAdAccountId}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select a Meta ad account" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availableAdAccounts.map((account) => (
+                                    <SelectItem key={account.id} value={account.id}>
+                                      {account.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={handleUpdateFacebookAdAccount}
+                                disabled={!selectedAdAccountId || isUpdatingAdAccount}
+                              >
+                                {isUpdatingAdAccount ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : null}
+                                Save Account
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowAdAccountSelector(false)}
+                                disabled={isUpdatingAdAccount}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground uppercase tracking-wide">
@@ -772,14 +1156,18 @@ export default function Profile() {
                             <p className="text-sm font-medium">
                               {currentFacebookPage
                                 ? `${currentFacebookPage.name} (${business.facebook_page_id})`
-                                : business.facebook_page_id}
+                                : business.facebook_page_id || "Not selected"}
                             </p>
                           </div>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={handleLoadFacebookPages}
-                            disabled={isLoadingPages || isUpdatingPage}
+                            disabled={
+                              isLoadingPages ||
+                              isUpdatingPage ||
+                              !business?.facebook_ad_account_id
+                            }
                           >
                             {isLoadingPages ? (
                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -787,6 +1175,13 @@ export default function Profile() {
                             Change Page
                           </Button>
                         </div>
+
+                        {!business?.facebook_page_id && (
+                          <p className="text-xs text-muted-foreground">
+                            Select the Facebook Page to pair with the active ad account
+                            before launching campaigns.
+                          </p>
+                        )}
 
                         {showPageSelector && (
                           <div className="space-y-3 rounded-md border bg-muted/30 p-3">
@@ -832,11 +1227,6 @@ export default function Profile() {
                         )}
                       </div>
 
-                      {business?.facebook_ad_account_id && (
-                        <div className="text-xs text-muted-foreground">
-                          Ad Account: {business.facebook_ad_account_id}
-                        </div>
-                      )}
                       <div className="space-y-2">
                         <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                           Meta Pixel ID

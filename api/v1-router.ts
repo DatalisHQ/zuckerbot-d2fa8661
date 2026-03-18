@@ -21,6 +21,8 @@
  *   GET  /api/v1/ad-account/insights        → handleAdAccountInsights
  *   GET  /api/v1/meta/status                → handleMetaStatus
  *   GET  /api/v1/meta/credentials           → handleMetaCredentials
+ *   GET  /api/v1/meta/ad-accounts           → handleMetaAdAccounts
+ *   POST /api/v1/meta/select-ad-account     → handleMetaSelectAdAccount
  *   GET  /api/v1/meta/pages                 → handleMetaPages
  *   POST /api/v1/meta/select-page           → handleMetaSelectPage
  *   POST /api/v1/notifications/telegram     → handleSetTelegram
@@ -628,10 +630,31 @@ interface MetaPageOption {
   category: string | null;
 }
 
+interface MetaAdAccountOption {
+  id: string;
+  account_id: string | null;
+  name: string;
+  account_status: number | null;
+  currency: string | null;
+  business_name: string | null;
+  amount_spent: string | null;
+}
+
 function normalizeString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 async function resolveMetaCredentials(params: {
@@ -793,6 +816,90 @@ async function listFacebookPages(accessToken: string): Promise<{ ok: boolean; pa
   }
 }
 
+async function listFacebookAdAccounts(accessToken: string): Promise<{ ok: boolean; adAccounts: MetaAdAccountOption[]; error?: string }> {
+  const adAccounts: MetaAdAccountOption[] = [];
+  let nextUrl =
+    `${GRAPH_BASE}/me/adaccounts?fields=id,name,account_id,account_status,currency,business_name,amount_spent` +
+    `&limit=100&access_token=${encodeURIComponent(accessToken)}`;
+
+  try {
+    while (nextUrl && adAccounts.length < 300) {
+      const response = await fetch(nextUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(20000),
+      });
+
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok) {
+        return {
+          ok: false,
+          adAccounts: [],
+          error: data?.error?.message || `Meta ad accounts API error: HTTP ${response.status}`,
+        };
+      }
+
+      if (Array.isArray(data?.data)) {
+        for (const account of data.data) {
+          const id = normalizeString(account?.id);
+          const name = normalizeString(account?.name);
+          if (!id || !name) continue;
+
+          const rawAmountSpent =
+            typeof account?.amount_spent === 'number'
+              ? String(account.amount_spent)
+              : normalizeString(account?.amount_spent);
+
+          adAccounts.push({
+            id,
+            account_id: normalizeString(account?.account_id),
+            name,
+            account_status: normalizeNumber(account?.account_status),
+            currency: normalizeString(account?.currency),
+            business_name: normalizeString(account?.business_name),
+            amount_spent: rawAmountSpent,
+          });
+        }
+      }
+
+      const pagingNext = normalizeString(data?.paging?.next);
+      nextUrl = pagingNext || '';
+    }
+
+    return { ok: true, adAccounts };
+  } catch (err: any) {
+    return { ok: false, adAccounts: [], error: err?.message || String(err) };
+  }
+}
+
+async function fetchFirstAdAccountPixel(accessToken: string, adAccountId: string): Promise<{ ok: boolean; pixel_id: string | null; error?: string }> {
+  try {
+    const response = await fetch(
+      `${GRAPH_BASE}/${adAccountId}/adspixels?fields=id,name&limit=1&access_token=${encodeURIComponent(accessToken)}`,
+      {
+        method: 'GET',
+        signal: AbortSignal.timeout(20000),
+      },
+    );
+
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      return {
+        ok: false,
+        pixel_id: null,
+        error: data?.error?.message || `Meta pixels API error: HTTP ${response.status}`,
+      };
+    }
+
+    const pixelId = Array.isArray(data?.data)
+      ? normalizeString(data.data[0]?.id)
+      : null;
+
+    return { ok: true, pixel_id: pixelId };
+  } catch (err: any) {
+    return { ok: false, pixel_id: null, error: err?.message || String(err) };
+  }
+}
+
 async function persistBusinessPageId(userId: string, businessId: string | null, pageId: string): Promise<void> {
   if (!businessId) return;
   const { error } = await supabaseAdmin
@@ -803,6 +910,104 @@ async function persistBusinessPageId(userId: string, businessId: string | null, 
   if (error) {
     console.warn('[api/meta] Failed to persist facebook_page_id:', error.message);
   }
+}
+
+async function persistBusinessAdAccountSelection(
+  userId: string,
+  businessId: string | null,
+  adAccountId: string,
+  pixelId: string | null,
+  options: { clearStoredPageId?: boolean } = {},
+): Promise<void> {
+  if (!businessId) return;
+
+  const updates: Record<string, string | null> = {
+    facebook_ad_account_id: adAccountId,
+    meta_pixel_id: pixelId,
+  };
+
+  if (options.clearStoredPageId !== false) {
+    updates.facebook_page_id = null;
+  }
+
+  const { error } = await supabaseAdmin
+    .from('businesses')
+    .update(updates)
+    .eq('id', businessId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.warn('[api/meta] Failed to persist ad account selection:', error.message);
+  }
+}
+
+async function resolveAdAccountIdForLaunch(params: {
+  userId: string;
+  resolvedMeta: ResolvedMetaCredentials;
+}): Promise<{
+  meta_ad_account_id: string | null;
+  meta_pixel_id: string | null;
+  available_ad_accounts?: MetaAdAccountOption[];
+  source: 'stored' | 'auto_selected' | 'selection_required' | 'none' | 'meta_error';
+  meta_error?: string;
+}> {
+  const existingAdAccountId = normalizeString(params.resolvedMeta.meta_ad_account_id);
+  if (existingAdAccountId) {
+    return {
+      meta_ad_account_id: existingAdAccountId,
+      meta_pixel_id: normalizeString(params.resolvedMeta.meta_pixel_id),
+      source: 'stored',
+    };
+  }
+
+  const accessToken = normalizeString(params.resolvedMeta.meta_access_token);
+  if (!accessToken) {
+    return { meta_ad_account_id: null, meta_pixel_id: null, source: 'none' };
+  }
+
+  const adAccountsResult = await listFacebookAdAccounts(accessToken);
+  if (!adAccountsResult.ok) {
+    return {
+      meta_ad_account_id: null,
+      meta_pixel_id: null,
+      source: 'meta_error',
+      meta_error: adAccountsResult.error || 'Failed to list Meta ad accounts',
+    };
+  }
+
+  const adAccounts = adAccountsResult.adAccounts;
+  if (adAccounts.length === 1) {
+    const selected = adAccounts[0];
+    const pixelResult = await fetchFirstAdAccountPixel(accessToken, selected.id);
+    if (!pixelResult.ok) {
+      console.warn('[api/meta] Failed to fetch pixel for auto-selected ad account:', pixelResult.error);
+    }
+
+    await persistBusinessAdAccountSelection(
+      params.userId,
+      params.resolvedMeta.business_id,
+      selected.id,
+      pixelResult.pixel_id,
+    );
+
+    return {
+      meta_ad_account_id: selected.id,
+      meta_pixel_id: pixelResult.pixel_id,
+      available_ad_accounts: adAccounts,
+      source: 'auto_selected',
+    };
+  }
+
+  if (adAccounts.length > 1) {
+    return {
+      meta_ad_account_id: null,
+      meta_pixel_id: null,
+      available_ad_accounts: adAccounts,
+      source: 'selection_required',
+    };
+  }
+
+  return { meta_ad_account_id: null, meta_pixel_id: null, available_ad_accounts: [], source: 'none' };
 }
 
 async function resolvePageIdForLaunch(params: {
@@ -1330,6 +1535,32 @@ RULES:
       meta_ad_account_id = resolvedMeta.meta_ad_account_id;
       meta_page_id = resolvedMeta.meta_page_id;
 
+      const adAccountResolution = await resolveAdAccountIdForLaunch({
+        userId: auth.keyRecord.user_id,
+        resolvedMeta: {
+          ...resolvedMeta,
+          meta_access_token,
+          meta_ad_account_id,
+          meta_page_id,
+        },
+      });
+      if (!meta_ad_account_id && adAccountResolution.meta_ad_account_id) {
+        meta_ad_account_id = adAccountResolution.meta_ad_account_id;
+      }
+      const resolvedPixelId = adAccountResolution.meta_pixel_id || resolvedMeta.meta_pixel_id || null;
+
+      if (!meta_ad_account_id && adAccountResolution.source === 'selection_required') {
+        await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+        return res.status(400).json({
+          error: {
+            code: 'meta_ad_account_selection_required',
+            message: 'Multiple Meta ad accounts were found. Select one ad account before launching.',
+            select_ad_account_endpoint: '/api/v1/meta/select-ad-account',
+          },
+          available_ad_accounts: (adAccountResolution.available_ad_accounts || []).slice(0, 25),
+        });
+      }
+
       const pageResolution = await resolvePageIdForLaunch({
         userId: auth.keyRecord.user_id,
         resolvedMeta: {
@@ -1337,6 +1568,7 @@ RULES:
           meta_access_token,
           meta_ad_account_id,
           meta_page_id,
+          meta_pixel_id: resolvedPixelId,
         },
       });
       if (!meta_page_id && pageResolution.meta_page_id) {
@@ -1372,6 +1604,7 @@ RULES:
             code: 'missing_meta_credentials',
             message: `Missing: ${missing}. Either pass them in the request body, or connect Facebook at https://zuckerbot.ai/profile to store them automatically.`,
             connect_url: 'https://zuckerbot.ai/profile',
+            ...(adAccountResolution.source === 'meta_error' ? { meta_error: adAccountResolution.meta_error } : {}),
             ...(pageResolution.source === 'meta_error' ? { meta_error: pageResolution.meta_error } : {}),
           },
         });
@@ -1398,7 +1631,7 @@ RULES:
           meta_access_token,
           meta_ad_account_id,
           meta_page_id,
-          meta_pixel_id: resolvedMeta.meta_pixel_id,
+          meta_pixel_id: resolvedPixelId,
           variant_index: variant_index || 0,
           daily_budget_cents: budgetCents,
           radius_km: radius_km || response.targeting.radius_km || 25,
@@ -1490,7 +1723,32 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
   meta_access_token = resolvedMeta.meta_access_token;
   meta_ad_account_id = resolvedMeta.meta_ad_account_id;
   meta_page_id = resolvedMeta.meta_page_id;
-  const pixelId = resolvedMeta.meta_pixel_id || normalizeString(process.env.META_PIXEL_ID) || null;
+
+  const adAccountResolution = await resolveAdAccountIdForLaunch({
+    userId: auth.keyRecord.user_id,
+    resolvedMeta: {
+      ...resolvedMeta,
+      meta_access_token,
+      meta_ad_account_id,
+      meta_page_id,
+    },
+  });
+  if (!meta_ad_account_id && adAccountResolution.meta_ad_account_id) {
+    meta_ad_account_id = adAccountResolution.meta_ad_account_id;
+  }
+  const pixelId = adAccountResolution.meta_pixel_id || resolvedMeta.meta_pixel_id || normalizeString(process.env.META_PIXEL_ID) || null;
+
+  if (!meta_ad_account_id && adAccountResolution.source === 'selection_required') {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'meta_ad_account_selection_required',
+        message: 'Multiple Meta ad accounts were found. Select one ad account before launching.',
+        select_ad_account_endpoint: '/api/v1/meta/select-ad-account',
+      },
+      available_ad_accounts: (adAccountResolution.available_ad_accounts || []).slice(0, 25),
+    });
+  }
 
   const pageResolution = await resolvePageIdForLaunch({
     userId: auth.keyRecord.user_id,
@@ -1499,6 +1757,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       meta_access_token,
       meta_ad_account_id,
       meta_page_id,
+      meta_pixel_id: pixelId,
     },
   });
   if (!meta_page_id && pageResolution.meta_page_id) {
@@ -1530,6 +1789,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
         code: 'missing_meta_credentials',
         message: `Missing: ${missing}. Either pass them in the request body, or connect Facebook at https://zuckerbot.ai/profile to store them automatically.`,
         connect_url: 'https://zuckerbot.ai/profile',
+        ...(adAccountResolution.source === 'meta_error' ? { meta_error: adAccountResolution.meta_error } : {}),
         ...(pageResolution.source === 'meta_error' ? { meta_error: pageResolution.meta_error } : {}),
       }
     });
@@ -2658,6 +2918,163 @@ async function handleMetaCredentials(req: VercelRequest, res: VercelResponse) {
       message: 'Facebook credentials are incomplete. Connect at https://zuckerbot.ai/profile',
       connect_url: 'https://zuckerbot.ai/profile',
     }),
+  });
+}
+
+// ── GET /api/v1/meta/pages ───────────────────────────────────────────────
+
+async function handleMetaAdAccounts(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+  });
+
+  const accessToken = normalizeString(resolvedMeta.meta_access_token);
+  if (!accessToken) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/ad-accounts', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'missing_meta_credentials',
+        message: 'No stored Meta access token found. Connect Facebook at https://zuckerbot.ai/profile first.',
+        connect_url: 'https://zuckerbot.ai/profile',
+      },
+    });
+  }
+
+  const adAccountsResult = await listFacebookAdAccounts(accessToken);
+  if (!adAccountsResult.ok) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/ad-accounts', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({
+      error: {
+        code: 'meta_api_error',
+        message: adAccountsResult.error || 'Failed to fetch Meta ad accounts',
+      },
+    });
+  }
+
+  const selectedAdAccountId = normalizeString(resolvedMeta.meta_ad_account_id);
+  const effectiveSelectedAdAccountId = adAccountsResult.adAccounts.some((account) => account.id === selectedAdAccountId)
+    ? selectedAdAccountId
+    : null;
+
+  const adAccounts = adAccountsResult.adAccounts.map((account) => {
+    const isSelected = effectiveSelectedAdAccountId === account.id;
+    return {
+      ...account,
+      selected: isSelected,
+      is_selected: isSelected,
+    };
+  });
+
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/ad-accounts', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({
+    ad_accounts: adAccounts,
+    selected_ad_account_id: effectiveSelectedAdAccountId,
+    ad_account_count: adAccounts.length,
+  });
+}
+
+// ── POST /api/v1/meta/select-ad-account ─────────────────────────────────
+
+async function handleMetaSelectAdAccount(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const selectedAdAccountId = normalizeString(req.body?.ad_account_id);
+  if (!selectedAdAccountId) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-ad-account', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: '`ad_account_id` is required',
+      },
+    });
+  }
+
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+  });
+
+  const accessToken = normalizeString(resolvedMeta.meta_access_token);
+  if (!accessToken) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-ad-account', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'missing_meta_credentials',
+        message: 'No stored Meta access token found. Connect Facebook at https://zuckerbot.ai/profile first.',
+        connect_url: 'https://zuckerbot.ai/profile',
+      },
+    });
+  }
+
+  const adAccountsResult = await listFacebookAdAccounts(accessToken);
+  if (!adAccountsResult.ok) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-ad-account', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({
+      error: {
+        code: 'meta_api_error',
+        message: adAccountsResult.error || 'Failed to fetch Meta ad accounts',
+      },
+    });
+  }
+
+  const selectedAdAccount = adAccountsResult.adAccounts.find((account) => account.id === selectedAdAccountId);
+  if (!selectedAdAccount) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-ad-account', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: 'The provided `ad_account_id` is not available for the connected Meta account.',
+      },
+      available_ad_accounts: adAccountsResult.adAccounts.slice(0, 25),
+    });
+  }
+
+  const currentAdAccountId = normalizeString(resolvedMeta.meta_ad_account_id);
+  const currentPageId = normalizeString(resolvedMeta.meta_page_id);
+  const isSwitch = currentAdAccountId !== selectedAdAccount.id;
+  const pageSelectionRequired = isSwitch || !currentPageId;
+  const pixelResult = await fetchFirstAdAccountPixel(accessToken, selectedAdAccount.id);
+  if (!pixelResult.ok) {
+    console.warn('[api/meta] Failed to fetch pixel for selected ad account:', pixelResult.error);
+  }
+
+  await persistBusinessAdAccountSelection(
+    auth.keyRecord.user_id,
+    resolvedMeta.business_id,
+    selectedAdAccount.id,
+    pixelResult.pixel_id,
+    { clearStoredPageId: isSwitch },
+  );
+
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/meta/select-ad-account', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({
+    selected_ad_account_id: selectedAdAccount.id,
+    selected_ad_account_name: selectedAdAccount.name,
+    selected_pixel_id: pixelResult.pixel_id,
+    page_selection_required: pageSelectionRequired,
+    page_id_cleared: isSwitch,
+    stored: !!resolvedMeta.business_id,
   });
 }
 
@@ -5235,6 +5652,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'ad-account/insights') return handleAdAccountInsights(req, res);
   if (route === 'meta/status') return handleMetaStatus(req, res);
   if (route === 'meta/credentials') return handleMetaCredentials(req, res);
+  if (route === 'meta/ad-accounts') return handleMetaAdAccounts(req, res);
+  if (route === 'meta/select-ad-account') return handleMetaSelectAdAccount(req, res);
   if (route === 'meta/pages') return handleMetaPages(req, res);
   if (route === 'meta/select-page') return handleMetaSelectPage(req, res);
   if (route === 'notifications/telegram') return handleSetTelegram(req, res);
@@ -5293,6 +5712,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/autonomous/run',
         'GET  /api/v1/meta/status',
         'GET  /api/v1/meta/credentials',
+        'GET  /api/v1/meta/ad-accounts',
+        'POST /api/v1/meta/select-ad-account',
         'GET  /api/v1/meta/pages',
         'POST /api/v1/meta/select-page',
         'POST /api/v1/notifications/telegram',

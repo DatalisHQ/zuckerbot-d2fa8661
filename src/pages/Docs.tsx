@@ -20,6 +20,8 @@ const sections = [
   { id: "ep-market", label: "POST /research/market", indent: true },
   { id: "ep-creatives", label: "POST /creatives/generate", indent: true },
   { id: "ep-keys", label: "POST /keys/create", indent: true },
+  { id: "ep-meta-ad-accounts", label: "GET /meta/ad-accounts", indent: true },
+  { id: "ep-meta-select-ad-account", label: "POST /meta/select-ad-account", indent: true },
   { id: "mcp-server", label: "MCP Server" },
   { id: "rate-limits", label: "Rate Limits" },
   { id: "errors", label: "Errors" },
@@ -772,6 +774,57 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
   -d '{"name": "my-production-key", "environment": "live"}'`}
           />
 
+          {/* GET /v1/meta/ad-accounts */}
+          <EndpointSection
+            id="ep-meta-ad-accounts"
+            method="GET"
+            path="/v1/meta/ad-accounts"
+            description="List every Meta ad account accessible to the connected user and mark which account is currently selected for launches and autonomous management."
+            notes="Uses the stored `businesses.facebook_access_token`. If only one account exists but none is stored, launch/create flows can auto-select it; this read-only endpoint does not mutate state."
+            responseBody={`{
+  "ad_accounts": [
+    {
+      "id": "act_1699470517622963",
+      "account_id": "1699470517622963",
+      "name": "ZuckerBot.ai",
+      "account_status": 1,
+      "currency": "AUD",
+      "business_name": "DatalisHQ",
+      "amount_spent": "12345",
+      "selected": true,
+      "is_selected": true
+    }
+  ],
+  "selected_ad_account_id": "act_1699470517622963",
+  "ad_account_count": 1
+}`}
+            curlExample={`curl https://zuckerbot.ai/api/v1/meta/ad-accounts \\
+  -H "Authorization: Bearer zb_live_abc123"`}
+          />
+
+          {/* POST /v1/meta/select-ad-account */}
+          <EndpointSection
+            id="ep-meta-select-ad-account"
+            method="POST"
+            path="/v1/meta/select-ad-account"
+            description="Select the active Meta ad account for future launches. Switching accounts clears the stored Facebook Page and refreshes the stored Meta Pixel ID from the selected account."
+            requestBody={`{
+  "ad_account_id": "act_2064725353887861"
+}`}
+            responseBody={`{
+  "selected_ad_account_id": "act_2064725353887861",
+  "selected_ad_account_name": "Sophiie.ai",
+  "selected_pixel_id": "123456789012345",
+  "page_selection_required": true,
+  "page_id_cleared": true,
+  "stored": true
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/meta/select-ad-account \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"ad_account_id": "act_2064725353887861"}'`}
+          />
+
           {/* MCP Server */}
           <section id="mcp-server" className="scroll-mt-24 mb-16 pt-8">
             <h2 className="text-2xl font-bold text-white mb-4">MCP Server</h2>
@@ -823,6 +876,11 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
                 { name: "zuckerbot_research_market", desc: "Get market intelligence and benchmarks" },
                 { name: "zuckerbot_generate_creatives", desc: "Generate ad images via AI" },
                 { name: "zuckerbot_meta_status", desc: "Check Facebook connection status" },
+                { name: "zuckerbot_list_ad_accounts", desc: "List Meta ad accounts and current selection" },
+                { name: "zuckerbot_select_ad_account", desc: "Switch the active Meta ad account" },
+                { name: "zuckerbot_list_meta_pages", desc: "List Facebook pages for the connected Meta user" },
+                { name: "zuckerbot_select_meta_page", desc: "Switch the active Facebook Page" },
+                { name: "zuckerbot_get_launch_credentials", desc: "Resolve stored Meta launch credentials" },
               ].map((tool) => (
                 <div
                   key={tool.name}
