@@ -31,6 +31,8 @@ After global install, the package gives you:
 - **Ad creative generation** - AI-generated ad media via Seedream/Imagen images or Kling videos, plus copy via Claude
 - **Campaign management** - Launch, pause, and resume campaigns on the Meta Marketing API
 - **Performance tracking** - Real-time metrics from Meta: impressions, clicks, spend, leads, CPL
+- **Per-business CAPI config** - Map CRM stages to Meta standard events, ingest webhook events, and monitor delivery status
+- **Audience portfolios** - Copy shared audience templates into business-owned tier budgets and launch linked campaigns
 - **Conversion feedback** - Feed lead quality back to Meta's algorithm to improve targeting
 - **Market research** - Competitor ad analysis, review intelligence, and market benchmarks
 - **API key provisioning** - Create and manage API keys programmatically
@@ -67,6 +69,17 @@ Base URL: `https://zuckerbot.ai/api/v1/`
 | `POST` | `/campaigns/:id/pause` | Pause or resume a live campaign |
 | `GET` | `/campaigns/:id/performance` | Get real-time campaign metrics from Meta |
 | `POST` | `/campaigns/:id/conversions` | Send lead quality feedback to Meta's conversion API |
+| `GET` | `/capi/config` | Get the business-scoped CAPI config and webhook URL |
+| `PUT` | `/capi/config` | Update the business-scoped CAPI config |
+| `POST` | `/capi/config/test` | Send a synthetic CAPI test event and log it as a test |
+| `POST` | `/capi/events` | Ingest CRM lifecycle webhook events into the CAPI pipeline |
+| `GET` | `/capi/status` | Get 7-day and 30-day CAPI delivery and attribution status |
+| `POST` | `/portfolios/create` | Create a business-owned audience portfolio from a template |
+| `GET` | `/portfolios/:id` | Get a portfolio and its tier campaign linkage |
+| `PUT` | `/portfolios/:id` | Update a portfolio's tier config and budget |
+| `POST` | `/portfolios/:id/rebalance` | Dry-run or apply a portfolio rebalance |
+| `POST` | `/portfolios/:id/launch` | Launch one campaign per active portfolio tier |
+| `GET` | `/portfolios/:id/performance` | Get tier-by-tier portfolio performance |
 | `POST` | `/research/reviews` | Get review intelligence for a business |
 | `POST` | `/research/competitors` | Analyze competitor ads in a category and location |
 | `POST` | `/research/market` | Get market size, trends, and ad benchmarks |
@@ -420,7 +433,7 @@ Each action result includes `{ ok, status, error?, meta? }`. Results are logged 
 
 ### 5. Cron integration
 
-The cron dispatcher (`POST /api/cron/dispatch-agents`) automatically dispatches `autonomous/run` for every business that has an enabled autonomous policy and at least one active campaign. It fires every 4 hours alongside the existing `performance_monitor` agent.
+The cron dispatcher (`POST /api/cron/dispatch-agents`) automatically dispatches `autonomous/run` for every business that has an enabled autonomous policy and at least one active campaign. It now honours each business's `evaluation_frequency_hours` value instead of using a single hardcoded 4-hour loop.
 
 To trigger manually:
 

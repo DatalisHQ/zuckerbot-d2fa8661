@@ -141,6 +141,12 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 | `zuckerbot_get_launch_credentials` | Resolve stored launch credentials and report missing fields | none |
 | `zuckerbot_generate_creatives` | Generate ad copy and creatives (images or Kling video) | `business_name`, `description` |
 | `zuckerbot_generate_ad_creative` | Legacy alias for creative generation | `business_name`, `description` |
+| `zuckerbot_capi_config` | Get or update the per-business CAPI configuration | none for read; config fields for update |
+| `zuckerbot_capi_status` | Get 7-day and 30-day CAPI delivery and attribution status | none |
+| `zuckerbot_capi_test` | Send a synthetic CAPI test event through the configured pipeline | none |
+| `zuckerbot_create_portfolio` | Create a business-owned audience portfolio from a template | none |
+| `zuckerbot_portfolio_performance` | Get tier-by-tier audience portfolio performance | `portfolio_id` |
+| `zuckerbot_rebalance_portfolio` | Dry-run or apply a portfolio rebalance | `portfolio_id` |
 
 ## Example Conversation
 

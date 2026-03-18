@@ -112,9 +112,52 @@ const PHONE_HINTS: Record<string, string> = {
   Other: "+X XXX XXX XXXX",
 };
 
+const MARKET_OPTIONS = [
+  { code: "AU", label: "Australia" },
+  { code: "US", label: "United States" },
+  { code: "GB", label: "United Kingdom" },
+  { code: "CA", label: "Canada" },
+  { code: "NZ", label: "New Zealand" },
+] as const;
+
+const META_STANDARD_EVENT_OPTIONS = [
+  "Lead",
+  "Contact",
+  "InitiateCheckout",
+  "Purchase",
+  "CompleteRegistration",
+  "Schedule",
+  "StartTrial",
+  "Subscribe",
+] as const;
+
+const DEFAULT_EVENT_MAPPING = {
+  lead: { meta_event: "Lead", value: 0 },
+  marketingqualifiedlead: { meta_event: "Lead", value: 0 },
+  salesqualifiedlead: { meta_event: "Contact", value: 0 },
+  opportunity: { meta_event: "InitiateCheckout", value: 0 },
+  customer: { meta_event: "Purchase", value: 0 },
+} as const;
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type TargetType = "local" | "online";
+type OptimiseFor = "lead" | "sql" | "customer";
+
+interface PortfolioTier {
+  tier: string;
+  budget_pct: number;
+  target_cpa_multiplier: number;
+  description?: string;
+}
+
+interface PortfolioTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  business_type: string;
+  tiers: PortfolioTier[];
+}
 
 interface BusinessForm {
   trade: string;
@@ -129,7 +172,43 @@ interface BusinessForm {
   state: string;
   targetRadiusKm: number;
   targetRegions: string[];
+  currency: string;
+  markets: string[];
+  targetCpaCents: number;
+  maxDailyBudgetCents: number;
+  portfolioTemplateId: string;
+  capiEnabled: boolean;
+  crmSource: string;
+  optimiseFor: OptimiseFor;
+  autonomousEnabled: boolean;
+  evaluationFrequencyHours: number;
+  capiLookbackDays: number;
+  minSpendBeforeEvaluationCents: number;
 }
+
+const cloneTemplateTiers = (tiers: PortfolioTier[] | null | undefined): PortfolioTier[] =>
+  Array.isArray(tiers)
+    ? tiers.map((tier) => ({
+        tier: tier.tier,
+        budget_pct: Number(tier.budget_pct || 0),
+        target_cpa_multiplier: Number(tier.target_cpa_multiplier || 1),
+        description: tier.description || "",
+      }))
+    : [];
+
+const inferPortfolioTemplateType = (trade: string): string => {
+  const normalizedTrade = trade.toLowerCase();
+  if (normalizedTrade.includes("retail") || normalizedTrade.includes("e-commerce") || normalizedTrade.includes("ecommerce")) {
+    return "ecommerce";
+  }
+  if (normalizedTrade.includes("professional services")) {
+    return "saas";
+  }
+  if (normalizedTrade.trim().length > 0) {
+    return "local_services";
+  }
+  return "custom";
+};
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -138,6 +217,11 @@ const Onboarding = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [portfolioTemplates, setPortfolioTemplates] = useState<PortfolioTemplate[]>([]);
+  const [portfolioTiers, setPortfolioTiers] = useState<PortfolioTier[]>([]);
+  const [eventMapping, setEventMapping] = useState<Record<string, { meta_event: string; value: number }>>({
+    ...DEFAULT_EVENT_MAPPING,
+  });
 
   // Check for Try It Now data from landing page
   const tryItNowRaw = (() => {
@@ -175,6 +259,18 @@ const Onboarding = () => {
     state: "",
     targetRadiusKm: 25,
     targetRegions: [],
+    currency: tryItNowRaw?.country === "Australia" ? "AUD" : "USD",
+    markets: [],
+    targetCpaCents: 5000,
+    maxDailyBudgetCents: 10000,
+    portfolioTemplateId: "",
+    capiEnabled: false,
+    crmSource: "hubspot",
+    optimiseFor: "lead",
+    autonomousEnabled: true,
+    evaluationFrequencyHours: 4,
+    capiLookbackDays: 30,
+    minSpendBeforeEvaluationCents: 500,
   });
 
   const navigate = useNavigate();
@@ -212,6 +308,41 @@ const Onboarding = () => {
     checkUser();
   }, [navigate]);
 
+  useEffect(() => {
+    const loadTemplates = async () => {
+      const { data } = await (supabase as any)
+        .from("portfolio_templates")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (!data) return;
+
+      const templates = (data as PortfolioTemplate[]).map((template) => ({
+        ...template,
+        tiers: cloneTemplateTiers(template.tiers),
+      }));
+
+      setPortfolioTemplates(templates);
+      if (!form.portfolioTemplateId && templates.length > 0) {
+        const suggestedType = inferPortfolioTemplateType(mapIndustryToTrade(tryItNowRaw?.industry || tryItNowRaw?.business_type) || form.trade);
+        const suggestedTemplate =
+          templates.find((template) => template.business_type === suggestedType) ||
+          templates.find((template) => template.business_type === "custom") ||
+          templates[0];
+
+        if (suggestedTemplate) {
+          setForm((prev) => ({
+            ...prev,
+            portfolioTemplateId: suggestedTemplate.id,
+          }));
+          setPortfolioTiers(cloneTemplateTiers(suggestedTemplate.tiers));
+        }
+      }
+    };
+
+    loadTemplates();
+  }, [form.portfolioTemplateId, form.trade, tryItNowRaw?.business_type, tryItNowRaw?.industry]);
+
   // ── Form helpers ───────────────────────────────────────────────────────
 
   const updateForm = useCallback(
@@ -223,6 +354,9 @@ const Onboarding = () => {
 
   const effectiveTrade =
     form.trade === "Other" ? form.customTrade.trim() : form.trade;
+
+  const selectedTemplate =
+    portfolioTemplates.find((template) => template.id === form.portfolioTemplateId) || null;
 
   // Determine whether the selected business type naturally defaults to local or online
   const isNaturallyLocal = LOCAL_BUSINESS_TYPES.has(form.trade);
@@ -237,13 +371,97 @@ const Onboarding = () => {
     }
   }, [form.trade, isNaturallyLocal, isNaturallyOnline, updateForm]);
 
-  // Determine total steps: always 2 (step 1 = business info, step 2 = target area)
-  const totalSteps = 2;
+  useEffect(() => {
+    if (form.country === "Australia") {
+      setForm((prev) => ({
+        ...prev,
+        currency: "AUD",
+        markets: prev.markets.length > 0 ? prev.markets : ["AU"],
+      }));
+    } else if (form.country === "United States") {
+      setForm((prev) => ({
+        ...prev,
+        currency: "USD",
+        markets: prev.markets.length > 0 ? prev.markets : ["US"],
+      }));
+    } else if (form.country === "United Kingdom") {
+      setForm((prev) => ({
+        ...prev,
+        currency: "GBP",
+        markets: prev.markets.length > 0 ? prev.markets : ["GB"],
+      }));
+    } else if (form.country === "Canada") {
+      setForm((prev) => ({
+        ...prev,
+        currency: "CAD",
+        markets: prev.markets.length > 0 ? prev.markets : ["CA"],
+      }));
+    }
+  }, [form.country]);
+
+  const handleTemplateChange = (templateId: string) => {
+    updateForm("portfolioTemplateId", templateId);
+    const template = portfolioTemplates.find((candidate) => candidate.id === templateId);
+    if (template) {
+      setPortfolioTiers(cloneTemplateTiers(template.tiers));
+    }
+  };
+
+  const updatePortfolioTier = (
+    tierName: string,
+    field: keyof PortfolioTier,
+    value: string | number
+  ) => {
+    setPortfolioTiers((prev) =>
+      prev.map((tier) =>
+        tier.tier === tierName
+          ? {
+              ...tier,
+              [field]:
+                field === "description"
+                  ? String(value)
+                  : Number(value),
+            }
+          : tier
+      )
+    );
+  };
+
+  const updateEventMappingField = (
+    stage: string,
+    field: "meta_event" | "value",
+    value: string | number
+  ) => {
+    setEventMapping((prev) => ({
+      ...prev,
+      [stage]: {
+        ...prev[stage],
+        [field]: field === "value" ? Number(value) : String(value),
+      },
+    }));
+  };
+
+  const toggleMarket = (marketCode: string) => {
+    setForm((prev) => ({
+      ...prev,
+      markets: prev.markets.includes(marketCode)
+        ? prev.markets.filter((code) => code !== marketCode)
+        : [...prev.markets, marketCode],
+    }));
+  };
+
+  const portfolioBudgetPctTotal = Math.round(
+    portfolioTiers.reduce((sum, tier) => sum + Number(tier.budget_pct || 0), 0)
+  );
+
+  const totalSteps = 4;
 
   // Step definitions for the progress bar
   const stepDefs = [
     { label: "Your Business", icon: Building },
-    { label: "Target Area", icon: MapPin },
+    { label: "Base Targets", icon: MapPin },
+    { label: "Portfolio", icon: Globe },
+    { label: "CAPI & Auto", icon: Check },
   ];
 
   // ── Validation ─────────────────────────────────────────────────────────
@@ -260,6 +478,27 @@ const Onboarding = () => {
       form.suburb.trim().length > 0 &&
       form.postcode.trim().length >= 3 &&
       form.state.length > 0);
+
+  const isBaseTargetsValid =
+    isStep2Valid &&
+    form.currency.trim().length > 0 &&
+    form.markets.length > 0 &&
+    form.targetCpaCents > 0 &&
+    form.maxDailyBudgetCents > 0;
+
+  const isPortfolioValid =
+    form.portfolioTemplateId.length > 0 &&
+    portfolioTiers.length > 0 &&
+    portfolioBudgetPctTotal > 0;
+
+  const isAutomationValid =
+    form.crmSource.trim().length > 0 &&
+    form.evaluationFrequencyHours > 0 &&
+    form.capiLookbackDays > 0 &&
+    form.minSpendBeforeEvaluationCents >= 0 &&
+    Object.values(eventMapping).every(
+      (mapping) => mapping.meta_event.trim().length > 0
+    );
 
   // ── Region toggle helpers ──────────────────────────────────────────────
 
@@ -305,9 +544,12 @@ const Onboarding = () => {
         trade: effectiveTrade.toLowerCase(),
         phone: form.phone.trim(),
         website_url: form.websiteUrl.trim() || null,
+        website: form.websiteUrl.trim() || null,
         country: form.country || "Australia",
         target_type: form.targetType,
         target_radius_km: form.targetType === "local" ? form.targetRadiusKm : null,
+        currency: form.currency.trim().toUpperCase(),
+        markets: form.markets,
       };
 
       if (form.targetType === "local") {
@@ -323,13 +565,76 @@ const Onboarding = () => {
         if (tryItNowRaw.competitor_data) insertData.competitor_names = (tryItNowRaw.competitor_data.competitors || []).map((c: any) => c.name);
       }
 
-      const { error: insertError } = await (supabase as any)
+      const { data: insertedBusiness, error: insertError } = await (supabase as any)
         .from("businesses")
-        .insert(insertData);
+        .insert(insertData)
+        .select("*")
+        .single();
 
       if (insertError) {
         throw new Error(insertError.message);
       }
+
+      const businessId = insertedBusiness?.id;
+      if (!businessId) {
+        throw new Error("Business was created but no business ID was returned.");
+      }
+
+      const selectedPortfolioTemplate =
+        portfolioTemplates.find((template) => template.id === form.portfolioTemplateId) ||
+        selectedTemplate;
+
+      const [capiResult, policyResult, portfolioResult] = await Promise.all([
+        (supabase as any).from("capi_configs").upsert(
+          {
+            business_id: businessId,
+            user_id: userId,
+            is_enabled: form.capiEnabled,
+            event_mapping: eventMapping,
+            currency: form.currency.trim().toUpperCase(),
+            crm_source: form.crmSource.trim().toLowerCase(),
+            optimise_for: form.optimiseFor,
+          },
+          { onConflict: "business_id" }
+        ),
+        (supabase as any).from("autonomous_policies").upsert(
+          {
+            business_id: businessId,
+            user_id: userId,
+            enabled: form.autonomousEnabled,
+            target_cpa: form.targetCpaCents / 100,
+            target_cpa_cents: form.targetCpaCents,
+            pause_multiplier: 2.5,
+            scale_multiplier: 0.7,
+            frequency_cap: 3.5,
+            max_daily_budget: form.maxDailyBudgetCents / 100,
+            max_daily_budget_cents: form.maxDailyBudgetCents,
+            scale_pct: 0.2,
+            min_conversions_to_scale: 3,
+            optimise_for: form.optimiseFor,
+            capi_lookback_days: form.capiLookbackDays,
+            min_spend_before_evaluation_cents: form.minSpendBeforeEvaluationCents,
+            evaluation_frequency_hours: form.evaluationFrequencyHours,
+          },
+          { onConflict: "business_id" }
+        ),
+        (supabase as any).from("audience_portfolios").insert({
+          business_id: businessId,
+          user_id: userId,
+          template_id: selectedPortfolioTemplate?.id || null,
+          name:
+            selectedPortfolioTemplate
+              ? `${form.businessName.trim()} ${selectedPortfolioTemplate.name}`
+              : `${form.businessName.trim()} Portfolio`,
+          total_daily_budget_cents: form.maxDailyBudgetCents,
+          tiers: portfolioTiers,
+          is_active: true,
+        }),
+      ]);
+
+      if (capiResult.error) throw new Error(capiResult.error.message);
+      if (policyResult.error) throw new Error(policyResult.error.message);
+      if (portfolioResult.error) throw new Error(portfolioResult.error.message);
 
       // Upsert profiles row to mark onboarding completed
       try {
@@ -405,7 +710,10 @@ const Onboarding = () => {
 
   // ── Navigation ─────────────────────────────────────────────────────────
 
-  const canGoNext = step === 0 && isStep1Valid;
+  const canGoNext =
+    (step === 0 && isStep1Valid) ||
+    (step === 1 && isBaseTargetsValid) ||
+    (step === 2 && isPortfolioValid);
 
   const goNext = () => {
     if (step < totalSteps - 1) setStep((s) => s + 1);
@@ -911,6 +1219,374 @@ const Onboarding = () => {
                   )}
                 </div>
               )}
+
+              <div className="space-y-4 border-t pt-4">
+                <div className="space-y-2">
+                  <Label>Reporting currency</Label>
+                  <Select
+                    value={form.currency}
+                    onValueChange={(value) => updateForm("currency", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select currency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["AUD", "USD", "GBP", "CAD", "NZD", "EUR"].map((currency) => (
+                        <SelectItem key={currency} value={currency}>
+                          {currency}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Primary markets</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {form.markets.length} selected
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {MARKET_OPTIONS.map((market) => {
+                      const isSelected = form.markets.includes(market.code);
+                      return (
+                        <button
+                          key={market.code}
+                          type="button"
+                          onClick={() => toggleMarket(market.code)}
+                          className={cn(
+                            "rounded-md border px-3 py-2 text-sm font-medium transition-colors",
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "hover:border-primary/50"
+                          )}
+                        >
+                          {market.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="targetCpaCents">Target CPA</Label>
+                    <Input
+                      id="targetCpaCents"
+                      type="number"
+                      min={100}
+                      step={100}
+                      value={form.targetCpaCents}
+                      onChange={(e) =>
+                        updateForm(
+                          "targetCpaCents",
+                          Math.max(100, Number(e.target.value) || 0)
+                        )
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Stored in cents. {form.currency} {(form.targetCpaCents / 100).toFixed(2)}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="maxDailyBudgetCents">Max Daily Budget</Label>
+                    <Input
+                      id="maxDailyBudgetCents"
+                      type="number"
+                      min={500}
+                      step={500}
+                      value={form.maxDailyBudgetCents}
+                      onChange={(e) =>
+                        updateForm(
+                          "maxDailyBudgetCents",
+                          Math.max(500, Number(e.target.value) || 0)
+                        )
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Stored in cents. {form.currency} {(form.maxDailyBudgetCents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {step === 2 && (
+          <Card>
+            <CardContent className="pt-6 space-y-6">
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-bold">Choose your audience portfolio</h2>
+                <p className="text-muted-foreground">
+                  Start from a shared template, then customise the tier split for this business.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Portfolio template</Label>
+                <Select
+                  value={form.portfolioTemplateId}
+                  onValueChange={handleTemplateChange}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {portfolioTemplates.map((template) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedTemplate?.description && (
+                  <p className="text-xs text-muted-foreground">
+                    {selectedTemplate.description}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Tier settings</Label>
+                  <span
+                    className={cn(
+                      "text-xs",
+                      portfolioBudgetPctTotal === 100
+                        ? "text-primary"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    Budget split totals {portfolioBudgetPctTotal}%
+                  </span>
+                </div>
+
+                {portfolioTiers.map((tier) => (
+                  <div key={tier.tier} className="rounded-lg border p-4 space-y-3">
+                    <div>
+                      <p className="font-medium capitalize">
+                        {tier.tier.replace(/_/g, " ")}
+                      </p>
+                      {tier.description && (
+                        <p className="text-sm text-muted-foreground">
+                          {tier.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Budget %</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={5}
+                          value={tier.budget_pct}
+                          onChange={(e) =>
+                            updatePortfolioTier(
+                              tier.tier,
+                              "budget_pct",
+                              Number(e.target.value) || 0
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Target CPA Multiplier</Label>
+                        <Input
+                          type="number"
+                          min={0.1}
+                          step={0.1}
+                          value={tier.target_cpa_multiplier}
+                          onChange={(e) =>
+                            updatePortfolioTier(
+                              tier.tier,
+                              "target_cpa_multiplier",
+                              Number(e.target.value) || 0
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {step === 3 && (
+          <Card>
+            <CardContent className="pt-6 space-y-6">
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-bold">Optional CRM + autonomous policy</h2>
+                <p className="text-muted-foreground">
+                  Configure the business-level CAPI mapping and the autonomous evaluation cadence.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Enable Conversions API</Label>
+                  <p className="text-sm text-muted-foreground">
+                    When enabled, downstream CRM events can upgrade optimisation from CPL to SQL or customer metrics.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.capiEnabled}
+                  onCheckedChange={(checked) => updateForm("capiEnabled", checked)}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>CRM source</Label>
+                  <Input
+                    value={form.crmSource}
+                    onChange={(e) => updateForm("crmSource", e.target.value)}
+                    placeholder="hubspot"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Optimise for</Label>
+                  <Select
+                    value={form.optimiseFor}
+                    onValueChange={(value: OptimiseFor) =>
+                      updateForm("optimiseFor", value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lead">Lead / CPL</SelectItem>
+                      <SelectItem value="sql">SQL / Contact</SelectItem>
+                      <SelectItem value="customer">Customer / Purchase</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label>Stage mapping</Label>
+                {Object.entries(eventMapping).map(([stage, mapping]) => (
+                  <div key={stage} className="grid grid-cols-[1.2fr_1fr_0.8fr] gap-3 items-end">
+                    <div className="space-y-2">
+                      <Label className="capitalize">{stage}</Label>
+                      <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                        {stage}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Meta event</Label>
+                      <Select
+                        value={mapping.meta_event}
+                        onValueChange={(value) =>
+                          updateEventMappingField(stage, "meta_event", value)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {META_STANDARD_EVENT_OPTIONS.map((eventName) => (
+                            <SelectItem key={eventName} value={eventName}>
+                              {eventName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Value</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={mapping.value}
+                        onChange={(e) =>
+                          updateEventMappingField(
+                            stage,
+                            "value",
+                            Number(e.target.value) || 0
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  A webhook secret is generated automatically when this business is saved.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Enable autonomous evaluation</Label>
+                  <p className="text-sm text-muted-foreground">
+                    New businesses still start with CPL fallback until attributable downstream events exist.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.autonomousEnabled}
+                  onCheckedChange={(checked) =>
+                    updateForm("autonomousEnabled", checked)
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Evaluation cadence (hours)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={form.evaluationFrequencyHours}
+                    onChange={(e) =>
+                      updateForm(
+                        "evaluationFrequencyHours",
+                        Math.max(1, Number(e.target.value) || 1)
+                      )
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>CAPI lookback (days)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={form.capiLookbackDays}
+                    onChange={(e) =>
+                      updateForm(
+                        "capiLookbackDays",
+                        Math.max(1, Number(e.target.value) || 1)
+                      )
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Min spend before evaluation</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={100}
+                    value={form.minSpendBeforeEvaluationCents}
+                    onChange={(e) =>
+                      updateForm(
+                        "minSpendBeforeEvaluationCents",
+                        Math.max(0, Number(e.target.value) || 0)
+                      )
+                    }
+                  />
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -926,7 +1602,7 @@ const Onboarding = () => {
             <div /> /* spacer */
           )}
 
-          {step === 0 ? (
+          {step < totalSteps - 1 ? (
             <Button onClick={goNext} disabled={!canGoNext}>
               Next
               <ChevronRight className="h-4 w-4 ml-1" />
@@ -934,7 +1610,7 @@ const Onboarding = () => {
           ) : (
             <Button
               onClick={handleSave}
-              disabled={isSaving || !isStep2Valid}
+              disabled={isSaving || !isAutomationValid}
             >
               {isSaving && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

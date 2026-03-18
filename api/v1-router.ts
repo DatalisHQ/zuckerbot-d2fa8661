@@ -11,6 +11,17 @@
  *   POST /api/v1/campaigns/:id/pause        → handlePause
  *   GET  /api/v1/campaigns/:id/performance  → handlePerformance
  *   POST /api/v1/campaigns/:id/conversions  → handleConversions
+ *   GET  /api/v1/capi/config                → handleCapiConfig
+ *   PUT  /api/v1/capi/config                → handleCapiConfig
+ *   POST /api/v1/capi/config/test           → handleCapiConfigTest
+ *   POST /api/v1/capi/events                → handleCapiEvents
+ *   GET  /api/v1/capi/status                → handleCapiStatus
+ *   POST /api/v1/portfolios/create          → handlePortfolioCreate
+ *   GET  /api/v1/portfolios/:id             → handlePortfolioDetail
+ *   PUT  /api/v1/portfolios/:id             → handlePortfolioDetail
+ *   POST /api/v1/portfolios/:id/rebalance   → handlePortfolioRebalance
+ *   POST /api/v1/portfolios/:id/launch      → handlePortfolioLaunch
+ *   GET  /api/v1/portfolios/:id/performance → handlePortfolioPerformance
  *   POST /api/v1/keys/create                → handleKeysCreate
  *   POST /api/v1/research/reviews           → handleReviews
  *   POST /api/v1/research/competitors       → handleCompetitors
@@ -397,6 +408,655 @@ function paymentRequiredError(requiredCredits: number, currentBalance: number) {
       purchase_url: PURCHASE_CREDITS_URL,
     },
   };
+}
+
+const SUPPORTED_META_STANDARD_EVENTS = new Set([
+  'AddPaymentInfo',
+  'AddToCart',
+  'CompleteRegistration',
+  'Contact',
+  'CustomizeProduct',
+  'Donate',
+  'FindLocation',
+  'InitiateCheckout',
+  'Lead',
+  'Purchase',
+  'Schedule',
+  'Search',
+  'StartTrial',
+  'SubmitApplication',
+  'Subscribe',
+  'ViewContent',
+]);
+
+const DEFAULT_CAPI_EVENT_MAPPING = {
+  lead: { meta_event: 'Lead', value: 0 },
+  marketingqualifiedlead: { meta_event: 'Lead', value: 0 },
+  salesqualifiedlead: { meta_event: 'Contact', value: 0 },
+  opportunity: { meta_event: 'InitiateCheckout', value: 0 },
+  customer: { meta_event: 'Purchase', value: 0 },
+} as const;
+
+type EventMappingConfig = Record<string, { meta_event: string; value: number }>;
+
+interface PortfolioTierConfig {
+  tier: string;
+  budget_pct: number;
+  target_cpa_multiplier: number;
+  description?: string;
+}
+
+interface CapiAttributionLead {
+  id: string;
+  campaign_id: string | null;
+  email: string | null;
+  phone: string | null;
+  meta_lead_id: string | null;
+  name: string | null;
+}
+
+function getAuthorizationHeader(req: VercelRequest): string {
+  const header = req.headers.authorization || req.headers.Authorization;
+  return Array.isArray(header) ? (header[0] || '') : (header || '');
+}
+
+function getApiBaseUrl(): string {
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+}
+
+function normalizeStageKey(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return normalized || null;
+}
+
+function normalizeEmailValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized || null;
+}
+
+function normalizePhoneValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const digits = value.replace(/[^\d+]/g, '');
+  if (!digits) return null;
+  return digits.startsWith('+') ? `+${digits.slice(1).replace(/\D/g, '')}` : digits.replace(/\D/g, '');
+}
+
+function normalizeNameValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized || null;
+}
+
+function sha256Hash(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function buildHashedMetaUserData(input: {
+  email?: unknown;
+  phone?: unknown;
+  first_name?: unknown;
+  last_name?: unknown;
+  fbc?: unknown;
+  fbp?: unknown;
+  client_ip_address?: unknown;
+  client_user_agent?: unknown;
+}) {
+  const userData: Record<string, string> = {};
+  const email = normalizeEmailValue(input.email);
+  const phone = normalizePhoneValue(input.phone);
+  const firstName = normalizeNameValue(input.first_name);
+  const lastName = normalizeNameValue(input.last_name);
+
+  if (email) userData.em = sha256Hash(email);
+  if (phone) userData.ph = sha256Hash(phone);
+  if (firstName) userData.fn = sha256Hash(firstName);
+  if (lastName) userData.ln = sha256Hash(lastName);
+  if (typeof input.fbc === 'string' && input.fbc.trim()) userData.fbc = input.fbc.trim();
+  if (typeof input.fbp === 'string' && input.fbp.trim()) userData.fbp = input.fbp.trim();
+  if (typeof input.client_ip_address === 'string' && input.client_ip_address.trim()) {
+    userData.client_ip_address = input.client_ip_address.trim();
+  }
+  if (typeof input.client_user_agent === 'string' && input.client_user_agent.trim()) {
+    userData.client_user_agent = input.client_user_agent.trim();
+  }
+
+  return userData;
+}
+
+function sanitizeEventMapping(value: unknown): EventMappingConfig | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+  const sanitizedEntries: Array<[string, { meta_event: string; value: number }]> = [];
+  for (const [rawStage, rawConfig] of Object.entries(value as Record<string, any>)) {
+    const stage = normalizeStageKey(rawStage);
+    const metaEvent = normalizeString(rawConfig?.meta_event);
+    const numericValue = normalizeNumber(rawConfig?.value);
+
+    if (!stage || !metaEvent || !SUPPORTED_META_STANDARD_EVENTS.has(metaEvent)) {
+      return null;
+    }
+
+    sanitizedEntries.push([
+      stage,
+      {
+        meta_event: metaEvent,
+        value: numericValue ?? 0,
+      },
+    ]);
+  }
+
+  return Object.fromEntries(sanitizedEntries);
+}
+
+async function resolveOwnedBusiness(
+  auth: AuthSuccess,
+  explicitBusinessId?: string | null,
+): Promise<any | null> {
+  if (explicitBusinessId) {
+    const { data: business } = await supabaseAdmin
+      .from('businesses')
+      .select('*')
+      .eq('id', explicitBusinessId)
+      .eq('user_id', auth.keyRecord.user_id)
+      .maybeSingle();
+    return business || null;
+  }
+
+  const { data: linkedKey } = await supabaseAdmin
+    .from('api_keys')
+    .select('business_id')
+    .eq('id', auth.keyRecord.id)
+    .maybeSingle();
+
+  const linkedBusinessId = normalizeString(linkedKey?.business_id);
+  if (linkedBusinessId) {
+    const { data: business } = await supabaseAdmin
+      .from('businesses')
+      .select('*')
+      .eq('id', linkedBusinessId)
+      .eq('user_id', auth.keyRecord.user_id)
+      .maybeSingle();
+    if (business) return business;
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('*')
+    .eq('user_id', auth.keyRecord.user_id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  return business || null;
+}
+
+async function resolveCapiConfigForBusiness(business: { id: string; user_id: string; currency?: string | null }) {
+  let { data: config } = await supabaseAdmin
+    .from('capi_configs')
+    .select('*')
+    .eq('business_id', business.id)
+    .maybeSingle();
+
+  if (!config) {
+    const { data: inserted } = await supabaseAdmin
+      .from('capi_configs')
+      .insert({
+        business_id: business.id,
+        user_id: business.user_id,
+        currency: business.currency || 'USD',
+      })
+      .select('*')
+      .single();
+    config = inserted || null;
+  }
+
+  return config;
+}
+
+async function findLeadForCapiAttribution(
+  businessId: string,
+  payload: { lead_id?: unknown; email?: unknown; phone?: unknown },
+): Promise<CapiAttributionLead | null> {
+  const leadId = normalizeString(payload.lead_id);
+  if (leadId) {
+    const { data: lead } = await supabaseAdmin
+      .from('leads')
+      .select('id, campaign_id, email, phone, meta_lead_id, name')
+      .eq('id', leadId)
+      .eq('business_id', businessId)
+      .maybeSingle();
+
+    return (lead as CapiAttributionLead | null) || null;
+  }
+
+  const email = normalizeEmailValue(payload.email);
+  const phone = normalizePhoneValue(payload.phone);
+  if (!email && !phone) return null;
+
+  const { data: leads } = await supabaseAdmin
+    .from('leads')
+    .select('id, campaign_id, email, phone, meta_lead_id, name')
+    .eq('business_id', businessId)
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  const typedLeads = (leads || []) as CapiAttributionLead[];
+  const exactMatch = typedLeads.find((lead) => {
+    const leadEmail = normalizeEmailValue(lead.email);
+    const leadPhone = normalizePhoneValue(lead.phone);
+    if (email && phone) {
+      return leadEmail === email || leadPhone === phone;
+    }
+    if (email) return leadEmail === email;
+    return leadPhone === phone;
+  });
+
+  return exactMatch || null;
+}
+
+async function upsertLaunchedCampaignRecord(args: {
+  businessId: string | null;
+  campaignName: string;
+  status: string;
+  dailyBudgetCents: number;
+  radiusKm: number;
+  headline: string;
+  adBody: string;
+  imageUrl: string | null;
+  metaCampaignId: string;
+  metaAdSetId: string;
+  metaAdId: string;
+  metaLeadFormId?: string;
+  launchedAt: string;
+}): Promise<string | null> {
+  if (!args.businessId) return null;
+
+  const existing = await supabaseAdmin
+    .from('campaigns')
+    .select('id')
+    .eq('meta_campaign_id', args.metaCampaignId)
+    .maybeSingle();
+
+  if (existing.data?.id) {
+    await supabaseAdmin
+      .from('campaigns')
+      .update({
+        business_id: args.businessId,
+        name: args.campaignName,
+        status: args.status,
+        daily_budget_cents: args.dailyBudgetCents,
+        radius_km: args.radiusKm,
+        ad_headline: args.headline,
+        ad_copy: args.adBody,
+        ad_image_url: args.imageUrl,
+        meta_campaign_id: args.metaCampaignId,
+        meta_adset_id: args.metaAdSetId,
+        meta_ad_id: args.metaAdId,
+        meta_leadform_id: args.metaLeadFormId || null,
+        launched_at: args.launchedAt,
+      })
+      .eq('id', existing.data.id);
+
+    return existing.data.id;
+  }
+
+  const { data: inserted } = await supabaseAdmin
+    .from('campaigns')
+    .insert({
+      business_id: args.businessId,
+      name: args.campaignName,
+      status: args.status,
+      daily_budget_cents: args.dailyBudgetCents,
+      radius_km: args.radiusKm,
+      ad_headline: args.headline,
+      ad_copy: args.adBody,
+      ad_image_url: args.imageUrl,
+      meta_campaign_id: args.metaCampaignId,
+      meta_adset_id: args.metaAdSetId,
+      meta_ad_id: args.metaAdId,
+      meta_leadform_id: args.metaLeadFormId || null,
+      leads_count: 0,
+      spend_cents: 0,
+      launched_at: args.launchedAt,
+      performance_status: 'learning',
+    })
+    .select('id')
+    .single();
+
+  return inserted?.id || null;
+}
+
+async function fetchAttributedCapiMetricsByCampaign(businessId: string, lookbackDays: number) {
+  const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+  const { data: rows } = await supabaseAdmin
+    .from('capi_events')
+    .select('campaign_id, meta_event_name')
+    .eq('business_id', businessId)
+    .eq('status', 'sent')
+    .eq('is_test', false)
+    .gte('created_at', since)
+    .not('campaign_id', 'is', null);
+
+  const metrics: Record<string, { lead: number; sql: number; customer: number }> = {};
+
+  for (const row of rows || []) {
+    const campaignId = normalizeString((row as any).campaign_id);
+    if (!campaignId) continue;
+    if (!metrics[campaignId]) {
+      metrics[campaignId] = { lead: 0, sql: 0, customer: 0 };
+    }
+
+    const metaEventName = normalizeString((row as any).meta_event_name);
+    if (metaEventName === 'Lead') metrics[campaignId].lead += 1;
+    if (metaEventName === 'Contact') metrics[campaignId].sql += 1;
+    if (metaEventName === 'Purchase') metrics[campaignId].customer += 1;
+  }
+
+  return metrics;
+}
+
+function suggestPortfolioBusinessType(trade: string | null | undefined): string {
+  const normalizedTrade = (trade || '').toLowerCase();
+  if (/(shop|retail|e-?commerce|store|fashion|beauty products)/.test(normalizedTrade)) {
+    return 'ecommerce';
+  }
+  if (/(saas|software|app|b2b|subscription|platform|agency|consult)/.test(normalizedTrade)) {
+    return 'saas';
+  }
+  if (normalizedTrade) return 'local_services';
+  return 'custom';
+}
+
+function sanitizePortfolioTiers(value: unknown): PortfolioTierConfig[] | null {
+  if (!Array.isArray(value)) return null;
+
+  const tiers: PortfolioTierConfig[] = [];
+  for (const tier of value) {
+    const tierName = normalizeString((tier as any)?.tier);
+    const budgetPct = normalizeNumber((tier as any)?.budget_pct);
+    const targetCpaMultiplier = normalizeNumber((tier as any)?.target_cpa_multiplier);
+    const description = normalizeString((tier as any)?.description);
+
+    if (!tierName || budgetPct === null || targetCpaMultiplier === null) {
+      return null;
+    }
+
+    tiers.push({
+      tier: tierName,
+      budget_pct: budgetPct,
+      target_cpa_multiplier: targetCpaMultiplier,
+      ...(description ? { description } : {}),
+    });
+  }
+
+  return tiers;
+}
+
+function buildTierLaunchDraft(args: {
+  business: any;
+  tier: PortfolioTierConfig;
+  tierBudgetCents: number;
+  baseTargetCpaCents: number;
+}) {
+  const businessName = args.business.name || 'Business';
+  const tierLabel = args.tier.tier.replace(/_/g, ' ');
+  const descriptionSuffix = args.tier.description ? ` ${args.tier.description}.` : '';
+
+  return {
+    business_name: `${businessName} ${tierLabel}`,
+    business_type: args.business.trade || 'business',
+    objective: 'leads' as ZuckerObjective,
+    url: args.business.website_url || args.business.website || null,
+    targeting: {
+      age_min: 25,
+      age_max: 65,
+      radius_km: args.business.target_radius_km || 25,
+      publisher_platforms: ['facebook', 'instagram'],
+      facebook_positions: ['feed'],
+      instagram_positions: ['stream'],
+    },
+    variants: [
+      {
+        headline: `${businessName} ${tierLabel}`.slice(0, 40),
+        copy: `Promote ${businessName} to ${tierLabel.replace(/_/g, ' ')} audiences.${descriptionSuffix}`.slice(0, 125),
+        cta: 'Learn More',
+        angle: 'value',
+      },
+    ],
+    strategy: {
+      objective: 'leads',
+      summary: `Tier campaign for ${tierLabel}.`,
+      recommended_daily_budget_cents: args.tierBudgetCents,
+      projected_cpl_cents: Math.round(args.baseTargetCpaCents * args.tier.target_cpa_multiplier),
+    },
+  };
+}
+
+function getClientIpAddress(req: VercelRequest): string | null {
+  const forwarded = req.headers['x-forwarded-for'];
+  const rawValue = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  if (typeof rawValue === 'string' && rawValue.trim()) {
+    return rawValue.split(',')[0]?.trim() || null;
+  }
+
+  const realIp = req.headers['x-real-ip'];
+  const realIpValue = Array.isArray(realIp) ? realIp[0] : realIp;
+  return typeof realIpValue === 'string' && realIpValue.trim() ? realIpValue.trim() : null;
+}
+
+function getWebhookSecretFromRequest(req: VercelRequest): string | null {
+  const headerValue = req.headers['x-zuckerbot-webhook-secret'] || req.headers['x-webhook-secret'];
+  const normalizedHeader = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+  if (typeof normalizedHeader === 'string' && normalizedHeader.trim()) {
+    return normalizedHeader.trim();
+  }
+
+  const body = (req.body || {}) as Record<string, any>;
+  const bodySecret = normalizeString(body.webhook_secret) || normalizeString(body.secret);
+  if (bodySecret) return bodySecret;
+
+  const querySecret = normalizeString(req.query.webhook_secret) || normalizeString(req.query.secret);
+  return querySecret;
+}
+
+async function resolveBusinessByWebhookSecret(webhookSecret: string) {
+  const { data: capiConfig } = await supabaseAdmin
+    .from('capi_configs')
+    .select('*, businesses(*)')
+    .eq('webhook_secret', webhookSecret)
+    .maybeSingle();
+
+  if (!capiConfig) return null;
+
+  return {
+    business: (capiConfig as any).businesses || null,
+    capiConfig,
+  };
+}
+
+function getPolicyTargetCpaCents(policy: Partial<{
+  target_cpa_cents: number | null;
+  target_cpa: number | null;
+}> | null | undefined): number {
+  if (typeof policy?.target_cpa_cents === 'number' && Number.isFinite(policy.target_cpa_cents) && policy.target_cpa_cents > 0) {
+    return Math.round(policy.target_cpa_cents);
+  }
+  if (typeof policy?.target_cpa === 'number' && Number.isFinite(policy.target_cpa) && policy.target_cpa > 0) {
+    return Math.round(policy.target_cpa * 100);
+  }
+  return 5000;
+}
+
+function getPolicyTargetCpaDollars(policy: Partial<{
+  target_cpa_cents: number | null;
+  target_cpa: number | null;
+}> | null | undefined): number {
+  return getPolicyTargetCpaCents(policy) / 100;
+}
+
+interface DispatchCapiEventArgs {
+  business: any;
+  capiConfig: any;
+  crmSource: string;
+  sourceStage: string | null;
+  metaEventName: string | null;
+  eventTime?: string | Date | null;
+  userData: Record<string, string>;
+  customData?: Record<string, any>;
+  lead: CapiAttributionLead | null;
+  matchQuality: string;
+  hubspotContactId?: string | null;
+  explicitEventId?: string | null;
+  isTest?: boolean;
+  allowWhenDisabled?: boolean;
+  metaAccessTokenOverride?: string | null;
+  pixelIdOverride?: string | null;
+}
+
+async function dispatchCapiEvent(args: DispatchCapiEventArgs) {
+  const eventTimestamp = args.eventTime
+    ? new Date(args.eventTime)
+    : new Date();
+  const safeEventTime = Number.isNaN(eventTimestamp.getTime()) ? new Date() : eventTimestamp;
+  const businessToken = normalizeString(args.metaAccessTokenOverride) || normalizeString(args.business?.facebook_access_token);
+  const pixelId = normalizeString(args.pixelIdOverride) || normalizeString(args.business?.meta_pixel_id);
+  const currency = normalizeString(args.capiConfig?.currency) || normalizeString(args.business?.currency) || 'USD';
+  const isEnabled = args.capiConfig?.is_enabled !== false;
+
+  let status = 'received';
+  let metaResponse: Record<string, any> = {};
+
+  if (!args.metaEventName) {
+    status = 'skipped';
+    metaResponse = { reason: 'unmapped_stage' };
+  } else if (!isEnabled && !args.allowWhenDisabled) {
+    status = 'skipped';
+    metaResponse = { reason: 'capi_disabled' };
+  } else if (!businessToken || !pixelId) {
+    status = 'skipped';
+    metaResponse = { reason: 'missing_meta_credentials', has_access_token: !!businessToken, has_pixel_id: !!pixelId };
+  } else {
+    const eventId = normalizeString(args.explicitEventId) || normalizeString(args.lead?.meta_lead_id) || randomBytes(12).toString('hex');
+    const event = {
+      event_name: args.metaEventName,
+      event_time: Math.floor(safeEventTime.getTime() / 1000),
+      action_source: 'system',
+      event_id: eventId,
+      user_data: args.userData,
+      custom_data: {
+        currency,
+        ...(args.customData || {}),
+      },
+    };
+
+    const capiUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}/events`;
+    const response = await fetch(capiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: [event], access_token: businessToken }),
+    });
+    const responseBody = await response.json().catch(() => ({}));
+
+    if (response.ok) {
+      status = 'sent';
+      metaResponse = responseBody;
+    } else {
+      status = 'failed';
+      metaResponse = responseBody;
+    }
+
+    await supabaseAdmin
+      .from('capi_events')
+      .insert({
+        business_id: args.business.id,
+        user_id: args.business.user_id,
+        campaign_id: args.lead?.campaign_id || null,
+        lead_id: args.lead?.id || null,
+        crm_source: args.crmSource,
+        source_stage: args.sourceStage,
+        meta_event_name: args.metaEventName,
+        event_time: safeEventTime.toISOString(),
+        hubspot_contact_id: args.hubspotContactId || null,
+        meta_event_id: event.event_id,
+        match_quality: args.matchQuality,
+        status,
+        meta_response: metaResponse,
+        is_test: !!args.isTest,
+      })
+      .then(() => {});
+
+    return {
+      status,
+      metaResponse,
+      eventId: event.event_id,
+      currency,
+      sent: status === 'sent',
+    };
+  }
+
+  await supabaseAdmin
+    .from('capi_events')
+    .insert({
+      business_id: args.business.id,
+      user_id: args.business.user_id,
+      campaign_id: args.lead?.campaign_id || null,
+      lead_id: args.lead?.id || null,
+      crm_source: args.crmSource,
+      source_stage: args.sourceStage,
+      meta_event_name: args.metaEventName,
+      event_time: safeEventTime.toISOString(),
+      hubspot_contact_id: args.hubspotContactId || null,
+      meta_event_id: normalizeString(args.explicitEventId) || normalizeString(args.lead?.meta_lead_id) || null,
+      match_quality: args.matchQuality,
+      status,
+      meta_response: metaResponse,
+      is_test: !!args.isTest,
+    })
+    .then(() => {});
+
+  return {
+    status,
+    metaResponse,
+    eventId: normalizeString(args.explicitEventId) || normalizeString(args.lead?.meta_lead_id) || null,
+    currency,
+    sent: false,
+  };
+}
+
+async function getOwnedPortfolio(portfolioId: string, userId: string) {
+  const { data: portfolio } = await supabaseAdmin
+    .from('audience_portfolios')
+    .select('*, portfolio_templates(*), audience_tier_campaigns(*)')
+    .eq('id', portfolioId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return portfolio || null;
+}
+
+async function updatePortfolioTierCampaign(
+  existingId: string | null,
+  payload: Record<string, any>,
+) {
+  if (existingId) {
+    const { data } = await supabaseAdmin
+      .from('audience_tier_campaigns')
+      .update(payload)
+      .eq('id', existingId)
+      .select('*')
+      .single();
+    return data;
+  }
+
+  const { data } = await supabaseAdmin
+    .from('audience_tier_campaigns')
+    .insert(payload)
+    .select('*')
+    .single();
+  return data;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1660,11 +2320,31 @@ RULES:
         };
 
         // Update database with launch info
+        const autoLaunchAt = launchResult.data.launched_at || new Date().toISOString();
+
         await supabaseAdmin.from('api_campaigns').update({
           status: 'active',
           meta_campaign_id: launchResult.data.meta_campaign_id,
-          launched_at: new Date().toISOString(),
+          meta_adset_id: launchResult.data.meta_adset_id,
+          meta_ad_id: launchResult.data.meta_ad_id,
+          launched_at: autoLaunchAt,
         }).eq('id', campaignId);
+
+        await upsertLaunchedCampaignRecord({
+          businessId: autoLaunchBusinessId || resolvedMeta.business_id,
+          campaignName: `${response.business_name || 'Campaign'} – API – ${autoLaunchAt.slice(0, 10)}`,
+          status: 'active',
+          dailyBudgetCents: budgetCents,
+          radiusKm: radius_km || response.targeting.radius_km || 25,
+          headline: launchResult.data.selected_variant?.headline || response.variants?.[variant_index || 0]?.headline || response.business_name || 'Campaign',
+          adBody: launchResult.data.selected_variant?.copy || response.variants?.[variant_index || 0]?.copy || `Check out ${response.business_name || 'this business'}`,
+          imageUrl: launchResult.data.selected_variant?.image_url || response.variants?.[variant_index || 0]?.image_url || null,
+          metaCampaignId: launchResult.data.meta_campaign_id,
+          metaAdSetId: launchResult.data.meta_adset_id,
+          metaAdId: launchResult.data.meta_ad_id,
+          metaLeadFormId: launchResult.data.lead_form_id,
+          launchedAt: autoLaunchAt,
+        });
 
         await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
         return res.status(200).json(combinedResponse);
@@ -1973,7 +2653,21 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     const launchedAt = new Date().toISOString();
 
     supabaseAdmin.from('api_campaigns').update({ status: 'active', meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, ...(metaLeadFormId ? { meta_leadform_id: metaLeadFormId } : {}), launched_at: launchedAt }).eq('id', campaignId).then(() => {});
-    supabaseAdmin.from('campaigns').insert({ business_id: null, name: campaignName, status: 'active', daily_budget_cents: budgetCents, radius_km: targetRadius, ad_headline: headline, ad_copy: adBody, ad_image_url: imageUrl || null, meta_campaign_id: metaCampaignId, meta_adset_id: metaAdSetId, meta_ad_id: metaAdId, ...(metaLeadFormId ? { meta_leadform_id: metaLeadFormId } : {}), leads_count: 0, spend_cents: 0, launched_at: launchedAt }).then(() => {});
+    upsertLaunchedCampaignRecord({
+      businessId: launchBusinessId,
+      campaignName,
+      status: 'active',
+      dailyBudgetCents: budgetCents,
+      radiusKm: targetRadius,
+      headline,
+      adBody,
+      imageUrl: imageUrl || null,
+      metaCampaignId,
+      metaAdSetId,
+      metaAdId,
+      metaLeadFormId,
+      launchedAt,
+    }).then(() => {});
 
     // Send launch notification (non-blocking)
     try {
@@ -2276,93 +2970,1133 @@ async function handleConversions(req: VercelRequest, res: VercelResponse, campai
   }
 
   try {
-    let storedAccessToken: string | null = null;
-    let pixelId: string | null = null;
-
     const { data: apiCampaign } = await supabaseAdmin
-      .from('api_campaigns').select('id, meta_campaign_id, meta_access_token')
-      .eq('id', campaignId).eq('api_key_id', auth.keyRecord.id).single();
-    if (apiCampaign) storedAccessToken = apiCampaign.meta_access_token;
+      .from('api_campaigns')
+      .select('id, meta_campaign_id, meta_access_token')
+      .eq('id', campaignId)
+      .eq('api_key_id', auth.keyRecord.id)
+      .maybeSingle();
 
-    let leadData: Record<string, any> | null = null;
     const { data: lead } = await supabaseAdmin
-      .from('leads').select('id, name, phone, email, meta_lead_id, campaign_id, business_id, created_at')
-      .eq('id', lead_id).single();
-    if (lead) {
-      leadData = lead;
-      if (lead.business_id) {
-        const { data: biz } = await supabaseAdmin.from('businesses').select('facebook_access_token, facebook_page_id, meta_pixel_id').eq('id', lead.business_id).single();
-        if (biz?.facebook_access_token) storedAccessToken = storedAccessToken || biz.facebook_access_token;
-        if (biz?.meta_pixel_id) pixelId = normalizeString(biz.meta_pixel_id);
-      }
+      .from('leads')
+      .select('id, name, phone, email, meta_lead_id, campaign_id, business_id, created_at')
+      .eq('id', lead_id)
+      .maybeSingle();
+
+    if (!lead?.business_id) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/conversions', method: 'POST', statusCode: 404, responseTimeMs: Date.now() - startTime });
+      return res.status(404).json({ error: { code: 'not_found', message: 'Lead not found' } });
     }
 
-    if (!pixelId) pixelId = normalizeString(process.env.META_PIXEL_ID) || null;
+    const { data: business } = await supabaseAdmin
+      .from('businesses')
+      .select('*')
+      .eq('id', lead.business_id)
+      .eq('user_id', auth.keyRecord.user_id)
+      .maybeSingle();
 
-    const accessToken = meta_access_token || storedAccessToken || process.env.META_SYSTEM_USER_TOKEN;
-    if (!accessToken || !pixelId) {
-      console.log('[api/conversions] No Meta access token or pixel ID — skipping CAPI call');
-      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/conversions', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
-      return res.status(200).json({ success: true, capi_sent: false, message: 'Conversion quality recorded but Meta CAPI not configured (missing access token or pixel ID)', quality, lead_id });
+    if (!business) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/conversions', method: 'POST', statusCode: 403, responseTimeMs: Date.now() - startTime });
+      return res.status(403).json({ error: { code: 'forbidden', message: 'You do not own this lead' } });
     }
 
-    const eventTime = Math.floor(Date.now() / 1000);
-    const capiUserData: Record<string, string> = {};
-
-    if (user_data?.email) capiUserData.em = user_data.email.toLowerCase().trim();
-    if (user_data?.phone) {
-      let phone = user_data.phone.replace(/\s+/g, '');
-      if (phone.startsWith('0')) phone = '+61' + phone.slice(1);
-      capiUserData.ph = phone;
-    }
-    if (user_data?.first_name) capiUserData.fn = user_data.first_name.toLowerCase().trim();
-    if (user_data?.last_name) capiUserData.ln = user_data.last_name.toLowerCase().trim();
-
-    if (leadData) {
-      if (leadData.email && !capiUserData.em) capiUserData.em = leadData.email.toLowerCase().trim();
-      if (leadData.phone && !capiUserData.ph) {
-        let phone = leadData.phone.replace(/\s+/g, '');
-        if (phone.startsWith('0')) phone = '+61' + phone.slice(1);
-        capiUserData.ph = phone;
-      }
-      if (leadData.name && !capiUserData.fn) {
-        const parts = leadData.name.trim().split(/\s+/);
-        if (parts[0]) capiUserData.fn = parts[0].toLowerCase();
-        if (parts.length > 1) capiUserData.ln = parts[parts.length - 1].toLowerCase();
-      }
-    }
-
-    const event: Record<string, any> = {
-      event_name: quality === 'good' ? 'Lead' : 'Other',
-      event_time: eventTime,
-      action_source: 'system',
-      user_data: capiUserData,
-      custom_data: { lead_quality: quality, lead_id, campaign_id: campaignId, value: quality === 'good' ? 100 : 0, currency: 'USD' },
-    };
-    if (leadData?.meta_lead_id) event.event_id = leadData.meta_lead_id;
-
-    const capiUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}/events`;
-    const capiResponse = await fetch(capiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: [event], access_token: accessToken }),
+    const capiConfig = await resolveCapiConfigForBusiness(business as any);
+    const nameParts = typeof lead.name === 'string' ? lead.name.trim().split(/\s+/) : [];
+    const hashedUserData = buildHashedMetaUserData({
+      email: user_data?.email || lead.email,
+      phone: user_data?.phone || lead.phone,
+      first_name: user_data?.first_name || nameParts[0] || null,
+      last_name: user_data?.last_name || (nameParts.length > 1 ? nameParts[nameParts.length - 1] : null),
+      fbc: user_data?.fbc,
+      fbp: user_data?.fbp,
+      client_ip_address: getClientIpAddress(req),
+      client_user_agent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : '',
     });
 
-    const capiResult = await capiResponse.json();
-    if (!capiResponse.ok) {
-      console.error('[api/conversions] CAPI error:', JSON.stringify(capiResult));
+    const dispatchResult = await dispatchCapiEvent({
+      business,
+      capiConfig,
+      crmSource: 'manual_conversion',
+      sourceStage: quality,
+      metaEventName: 'Lead',
+      eventTime: new Date(),
+      userData: hashedUserData,
+      customData: {
+        lead_quality: quality,
+        lead_id,
+        campaign_id: campaignId,
+        value: quality === 'good' ? 100 : 0,
+      },
+      lead: {
+        id: lead.id,
+        campaign_id: lead.campaign_id,
+        email: lead.email,
+        phone: lead.phone,
+        meta_lead_id: lead.meta_lead_id,
+        name: lead.name,
+      },
+      matchQuality: 'lead_id',
+      explicitEventId: lead.meta_lead_id || `${campaignId}:${lead_id}:${quality}`,
+      allowWhenDisabled: true,
+      metaAccessTokenOverride: normalizeString(meta_access_token) || normalizeString(apiCampaign?.meta_access_token) || normalizeString(process.env.META_SYSTEM_USER_TOKEN),
+      pixelIdOverride: normalizeString(business.meta_pixel_id) || normalizeString(process.env.META_PIXEL_ID),
+    });
+
+    if (dispatchResult.status === 'failed') {
+      console.error('[api/conversions] CAPI error:', JSON.stringify(dispatchResult.metaResponse));
       await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/conversions', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
-      return res.status(502).json({ error: { code: 'capi_error', message: 'Meta Conversion API returned an error', details: capiResult } });
+      return res.status(502).json({ error: { code: 'capi_error', message: 'Meta Conversion API returned an error', details: dispatchResult.metaResponse } });
     }
 
-    console.log(`[api/conversions] CAPI success — ${quality} signal for lead ${lead_id}`);
+    console.log(`[api/conversions] Result ${dispatchResult.status} — ${quality} signal for lead ${lead_id}`);
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/conversions', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
-    return res.status(200).json({ success: true, capi_sent: true, events_received: capiResult.events_received || 1, quality, lead_id });
+    return res.status(200).json({
+      success: true,
+      capi_sent: dispatchResult.sent,
+      status: dispatchResult.status,
+      quality,
+      lead_id,
+      currency: dispatchResult.currency,
+      meta_response: dispatchResult.metaResponse,
+    });
   } catch (err: any) {
     console.error('[api/conversions] Unexpected error:', err);
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/conversions', method: 'POST', statusCode: 500, responseTimeMs: Date.now() - startTime });
     return res.status(500).json({ error: { code: 'internal_error', message: 'An unexpected error occurred', details: err?.message || String(err) } });
   }
+}
+
+// ── GET/PUT /api/v1/capi/config ─────────────────────────────────────────
+
+async function handleCapiConfig(req: VercelRequest, res: VercelResponse) {
+  if (!['GET', 'PUT'].includes(req.method || '')) {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET or PUT required' } });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const businessId = normalizeString((req.method === 'GET' ? req.query.business_id : req.body?.business_id) as string | undefined);
+  const business = await resolveOwnedBusiness(auth, businessId);
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  if (req.method === 'GET') {
+    const config = await resolveCapiConfigForBusiness(business);
+    return res.status(200).json({
+      business_id: business.id,
+      config,
+      webhook_url: `${getApiBaseUrl()}/api/v1/capi/events`,
+      fetched_at: new Date().toISOString(),
+    });
+  }
+
+  const {
+    is_enabled,
+    event_mapping,
+    currency,
+    crm_source,
+    optimise_for,
+    rotate_webhook_secret,
+  } = req.body || {};
+
+  const sanitizedMapping = event_mapping === undefined
+    ? undefined
+    : sanitizeEventMapping(event_mapping);
+  if (event_mapping !== undefined && !sanitizedMapping) {
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: '`event_mapping` must be an object of CRM stages mapped to supported Meta standard events.',
+        supported_meta_events: Array.from(SUPPORTED_META_STANDARD_EVENTS),
+      },
+    });
+  }
+
+  if (optimise_for !== undefined && !['lead', 'sql', 'customer'].includes(String(optimise_for))) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`optimise_for` must be one of lead, sql, customer' } });
+  }
+
+  const config = await resolveCapiConfigForBusiness(business);
+  const nextCurrency = normalizeString(currency) || config?.currency || business.currency || 'USD';
+  const nextConfig = {
+    business_id: business.id,
+    user_id: business.user_id,
+    is_enabled: typeof is_enabled === 'boolean' ? is_enabled : config?.is_enabled ?? false,
+    event_mapping: sanitizedMapping || config?.event_mapping || DEFAULT_CAPI_EVENT_MAPPING,
+    currency: nextCurrency,
+    crm_source: normalizeString(crm_source) || config?.crm_source || 'hubspot',
+    optimise_for: (normalizeString(optimise_for) || config?.optimise_for || 'lead'),
+    webhook_secret: rotate_webhook_secret ? randomBytes(24).toString('hex') : (config?.webhook_secret || randomBytes(24).toString('hex')),
+  };
+
+  const { data: savedConfig, error } = await supabaseAdmin
+    .from('capi_configs')
+    .upsert(nextConfig, { onConflict: 'business_id' })
+    .select('*')
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: { code: 'database_error', message: error.message } });
+  }
+
+  await supabaseAdmin
+    .from('businesses')
+    .update({ currency: nextCurrency })
+    .eq('id', business.id)
+    .then(() => {});
+
+  await supabaseAdmin
+    .from('autonomous_policies')
+    .update({ optimise_for: nextConfig.optimise_for })
+    .eq('business_id', business.id)
+    .then(() => {});
+
+  return res.status(200).json({
+    business_id: business.id,
+    config: savedConfig,
+    webhook_url: `${getApiBaseUrl()}/api/v1/capi/events`,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+// ── POST /api/v1/capi/events ─────────────────────────────────────────────
+
+async function handleCapiEvents(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+  }
+
+  const hasBearerAuth = getAuthorizationHeader(req).startsWith('Bearer ');
+  let auth: AuthSuccess | null = null;
+
+  if (hasBearerAuth) {
+    const authResult = await authenticateRequest(req);
+    if (authResult.error) {
+      if (authResult.rateLimitHeaders) applyRateLimitHeaders(res, authResult.rateLimitHeaders);
+      return res.status(authResult.status).json(authResult.body);
+    }
+    auth = authResult;
+    applyRateLimitHeaders(res, auth.rateLimitHeaders);
+  }
+
+  const body = (req.body || {}) as Record<string, any>;
+  let business: any | null = null;
+  let capiConfig: any | null = null;
+
+  if (auth) {
+    business = await resolveOwnedBusiness(auth, normalizeString(body.business_id));
+    if (!business) {
+      return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+    }
+    capiConfig = await resolveCapiConfigForBusiness(business);
+  } else {
+    const webhookSecret = getWebhookSecretFromRequest(req);
+    if (!webhookSecret) {
+      return res.status(401).json({ error: { code: 'missing_webhook_secret', message: 'Provide an API key or x-zuckerbot-webhook-secret header' } });
+    }
+
+    const resolved = await resolveBusinessByWebhookSecret(webhookSecret);
+    if (!resolved?.business || !resolved.capiConfig) {
+      return res.status(401).json({ error: { code: 'invalid_webhook_secret', message: 'Webhook secret is not valid' } });
+    }
+
+    business = resolved.business;
+    capiConfig = resolved.capiConfig;
+  }
+
+  const stageKey = normalizeStageKey(body.source_stage || body.stage || body.lifecycle_stage);
+  if (!stageKey) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`source_stage` is required' } });
+  }
+
+  const mapping = sanitizeEventMapping(capiConfig?.event_mapping) || sanitizeEventMapping(DEFAULT_CAPI_EVENT_MAPPING) || DEFAULT_CAPI_EVENT_MAPPING;
+  const mappedStage = (mapping as EventMappingConfig)[stageKey] || null;
+  const lead = await findLeadForCapiAttribution(business.id, {
+    lead_id: body.lead_id,
+    email: body.email || body.user_data?.email,
+    phone: body.phone || body.user_data?.phone,
+  });
+
+  const leadNameParts = typeof lead?.name === 'string' ? lead.name.trim().split(/\s+/) : [];
+  const hashedUserData = buildHashedMetaUserData({
+    email: body.email || body.user_data?.email || lead?.email,
+    phone: body.phone || body.user_data?.phone || lead?.phone,
+    first_name: body.first_name || body.user_data?.first_name || leadNameParts[0] || null,
+    last_name: body.last_name || body.user_data?.last_name || (leadNameParts.length > 1 ? leadNameParts[leadNameParts.length - 1] : null),
+    fbc: body.fbc || body.user_data?.fbc,
+    fbp: body.fbp || body.user_data?.fbp,
+    client_ip_address: getClientIpAddress(req),
+    client_user_agent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : '',
+  });
+
+  const matchQuality = normalizeString(body.lead_id)
+    ? (lead ? 'lead_id' : 'lead_id_missing')
+    : lead
+      ? 'identity_match'
+      : 'none';
+
+  const dispatchResult = await dispatchCapiEvent({
+    business,
+    capiConfig,
+    crmSource: normalizeString(body.crm_source) || normalizeString(capiConfig?.crm_source) || 'hubspot',
+    sourceStage: stageKey,
+    metaEventName: mappedStage?.meta_event || null,
+    eventTime: body.event_time || body.timestamp || new Date(),
+    userData: hashedUserData,
+    customData: {
+      value: normalizeNumber(body.value) ?? mappedStage?.value ?? 0,
+      lead_id: lead?.id || normalizeString(body.lead_id),
+      campaign_id: lead?.campaign_id || null,
+      source_stage: stageKey,
+    },
+    lead,
+    matchQuality,
+    hubspotContactId: normalizeString(body.hubspot_contact_id),
+    explicitEventId: normalizeString(body.event_id) || normalizeString(body.meta_event_id),
+  });
+
+  if (dispatchResult.status === 'failed') {
+    return res.status(502).json({
+      success: false,
+      status: dispatchResult.status,
+      business_id: business.id,
+      source_stage: stageKey,
+      meta_event_name: mappedStage?.meta_event || null,
+      meta_response: dispatchResult.metaResponse,
+    });
+  }
+
+  return res.status(dispatchResult.status === 'sent' ? 200 : 202).json({
+    success: true,
+    status: dispatchResult.status,
+    business_id: business.id,
+    source_stage: stageKey,
+    meta_event_name: mappedStage?.meta_event || null,
+    campaign_id: lead?.campaign_id || null,
+    lead_id: lead?.id || null,
+    match_quality: matchQuality,
+    meta_response: dispatchResult.metaResponse,
+  });
+}
+
+// ── POST /api/v1/capi/config/test ────────────────────────────────────────
+
+async function handleCapiConfigTest(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const business = await resolveOwnedBusiness(auth, normalizeString(req.body?.business_id));
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  const capiConfig = await resolveCapiConfigForBusiness(business);
+  const mapping = sanitizeEventMapping(capiConfig?.event_mapping) || sanitizeEventMapping(DEFAULT_CAPI_EVENT_MAPPING) || DEFAULT_CAPI_EVENT_MAPPING;
+  const requestedStage = normalizeStageKey(req.body?.source_stage) || Object.keys(mapping)[0] || 'lead';
+  const mappedStage = (mapping as EventMappingConfig)[requestedStage];
+  if (!mappedStage) {
+    return res.status(400).json({ error: { code: 'validation_error', message: `No event mapping found for stage '${requestedStage}'` } });
+  }
+
+  const hashedUserData = buildHashedMetaUserData({
+    email: req.body?.user_data?.email || `test+${business.id.slice(0, 8)}@zuckerbot.ai`,
+    phone: req.body?.user_data?.phone || '+15555550123',
+    first_name: req.body?.user_data?.first_name || 'Test',
+    last_name: req.body?.user_data?.last_name || 'Lead',
+    client_ip_address: getClientIpAddress(req),
+    client_user_agent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : '',
+  });
+
+  const dispatchResult = await dispatchCapiEvent({
+    business,
+    capiConfig,
+    crmSource: normalizeString(req.body?.crm_source) || normalizeString(capiConfig?.crm_source) || 'hubspot',
+    sourceStage: requestedStage,
+    metaEventName: mappedStage.meta_event,
+    eventTime: new Date(),
+    userData: hashedUserData,
+    customData: {
+      value: normalizeNumber(req.body?.value) ?? mappedStage.value ?? 0,
+      test_event: true,
+      source_stage: requestedStage,
+    },
+    lead: null,
+    matchQuality: 'test',
+    explicitEventId: `test:${business.id}:${Date.now()}`,
+    isTest: true,
+    allowWhenDisabled: true,
+  });
+
+  if (dispatchResult.status === 'failed') {
+    return res.status(502).json({
+      success: false,
+      status: dispatchResult.status,
+      source_stage: requestedStage,
+      meta_event_name: mappedStage.meta_event,
+      meta_response: dispatchResult.metaResponse,
+    });
+  }
+
+  return res.status(dispatchResult.status === 'sent' ? 200 : 202).json({
+    success: true,
+    status: dispatchResult.status,
+    business_id: business.id,
+    source_stage: requestedStage,
+    meta_event_name: mappedStage.meta_event,
+    currency: dispatchResult.currency,
+    meta_response: dispatchResult.metaResponse,
+  });
+}
+
+// ── GET /api/v1/capi/status ──────────────────────────────────────────────
+
+async function handleCapiStatus(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const business = await resolveOwnedBusiness(auth, normalizeString(req.query.business_id as string | undefined));
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  const since30 = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString();
+  const since7 = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000)).toISOString();
+  const { data: events } = await supabaseAdmin
+    .from('capi_events')
+    .select('*')
+    .eq('business_id', business.id)
+    .gte('created_at', since30)
+    .order('created_at', { ascending: false });
+
+  const rows = (events || []) as Array<Record<string, any>>;
+  const summariseWindow = (windowRows: Array<Record<string, any>>) => {
+    const byStatus: Record<string, number> = {};
+    const byMetaEvent: Record<string, number> = {};
+    let attributed = 0;
+    let unattributed = 0;
+
+    for (const row of windowRows) {
+      const status = normalizeString(row.status) || 'unknown';
+      const metaEventName = normalizeString(row.meta_event_name) || 'unmapped';
+      byStatus[status] = (byStatus[status] || 0) + 1;
+      byMetaEvent[metaEventName] = (byMetaEvent[metaEventName] || 0) + 1;
+      if (row.campaign_id) attributed += 1;
+      else unattributed += 1;
+    }
+
+    return {
+      total: windowRows.length,
+      by_status: byStatus,
+      by_meta_event: byMetaEvent,
+      attributed,
+      unattributed,
+      test_events: windowRows.filter((row) => !!row.is_test).length,
+    };
+  };
+
+  const last7Rows = rows.filter((row) => typeof row.created_at === 'string' && row.created_at >= since7);
+  const config = await resolveCapiConfigForBusiness(business);
+
+  return res.status(200).json({
+    business_id: business.id,
+    config: {
+      is_enabled: config?.is_enabled ?? false,
+      crm_source: config?.crm_source || 'hubspot',
+      optimise_for: config?.optimise_for || 'lead',
+      currency: config?.currency || business.currency || 'USD',
+    },
+    windows: {
+      '7d': summariseWindow(last7Rows),
+      '30d': summariseWindow(rows),
+    },
+    recent_events: rows.slice(0, 20),
+    fetched_at: new Date().toISOString(),
+  });
+}
+
+async function loadPortfolioPerformanceSnapshot(portfolio: any, business: any) {
+  const tiers = sanitizePortfolioTiers(portfolio?.tiers) || [];
+  const linkedTierCampaigns = Array.isArray(portfolio?.audience_tier_campaigns)
+    ? portfolio.audience_tier_campaigns
+    : [];
+  const campaignIds = linkedTierCampaigns
+    .map((tierCampaign: any) => normalizeString(tierCampaign.campaign_id))
+    .filter(Boolean) as string[];
+
+  const { data: campaigns } = campaignIds.length > 0
+    ? await supabaseAdmin
+        .from('campaigns')
+        .select('*')
+        .in('id', campaignIds)
+    : { data: [] as any[] };
+
+  const { data: policy } = await supabaseAdmin
+    .from('autonomous_policies')
+    .select('*')
+    .eq('business_id', business.id)
+    .maybeSingle();
+  const capiConfig = await resolveCapiConfigForBusiness(business);
+  const downstreamMetrics = await fetchAttributedCapiMetricsByCampaign(
+    business.id,
+    Number(policy?.capi_lookback_days) > 0 ? Number(policy?.capi_lookback_days) : 30,
+  );
+
+  const optimiseFor = normalizeString(policy?.optimise_for) || normalizeString(capiConfig?.optimise_for) || 'lead';
+  const baseTargetCpaCents = getPolicyTargetCpaCents(policy);
+
+  const rows = tiers.map((tier) => {
+    const tierCampaign = linkedTierCampaigns.find((candidate: any) => candidate.tier === tier.tier) || null;
+    const campaign = (campaigns || []).find((candidate: any) => candidate.id === tierCampaign?.campaign_id) || null;
+    const campaignMetrics = tierCampaign?.campaign_id
+      ? downstreamMetrics[tierCampaign.campaign_id] || { lead: 0, sql: 0, customer: 0 }
+      : { lead: 0, sql: 0, customer: 0 };
+    const spendCents = Number(campaign?.spend_cents || 0);
+    const leadConversions = Number(campaign?.leads_count || 0);
+    let selectedMetric = 'lead';
+    let selectedConversions = leadConversions;
+
+    if (optimiseFor === 'customer' && campaignMetrics.customer > 0) {
+      selectedMetric = 'customer';
+      selectedConversions = campaignMetrics.customer;
+    } else if (optimiseFor === 'sql' && campaignMetrics.sql > 0) {
+      selectedMetric = 'sql';
+      selectedConversions = campaignMetrics.sql;
+    }
+
+    const selectedCpa = selectedConversions > 0
+      ? (spendCents / 100) / selectedConversions
+      : null;
+
+    return {
+      tier: tier.tier,
+      description: tier.description || null,
+      budget_pct: tier.budget_pct,
+      target_cpa_multiplier: tier.target_cpa_multiplier,
+      target_cpa_cents: Math.round(baseTargetCpaCents * tier.target_cpa_multiplier),
+      campaign_id: tierCampaign?.campaign_id || null,
+      meta_campaign_id: tierCampaign?.meta_campaign_id || campaign?.meta_campaign_id || null,
+      meta_adset_id: tierCampaign?.meta_adset_id || campaign?.meta_adset_id || null,
+      daily_budget_cents: Number(tierCampaign?.daily_budget_cents || campaign?.daily_budget_cents || 0),
+      spend_cents: spendCents,
+      lead_conversions: leadConversions,
+      sql_conversions: campaignMetrics.sql,
+      customer_conversions: campaignMetrics.customer,
+      selected_metric: selectedMetric,
+      selected_conversions: selectedConversions,
+      selected_cpa: selectedCpa,
+      status: normalizeString(tierCampaign?.status) || normalizeString(campaign?.status) || 'draft',
+      performance_data: tierCampaign?.performance_data || null,
+    };
+  });
+
+  return {
+    business_id: business.id,
+    optimise_for: optimiseFor,
+    base_target_cpa_cents: baseTargetCpaCents,
+    portfolio_budget_cents: Number(portfolio?.total_daily_budget_cents || 0),
+    rows,
+    summary: {
+      tiers: rows.length,
+      active_tiers: rows.filter((row) => ['active', 'running'].includes((row.status || '').toLowerCase())).length,
+      spend_cents: rows.reduce((sum, row) => sum + row.spend_cents, 0),
+      lead_conversions: rows.reduce((sum, row) => sum + row.lead_conversions, 0),
+      sql_conversions: rows.reduce((sum, row) => sum + row.sql_conversions, 0),
+      customer_conversions: rows.reduce((sum, row) => sum + row.customer_conversions, 0),
+    },
+  };
+}
+
+// ── POST /api/v1/portfolios/create ───────────────────────────────────────
+
+async function handlePortfolioCreate(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const business = await resolveOwnedBusiness(auth, normalizeString(req.body?.business_id));
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  const requestedTemplateId = normalizeString(req.body?.template_id);
+  const requestedTemplateName = normalizeString(req.body?.template_name);
+  const inferredBusinessType = requestedTemplateName
+    ? null
+    : (normalizeString(req.body?.business_type) || suggestPortfolioBusinessType(business.trade));
+
+  let templateQuery = supabaseAdmin
+    .from('portfolio_templates')
+    .select('*');
+
+  if (requestedTemplateId) {
+    templateQuery = templateQuery.eq('id', requestedTemplateId);
+  } else if (requestedTemplateName) {
+    templateQuery = templateQuery.eq('name', requestedTemplateName);
+  } else {
+    templateQuery = templateQuery.eq('business_type', inferredBusinessType || 'custom');
+  }
+
+  let { data: template } = await templateQuery.maybeSingle();
+  if (!template) {
+    const { data: fallbackTemplate } = await supabaseAdmin
+      .from('portfolio_templates')
+      .select('*')
+      .eq('business_type', 'custom')
+      .maybeSingle();
+    template = fallbackTemplate || null;
+  }
+
+  const tiers = sanitizePortfolioTiers(req.body?.tiers) || sanitizePortfolioTiers(template?.tiers);
+  if (!tiers || tiers.length === 0) {
+    return res.status(400).json({ error: { code: 'validation_error', message: 'A valid portfolio template or `tiers` array is required' } });
+  }
+
+  const { data: policy } = await supabaseAdmin
+    .from('autonomous_policies')
+    .select('max_daily_budget_cents')
+    .eq('business_id', business.id)
+    .maybeSingle();
+
+  const totalDailyBudgetCents = Math.max(
+    500,
+    Math.round(normalizeNumber(req.body?.total_daily_budget_cents) || policy?.max_daily_budget_cents || 2000),
+  );
+
+  const { data: portfolio, error } = await supabaseAdmin
+    .from('audience_portfolios')
+    .insert({
+      business_id: business.id,
+      user_id: business.user_id,
+      template_id: template?.id || null,
+      name: normalizeString(req.body?.name) || `${business.name || 'Business'} Portfolio`,
+      total_daily_budget_cents: totalDailyBudgetCents,
+      tiers,
+      is_active: req.body?.is_active === undefined ? true : !!req.body.is_active,
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: { code: 'database_error', message: error.message } });
+  }
+
+  return res.status(200).json({
+    portfolio,
+    template,
+    created_at: new Date().toISOString(),
+  });
+}
+
+// ── GET/PUT /api/v1/portfolios/:id ───────────────────────────────────────
+
+async function handlePortfolioDetail(req: VercelRequest, res: VercelResponse, portfolioId: string) {
+  if (!['GET', 'PUT'].includes(req.method || '')) {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET or PUT required' } });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const portfolio = await getOwnedPortfolio(portfolioId, auth.keyRecord.user_id);
+  if (!portfolio) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Portfolio not found' } });
+  }
+
+  if (req.method === 'GET') {
+    const { data: business } = await supabaseAdmin
+      .from('businesses')
+      .select('*')
+      .eq('id', portfolio.business_id)
+      .eq('user_id', auth.keyRecord.user_id)
+      .maybeSingle();
+    const performance = business ? await loadPortfolioPerformanceSnapshot(portfolio, business) : null;
+    return res.status(200).json({ portfolio, performance });
+  }
+
+  const nextTiers = req.body?.tiers === undefined
+    ? undefined
+    : sanitizePortfolioTiers(req.body?.tiers);
+  if (req.body?.tiers !== undefined && !nextTiers) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`tiers` must be a valid tier array' } });
+  }
+
+  const updates: Record<string, any> = {};
+  if (req.body?.name !== undefined) updates.name = normalizeString(req.body?.name) || portfolio.name;
+  if (req.body?.total_daily_budget_cents !== undefined) {
+    updates.total_daily_budget_cents = Math.max(500, Math.round(normalizeNumber(req.body?.total_daily_budget_cents) || portfolio.total_daily_budget_cents || 500));
+  }
+  if (req.body?.is_active !== undefined) updates.is_active = !!req.body.is_active;
+  if (nextTiers) updates.tiers = nextTiers;
+
+  const { data: updatedPortfolio, error } = await supabaseAdmin
+    .from('audience_portfolios')
+    .update(updates)
+    .eq('id', portfolioId)
+    .eq('user_id', auth.keyRecord.user_id)
+    .select('*')
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: { code: 'database_error', message: error.message } });
+  }
+
+  return res.status(200).json({ portfolio: updatedPortfolio, updated_at: new Date().toISOString() });
+}
+
+// ── GET /api/v1/portfolios/:id/performance ───────────────────────────────
+
+async function handlePortfolioPerformance(req: VercelRequest, res: VercelResponse, portfolioId: string) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const portfolio = await getOwnedPortfolio(portfolioId, auth.keyRecord.user_id);
+  if (!portfolio) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Portfolio not found' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('*')
+    .eq('id', portfolio.business_id)
+    .eq('user_id', auth.keyRecord.user_id)
+    .maybeSingle();
+
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  const performance = await loadPortfolioPerformanceSnapshot(portfolio, business);
+  return res.status(200).json({
+    portfolio_id: portfolio.id,
+    performance,
+    fetched_at: new Date().toISOString(),
+  });
+}
+
+// ── POST /api/v1/portfolios/:id/rebalance ────────────────────────────────
+
+async function handlePortfolioRebalance(req: VercelRequest, res: VercelResponse, portfolioId: string) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const portfolio = await getOwnedPortfolio(portfolioId, auth.keyRecord.user_id);
+  if (!portfolio) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Portfolio not found' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('*')
+    .eq('id', portfolio.business_id)
+    .eq('user_id', auth.keyRecord.user_id)
+    .maybeSingle();
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  const dryRun = req.body?.dry_run !== false;
+  const performance = await loadPortfolioPerformanceSnapshot(portfolio, business);
+  const activeRows = performance.rows.filter((row) => row.campaign_id);
+  if (activeRows.length === 0) {
+    return res.status(200).json({
+      portfolio_id: portfolio.id,
+      dry_run: dryRun,
+      recommendations: [],
+      message: 'No launched tier campaigns were found for this portfolio.',
+    });
+  }
+
+  const weightedRows = activeRows.map((row) => {
+    let multiplier = 1;
+    if (row.selected_cpa !== null && row.target_cpa_cents > 0) {
+      multiplier = Math.max(0.5, Math.min(1.5, (row.target_cpa_cents / 100) / row.selected_cpa));
+    } else if (row.spend_cents > 0 && row.selected_conversions === 0) {
+      multiplier = 0.75;
+    }
+    return {
+      ...row,
+      weight: Math.max(0.1, row.budget_pct * multiplier),
+    };
+  });
+
+  const totalWeight = weightedRows.reduce((sum, row) => sum + row.weight, 0);
+  const recommendations = weightedRows.map((row, index) => {
+    const rawBudget = totalWeight > 0
+      ? Math.round((performance.portfolio_budget_cents * row.weight) / totalWeight)
+      : row.daily_budget_cents;
+    const minimumBudget = 500;
+    const remainingRows = weightedRows.length - index - 1;
+    const maxForRow = performance.portfolio_budget_cents - (remainingRows * minimumBudget);
+    const nextBudgetCents = Math.max(minimumBudget, Math.min(rawBudget, maxForRow));
+    return {
+      tier: row.tier,
+      campaign_id: row.campaign_id,
+      meta_adset_id: row.meta_adset_id,
+      current_budget_cents: row.daily_budget_cents,
+      new_budget_cents: nextBudgetCents,
+      selected_metric: row.selected_metric,
+      selected_cpa: row.selected_cpa,
+      reason: row.selected_cpa !== null
+        ? `${row.selected_metric.toUpperCase()} cost ${row.selected_cpa.toFixed(2)} vs target ${(row.target_cpa_cents / 100).toFixed(2)}`
+        : 'No attributable downstream performance yet, keeping a conservative allocation.',
+    };
+  });
+
+  if (!dryRun) {
+    const accessToken = normalizeString(req.body?.meta_access_token) || resolveAutonomousAccessToken(business.id, business.facebook_access_token);
+
+    for (const recommendation of recommendations) {
+      if (!recommendation.campaign_id) continue;
+
+      const linkedTierCampaign = (portfolio.audience_tier_campaigns || []).find((candidate: any) => candidate.campaign_id === recommendation.campaign_id);
+      await updatePortfolioTierCampaign(linkedTierCampaign?.id || null, {
+        ...(linkedTierCampaign || {}),
+        portfolio_id: portfolio.id,
+        business_id: business.id,
+        user_id: auth.keyRecord.user_id,
+        tier: recommendation.tier,
+        campaign_id: recommendation.campaign_id,
+        meta_adset_id: recommendation.meta_adset_id,
+        daily_budget_cents: recommendation.new_budget_cents,
+        status: 'active',
+        performance_data: {
+          last_rebalance_at: new Date().toISOString(),
+          selected_metric: recommendation.selected_metric,
+          selected_cpa: recommendation.selected_cpa,
+        },
+      });
+
+      await supabaseAdmin
+        .from('campaigns')
+        .update({ daily_budget_cents: recommendation.new_budget_cents })
+        .eq('id', recommendation.campaign_id)
+        .then(() => {});
+
+      if (accessToken && recommendation.meta_adset_id) {
+        const form = new URLSearchParams({
+          daily_budget: String(recommendation.new_budget_cents),
+          access_token: accessToken,
+        });
+        await fetch(`${GRAPH_BASE}/${recommendation.meta_adset_id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: form.toString(),
+        }).catch(() => {});
+      }
+    }
+  }
+
+  return res.status(200).json({
+    portfolio_id: portfolio.id,
+    dry_run: dryRun,
+    recommendations,
+    rebalanced_at: new Date().toISOString(),
+  });
+}
+
+// ── POST /api/v1/portfolios/:id/launch ───────────────────────────────────
+
+async function handlePortfolioLaunch(req: VercelRequest, res: VercelResponse, portfolioId: string) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+  }
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const portfolio = await getOwnedPortfolio(portfolioId, auth.keyRecord.user_id);
+  if (!portfolio) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Portfolio not found' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('*')
+    .eq('id', portfolio.business_id)
+    .eq('user_id', auth.keyRecord.user_id)
+    .maybeSingle();
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  let {
+    meta_access_token,
+    meta_ad_account_id,
+    meta_page_id,
+  } = req.body || {};
+
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+    meta_access_token,
+    meta_ad_account_id,
+    meta_page_id,
+  });
+
+  meta_access_token = meta_access_token || resolvedMeta.meta_access_token;
+  let resolvedPixelId = resolvedMeta.meta_pixel_id || normalizeString(business.meta_pixel_id) || null;
+
+  const adAccountResolution = await resolveAdAccountIdForLaunch({
+    userId: auth.keyRecord.user_id,
+    resolvedMeta: {
+      ...resolvedMeta,
+      meta_access_token,
+      meta_ad_account_id,
+      meta_page_id,
+      meta_pixel_id: resolvedPixelId,
+    },
+  });
+  if (!meta_ad_account_id && adAccountResolution.meta_ad_account_id) {
+    meta_ad_account_id = adAccountResolution.meta_ad_account_id;
+  }
+  resolvedPixelId = adAccountResolution.meta_pixel_id || resolvedPixelId;
+
+  const pageResolution = await resolvePageIdForLaunch({
+    userId: auth.keyRecord.user_id,
+    resolvedMeta: {
+      ...resolvedMeta,
+      meta_access_token,
+      meta_ad_account_id,
+      meta_page_id,
+      meta_pixel_id: resolvedPixelId,
+    },
+  });
+  if (!meta_page_id && pageResolution.meta_page_id) {
+    meta_page_id = pageResolution.meta_page_id;
+  }
+
+  const missing = [
+    !meta_access_token && 'meta_access_token',
+    !meta_ad_account_id && 'meta_ad_account_id',
+    !meta_page_id && 'meta_page_id',
+  ].filter(Boolean);
+  if (missing.length > 0) {
+    return res.status(400).json({
+      error: {
+        code: 'missing_meta_credentials',
+        message: `Missing: ${missing.join(', ')}`,
+      },
+      available_ad_accounts: adAccountResolution.available_ad_accounts || [],
+      available_pages: pageResolution.available_pages || [],
+    });
+  }
+
+  const { data: policy } = await supabaseAdmin
+    .from('autonomous_policies')
+    .select('*')
+    .eq('business_id', business.id)
+    .maybeSingle();
+  const baseTargetCpaCents = getPolicyTargetCpaCents(policy);
+  const tiers = sanitizePortfolioTiers(portfolio.tiers) || [];
+
+  const { data: seedEvents } = await supabaseAdmin
+    .from('capi_events')
+    .select('meta_event_name')
+    .eq('business_id', business.id)
+    .eq('status', 'sent')
+    .eq('is_test', false)
+    .gte('created_at', new Date(Date.now() - (180 * 24 * 60 * 60 * 1000)).toISOString());
+
+  const seedSummary = (seedEvents || []).reduce((acc: Record<string, number>, row: any) => {
+    const key = normalizeString(row.meta_event_name) || 'unknown';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const totalSeedCount = Object.values(seedSummary).reduce((sum, value) => sum + value, 0);
+
+  const results: Array<Record<string, any>> = [];
+  for (const tier of tiers) {
+    const tierBudgetCents = Math.max(500, Math.round((portfolio.total_daily_budget_cents * tier.budget_pct) / 100));
+    const tierKey = tier.tier.toLowerCase();
+
+    let blockedReason: string | null = null;
+    if ((tierKey.includes('lal') || tierKey.includes('lookalike')) && totalSeedCount < 100) {
+      blockedReason = `Tier requires at least 100 CAPI seed events for lookalike audiences. Found ${totalSeedCount}.`;
+    } else if (tierKey.includes('retargeting') && !resolvedPixelId) {
+      blockedReason = 'Tier requires a Meta Pixel ID for retargeting audiences.';
+    } else if (tierKey.includes('reactivation') && ((seedSummary.Purchase || 0) + (seedSummary.Contact || 0)) < 20) {
+      blockedReason = `Tier requires at least 20 attributed Contact or Purchase events. Found ${(seedSummary.Purchase || 0) + (seedSummary.Contact || 0)}.`;
+    }
+
+    const existingTierCampaign = (portfolio.audience_tier_campaigns || []).find((candidate: any) => candidate.tier === tier.tier) || null;
+    if (blockedReason) {
+      await updatePortfolioTierCampaign(existingTierCampaign?.id || null, {
+        ...(existingTierCampaign || {}),
+        portfolio_id: portfolio.id,
+        business_id: business.id,
+        user_id: auth.keyRecord.user_id,
+        tier: tier.tier,
+        campaign_id: existingTierCampaign?.campaign_id || null,
+        meta_campaign_id: existingTierCampaign?.meta_campaign_id || null,
+        meta_adset_id: existingTierCampaign?.meta_adset_id || null,
+        daily_budget_cents: tierBudgetCents,
+        status: 'blocked',
+        performance_data: {
+          blocked_reason: blockedReason,
+          checked_at: new Date().toISOString(),
+        },
+      });
+
+      results.push({ tier: tier.tier, status: 'blocked', reason: blockedReason, daily_budget_cents: tierBudgetCents });
+      continue;
+    }
+
+    const draftCampaign = buildTierLaunchDraft({
+      business,
+      tier,
+      tierBudgetCents,
+      baseTargetCpaCents,
+    });
+
+    const launchResult = await launchCampaignInternal({
+      campaignId: `portfolio_${portfolio.id}_${tier.tier}_${Date.now()}`,
+      meta_access_token,
+      meta_ad_account_id,
+      meta_page_id,
+      meta_pixel_id: resolvedPixelId,
+      variant_index: 0,
+      daily_budget_cents: tierBudgetCents,
+      radius_km: business.target_radius_km || 25,
+      campaign: draftCampaign,
+      auth: auth.keyRecord,
+    });
+
+    if (!launchResult.success || !launchResult.data) {
+      await updatePortfolioTierCampaign(existingTierCampaign?.id || null, {
+        ...(existingTierCampaign || {}),
+        portfolio_id: portfolio.id,
+        business_id: business.id,
+        user_id: auth.keyRecord.user_id,
+        tier: tier.tier,
+        campaign_id: existingTierCampaign?.campaign_id || null,
+        meta_campaign_id: existingTierCampaign?.meta_campaign_id || null,
+        meta_adset_id: existingTierCampaign?.meta_adset_id || null,
+        daily_budget_cents: tierBudgetCents,
+        status: 'failed',
+        performance_data: {
+          error: launchResult.error || null,
+          failed_at: new Date().toISOString(),
+        },
+      });
+
+      results.push({ tier: tier.tier, status: 'failed', error: launchResult.error, daily_budget_cents: tierBudgetCents });
+      continue;
+    }
+
+    const launchedAt = launchResult.data.launched_at || new Date().toISOString();
+    const selectedVariant = launchResult.data.selected_variant || draftCampaign.variants?.[0] || {};
+    const launchedCampaignId = await upsertLaunchedCampaignRecord({
+      businessId: business.id,
+      campaignName: `${draftCampaign.business_name || business.name} – API – ${launchedAt.slice(0, 10)}`,
+      status: 'active',
+      dailyBudgetCents: tierBudgetCents,
+      radiusKm: business.target_radius_km || 25,
+      headline: selectedVariant.headline || draftCampaign.business_name || business.name,
+      adBody: selectedVariant.copy || `Promote ${business.name}`,
+      imageUrl: selectedVariant.image_url || null,
+      metaCampaignId: launchResult.data.meta_campaign_id,
+      metaAdSetId: launchResult.data.meta_adset_id,
+      metaAdId: launchResult.data.meta_ad_id,
+      metaLeadFormId: launchResult.data.lead_form_id,
+      launchedAt,
+    });
+
+    await updatePortfolioTierCampaign(existingTierCampaign?.id || null, {
+      ...(existingTierCampaign || {}),
+      portfolio_id: portfolio.id,
+      business_id: business.id,
+      user_id: auth.keyRecord.user_id,
+      tier: tier.tier,
+      campaign_id: launchedCampaignId,
+      meta_campaign_id: launchResult.data.meta_campaign_id,
+      meta_adset_id: launchResult.data.meta_adset_id,
+      daily_budget_cents: tierBudgetCents,
+      status: 'active',
+      performance_data: {
+        launched_at: launchedAt,
+        selected_variant: selectedVariant,
+      },
+    });
+
+    results.push({
+      tier: tier.tier,
+      status: 'active',
+      campaign_id: launchedCampaignId,
+      meta_campaign_id: launchResult.data.meta_campaign_id,
+      meta_adset_id: launchResult.data.meta_adset_id,
+      daily_budget_cents: tierBudgetCents,
+    });
+  }
+
+  return res.status(200).json({
+    portfolio_id: portfolio.id,
+    launched: results.filter((result) => result.status === 'active').length,
+    blocked: results.filter((result) => result.status === 'blocked').length,
+    failed: results.filter((result) => result.status === 'failed').length,
+    results,
+    launched_at: new Date().toISOString(),
+  });
 }
 
 // ── POST /api/v1/keys/create ────────────────────────────────────────────
@@ -4534,6 +6268,7 @@ interface AutonomousPolicy {
   user_id: string;
   enabled: boolean;
   target_cpa: number;
+  target_cpa_cents?: number | null;
   pause_multiplier: number;
   scale_multiplier: number;
   frequency_cap: number;
@@ -4543,6 +6278,10 @@ interface AutonomousPolicy {
   max_daily_budget_cents?: number;
   scale_pct: number;
   min_conversions_to_scale: number;
+  optimise_for?: 'lead' | 'sql' | 'customer' | string;
+  capi_lookback_days?: number;
+  min_spend_before_evaluation_cents?: number;
+  evaluation_frequency_hours?: number;
 }
 
 interface CampaignMetric {
@@ -4562,6 +6301,11 @@ interface CampaignMetric {
   frequency: number | null;
   cpl_3d: number | null;
   cpl_7d: number | null;
+  sql_conversions: number;
+  customer_conversions: number;
+  selected_metric: 'lead' | 'sql' | 'customer';
+  selected_conversions: number;
+  selected_cpa: number | null;
 }
 
 interface AutonomousAction {
@@ -4581,6 +6325,11 @@ interface AutonomousAction {
     spend_cents: number | null;
     conversions: number;
     cpa: number | null;
+    selected_metric?: string;
+    selected_conversions?: number;
+    selected_cpa?: number | null;
+    sql_conversions?: number;
+    customer_conversions?: number;
     frequency: number | null;
     cpl_3d: number | null;
     cpl_7d: number | null;
@@ -4694,7 +6443,7 @@ async function enrichCampaignMetricWithMeta(
 }
 
 /** Load all campaigns for a business and return normalized metrics. */
-async function fetchBusinessCampaignMetrics(businessId: string): Promise<CampaignMetric[]> {
+async function fetchBusinessCampaignMetrics(businessId: string, policyInput?: Partial<AutonomousPolicy> | null): Promise<CampaignMetric[]> {
   const { data: campaigns } = await supabaseAdmin
     .from('campaigns')
     .select('id, name, status, daily_budget_cents, spend_cents, impressions, clicks, leads_count, meta_campaign_id, meta_adset_id')
@@ -4727,6 +6476,11 @@ async function fetchBusinessCampaignMetrics(businessId: string): Promise<Campaig
       frequency: null,
       cpl_3d: null,
       cpl_7d: null,
+      sql_conversions: 0,
+      customer_conversions: 0,
+      selected_metric: 'lead' as const,
+      selected_conversions: conversions,
+      selected_cpa: cpa,
     };
   });
 
@@ -4737,15 +6491,61 @@ async function fetchBusinessCampaignMetrics(businessId: string): Promise<Campaig
     .maybeSingle();
 
   const accessToken = resolveAutonomousAccessToken(businessId, business?.facebook_access_token);
-  if (!accessToken) return baseMetrics;
+  const enrichedMetrics = accessToken
+    ? await Promise.all(baseMetrics.map((metric) => enrichCampaignMetricWithMeta(metric, accessToken)))
+    : baseMetrics;
 
-  return Promise.all(baseMetrics.map((metric) => enrichCampaignMetricWithMeta(metric, accessToken)));
+  const policy = policyInput || (await supabaseAdmin
+    .from('autonomous_policies')
+    .select('*')
+    .eq('business_id', businessId)
+    .maybeSingle()).data || null;
+  const capiConfig = await supabaseAdmin
+    .from('capi_configs')
+    .select('is_enabled, optimise_for')
+    .eq('business_id', businessId)
+    .maybeSingle();
+  const capiEnabled = !!capiConfig.data?.is_enabled;
+  const optimiseFor = normalizeString(policy?.optimise_for) || normalizeString(capiConfig.data?.optimise_for) || 'lead';
+  const lookbackDays = Number(policy?.capi_lookback_days) > 0 ? Number(policy?.capi_lookback_days) : 30;
+  const downstreamMetrics = capiEnabled
+    ? await fetchAttributedCapiMetricsByCampaign(businessId, lookbackDays)
+    : {};
+
+  return enrichedMetrics.map((metric) => {
+    const downstream = downstreamMetrics[metric.campaign_id] || { lead: 0, sql: 0, customer: 0 };
+    let selectedMetric: 'lead' | 'sql' | 'customer' = 'lead';
+    let selectedConversions = metric.conversions;
+    let selectedCpa = metric.cpa;
+
+    if (capiEnabled && optimiseFor === 'customer' && downstream.customer > 0) {
+      selectedMetric = 'customer';
+      selectedConversions = downstream.customer;
+      selectedCpa = metric.spend_today !== null ? metric.spend_today / downstream.customer : null;
+    } else if (capiEnabled && optimiseFor === 'sql' && downstream.sql > 0) {
+      selectedMetric = 'sql';
+      selectedConversions = downstream.sql;
+      selectedCpa = metric.spend_today !== null ? metric.spend_today / downstream.sql : null;
+    }
+
+    return {
+      ...metric,
+      sql_conversions: downstream.sql,
+      customer_conversions: downstream.customer,
+      selected_metric: selectedMetric,
+      selected_conversions: selectedConversions,
+      selected_cpa: selectedCpa,
+    };
+  });
 }
 
 /** Deterministically generate approval-gated actions from policy + metrics. */
 function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMetric[]): AutonomousAction[] {
   const actions: AutonomousAction[] = [];
-  const SPEND_MIN_USD = 5;
+  const spendMinUsd = (typeof policy.min_spend_before_evaluation_cents === 'number'
+    ? policy.min_spend_before_evaluation_cents
+    : 500) / 100;
+  const targetCpaUsd = getPolicyTargetCpaDollars(policy);
 
   const maxBudgetDollars = policy.max_daily_budget_cents != null
     ? policy.max_daily_budget_cents / 100
@@ -4759,16 +6559,26 @@ function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMe
       spend_cents: m.spend_today !== null ? Math.round(m.spend_today * 100) : null,
       conversions: m.conversions,
       cpa: m.cpa,
+      selected_metric: m.selected_metric,
+      selected_conversions: m.selected_conversions,
+      selected_cpa: m.selected_cpa,
+      sql_conversions: m.sql_conversions,
+      customer_conversions: m.customer_conversions,
       frequency: m.frequency,
       cpl_3d: m.cpl_3d,
       cpl_7d: m.cpl_7d,
       daily_budget_cents: Math.round(m.daily_budget * 100),
     };
+    const metricLabel = m.selected_metric === 'customer'
+      ? 'CAC'
+      : m.selected_metric === 'sql'
+        ? 'Cost per SQL'
+        : 'CPL';
 
     if (
-      m.cpa !== null &&
-      (m.spend_today === null || m.spend_today > SPEND_MIN_USD) &&
-      m.cpa > policy.target_cpa * policy.pause_multiplier
+      m.selected_cpa !== null &&
+      (m.spend_today === null || m.spend_today > spendMinUsd) &&
+      m.selected_cpa > targetCpaUsd * policy.pause_multiplier
     ) {
       actions.push({
         type: 'pause_campaign',
@@ -4778,7 +6588,7 @@ function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMe
         executable: true,
         requires_approval: true,
         trigger: 'cpa_threshold',
-        reason: `CPA $${m.cpa.toFixed(2)} exceeds pause threshold ($${(policy.target_cpa * policy.pause_multiplier).toFixed(2)} = ${policy.pause_multiplier}x target CPA $${policy.target_cpa})`,
+        reason: `${metricLabel} $${m.selected_cpa.toFixed(2)} exceeds pause threshold ($${(targetCpaUsd * policy.pause_multiplier).toFixed(2)} = ${policy.pause_multiplier}x target ${metricLabel} $${targetCpaUsd.toFixed(2)})`,
         metrics: metricSnapshot,
       });
       continue;
@@ -4821,9 +6631,9 @@ function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMe
 
     const spendBelowMax = m.spend_today === null || m.spend_today < maxBudgetDollars;
     if (
-      m.cpa !== null &&
-      m.cpa < policy.target_cpa * policy.scale_multiplier &&
-      m.conversions >= policy.min_conversions_to_scale &&
+      m.selected_cpa !== null &&
+      m.selected_cpa < targetCpaUsd * policy.scale_multiplier &&
+      m.selected_conversions >= policy.min_conversions_to_scale &&
       spendBelowMax
     ) {
       const currentBudget = m.daily_budget;
@@ -4844,7 +6654,7 @@ function generateAutonomousActions(policy: AutonomousPolicy, metrics: CampaignMe
           executable: true,
           requires_approval: true,
           trigger: 'scale_winner',
-          reason: `CPA $${m.cpa.toFixed(2)} is below scale threshold ($${(policy.target_cpa * policy.scale_multiplier).toFixed(2)} = ${policy.scale_multiplier}x target $${policy.target_cpa}); ${m.conversions} conversions. Scaling budget $${currentBudget.toFixed(2)} -> $${newBudget.toFixed(2)}`,
+          reason: `${metricLabel} $${m.selected_cpa.toFixed(2)} is below scale threshold ($${(targetCpaUsd * policy.scale_multiplier).toFixed(2)} = ${policy.scale_multiplier}x target ${metricLabel} $${targetCpaUsd.toFixed(2)}); ${m.selected_conversions} conversions. Scaling budget $${currentBudget.toFixed(2)} -> $${newBudget.toFixed(2)}`,
           metrics: {
             ...metricSnapshot,
             new_budget_cents: Math.round(newBudget * 100),
@@ -4985,6 +6795,7 @@ async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelRes
     business_id,
     enabled = true,
     target_cpa,
+    target_cpa_cents: rawTargetCpaCents,
     pause_multiplier = 2.5,
     scale_multiplier = 0.7,
     frequency_cap = 3.5,
@@ -4992,17 +6803,32 @@ async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelRes
     max_daily_budget_cents: rawMaxBudgetCents,
     scale_pct = 0.2,
     min_conversions_to_scale = 3,
+    optimise_for = 'lead',
+    capi_lookback_days = 30,
+    min_spend_before_evaluation_cents = 500,
+    evaluation_frequency_hours = 4,
   } = req.body || {};
 
   if (!business_id || typeof business_id !== 'string') {
     return res.status(400).json({ error: { code: 'validation_error', message: '`business_id` is required' } });
   }
-  if (typeof target_cpa !== 'number' || target_cpa <= 0) {
-    return res.status(400).json({ error: { code: 'validation_error', message: '`target_cpa` is required and must be a positive dollar amount' } });
+  if (
+    (typeof rawTargetCpaCents !== 'number' || rawTargetCpaCents <= 0)
+    && (typeof target_cpa !== 'number' || target_cpa <= 0)
+  ) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`target_cpa` or `target_cpa_cents` is required and must be positive' } });
+  }
+  if (!['lead', 'sql', 'customer'].includes(String(optimise_for))) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`optimise_for` must be one of lead, sql, customer' } });
   }
 
   // Standardize to cents. Accept max_daily_budget_cents directly (preferred),
   // or derive from max_daily_budget dollars if only the legacy field is provided.
+  const target_cpa_cents: number =
+    typeof rawTargetCpaCents === 'number' && rawTargetCpaCents > 0
+      ? Math.round(rawTargetCpaCents)
+      : Math.round(target_cpa * 100);
+  const normalizedTargetCpa = target_cpa_cents / 100;
   const max_daily_budget_cents: number =
     typeof rawMaxBudgetCents === 'number' && rawMaxBudgetCents > 0
       ? Math.round(rawMaxBudgetCents)
@@ -5028,14 +6854,19 @@ async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelRes
         business_id,
         user_id: business.user_id,
         enabled,
-        target_cpa,
+        target_cpa: normalizedTargetCpa,
+        target_cpa_cents,
         pause_multiplier,
         scale_multiplier,
         frequency_cap,
-        max_daily_budget,
+        max_daily_budget: max_daily_budget_cents / 100,
         max_daily_budget_cents,
         scale_pct,
         min_conversions_to_scale,
+        optimise_for,
+        capi_lookback_days,
+        min_spend_before_evaluation_cents,
+        evaluation_frequency_hours,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'business_id' },
@@ -5047,6 +6878,12 @@ async function handleAutonomousPoliciesUpsert(req: VercelRequest, res: VercelRes
     console.error('[autonomous/policies] DB error:', error);
     return res.status(500).json({ error: { code: 'database_error', message: error.message } });
   }
+
+  await supabaseAdmin
+    .from('capi_configs')
+    .update({ optimise_for })
+    .eq('business_id', business_id)
+    .then(() => {});
 
   return res.status(200).json({ policy: data });
 }
@@ -5082,12 +6919,17 @@ async function handleAutonomousMetrics(req: VercelRequest, res: VercelResponse) 
     return res.status(403).json({ error: { code: 'forbidden', message: 'You do not own this business' } });
   }
 
-  const metrics = await fetchBusinessCampaignMetrics(business_id);
+  const { data: policy } = await supabaseAdmin
+    .from('autonomous_policies')
+    .select('*')
+    .eq('business_id', business_id)
+    .maybeSingle();
+  const metrics = await fetchBusinessCampaignMetrics(business_id, policy as AutonomousPolicy | null);
 
   return res.status(200).json({
     business_id,
     metrics,
-    note: '`spend_today` reflects lifetime spend. When a Meta access token is connected, `frequency`, `cpl_3d`, and `cpl_7d` are enriched from Meta Insights.',
+    note: '`spend_today` reflects lifetime spend. When a Meta access token is connected, `frequency`, `cpl_3d`, and `cpl_7d` are enriched from Meta Insights. `selected_metric` falls back to lead/CPL until attributed downstream events exist.',
     fetched_at: new Date().toISOString(),
   });
 }
@@ -5134,7 +6976,7 @@ async function handleAutonomousEvaluate(req: VercelRequest, res: VercelResponse)
     return res.status(404).json({ error: { code: 'no_policy', message: 'No enabled autonomous policy found for this business. Create one via POST /autonomous/policies/upsert.' } });
   }
 
-  const metrics = await fetchBusinessCampaignMetrics(business_id);
+  const metrics = await fetchBusinessCampaignMetrics(business_id, policy as AutonomousPolicy);
   const actions = generateAutonomousActions(policy as AutonomousPolicy, metrics);
 
   const pauseCount = actions.filter((a) => a.type === 'pause_campaign').length;
@@ -5289,7 +7131,7 @@ async function handleAutonomousRun(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ skipped: true, reason: 'No enabled autonomous policy for this business' });
     }
 
-    const metrics = await fetchBusinessCampaignMetrics(business_id);
+    const metrics = await fetchBusinessCampaignMetrics(business_id, policy as AutonomousPolicy);
     const actions = generateAutonomousActions(policy as AutonomousPolicy, metrics);
 
     if (actions.length > 0) {
@@ -5650,6 +7492,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'research/market') return handleMarket(req, res);
   if (route === 'creatives/generate') return handleCreativesGenerate(req, res);
   if (route === 'ad-account/insights') return handleAdAccountInsights(req, res);
+  if (route === 'capi/config') return handleCapiConfig(req, res);
+  if (route === 'capi/config/test') return handleCapiConfigTest(req, res);
+  if (route === 'capi/events') return handleCapiEvents(req, res);
+  if (route === 'capi/status') return handleCapiStatus(req, res);
+  if (route === 'portfolios/create') return handlePortfolioCreate(req, res);
   if (route === 'meta/status') return handleMetaStatus(req, res);
   if (route === 'meta/credentials') return handleMetaCredentials(req, res);
   if (route === 'meta/ad-accounts') return handleMetaAdAccounts(req, res);
@@ -5678,6 +7525,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'feedback') return handleCreativeFeedback(req, res, id);
   }
 
+  // ── Dynamic portfolios/:id routes ────────────────────────────────────
+  if (segments.length === 2 && segments[0] === 'portfolios') {
+    const id = segments[1];
+    return handlePortfolioDetail(req, res, id);
+  }
+  if (segments.length === 3 && segments[0] === 'portfolios') {
+    const id = segments[1];
+    const action = segments[2];
+
+    if (action === 'rebalance') return handlePortfolioRebalance(req, res, id);
+    if (action === 'launch') return handlePortfolioLaunch(req, res, id);
+    if (action === 'performance') return handlePortfolioPerformance(req, res, id);
+  }
+
   // ── Autonomous mode routes ──────────────────────────────────────────
   if (route === 'autonomous/policies/upsert') return handleAutonomousPoliciesUpsert(req, res);
   if (route === 'autonomous/metrics') return handleAutonomousMetrics(req, res);
@@ -5701,10 +7562,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/research/reviews',
         'POST /api/v1/research/competitors',
         'POST /api/v1/research/market',
+        'GET  /api/v1/capi/config',
+        'PUT  /api/v1/capi/config',
+        'POST /api/v1/capi/config/test',
+        'POST /api/v1/capi/events',
+        'GET  /api/v1/capi/status',
         'POST /api/v1/creatives/generate',
         'GET  /api/v1/ad-account/insights',
         'POST /api/v1/creatives/:id/variants',
         'POST /api/v1/creatives/:id/feedback',
+        'POST /api/v1/portfolios/create',
+        'GET  /api/v1/portfolios/:id',
+        'PUT  /api/v1/portfolios/:id',
+        'POST /api/v1/portfolios/:id/rebalance',
+        'POST /api/v1/portfolios/:id/launch',
+        'GET  /api/v1/portfolios/:id/performance',
         'POST /api/v1/autonomous/policies/upsert',
         'GET  /api/v1/autonomous/metrics',
         'POST /api/v1/autonomous/evaluate',

@@ -65,7 +65,35 @@ interface Business {
   facebook_page_id: string | null;
   facebook_ad_account_id: string | null;
   meta_pixel_id: string | null;
+  currency: string;
+  markets: string[];
 }
+
+interface PortfolioTier {
+  tier: string;
+  budget_pct: number;
+  target_cpa_multiplier: number;
+  description?: string;
+}
+
+const META_STANDARD_EVENT_OPTIONS = [
+  "Lead",
+  "Contact",
+  "InitiateCheckout",
+  "Purchase",
+  "CompleteRegistration",
+  "Schedule",
+  "StartTrial",
+  "Subscribe",
+] as const;
+
+const DEFAULT_EVENT_MAPPING = {
+  lead: { meta_event: "Lead", value: 0 },
+  marketingqualifiedlead: { meta_event: "Lead", value: 0 },
+  salesqualifiedlead: { meta_event: "Contact", value: 0 },
+  opportunity: { meta_event: "InitiateCheckout", value: 0 },
+  customer: { meta_event: "Purchase", value: 0 },
+} as const;
 
 interface FacebookPageOption {
   id: string;
@@ -102,6 +130,16 @@ export default function Profile() {
     state: "",
     website: "",
     meta_pixel_id: "",
+    currency: "USD",
+    markets: "",
+    target_cpa_cents: 5000,
+    max_daily_budget_cents: 10000,
+    crm_source: "hubspot",
+    optimise_for: "lead",
+    evaluation_frequency_hours: 4,
+    capi_lookback_days: 30,
+    min_spend_before_evaluation_cents: 500,
+    portfolio_name: "",
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -115,6 +153,13 @@ export default function Profile() {
   const [showPageSelector, setShowPageSelector] = useState(false);
   const [isLoadingPages, setIsLoadingPages] = useState(false);
   const [isUpdatingPage, setIsUpdatingPage] = useState(false);
+  const [capiConfig, setCapiConfig] = useState<any>(null);
+  const [autonomousPolicy, setAutonomousPolicy] = useState<any>(null);
+  const [audiencePortfolio, setAudiencePortfolio] = useState<any>(null);
+  const [portfolioTiers, setPortfolioTiers] = useState<PortfolioTier[]>([]);
+  const [eventMapping, setEventMapping] = useState<Record<string, { meta_event: string; value: number }>>({
+    ...DEFAULT_EVENT_MAPPING,
+  });
 
   useEffect(() => {
     fetchData();
@@ -141,6 +186,40 @@ export default function Profile() {
       window.history.replaceState({}, "", "/profile");
     }
   }, []);
+
+  const updatePortfolioTier = (
+    tierName: string,
+    field: keyof PortfolioTier,
+    value: string | number
+  ) => {
+    setPortfolioTiers((prev) =>
+      prev.map((tier) =>
+        tier.tier === tierName
+          ? {
+              ...tier,
+              [field]:
+                field === "description"
+                  ? String(value)
+                  : Number(value),
+            }
+          : tier
+      )
+    );
+  };
+
+  const updateEventMappingField = (
+    stage: string,
+    field: "meta_event" | "value",
+    value: string | number
+  ) => {
+    setEventMapping((prev) => ({
+      ...prev,
+      [stage]: {
+        ...prev[stage],
+        [field]: field === "value" ? Number(value) : String(value),
+      },
+    }));
+  };
 
   const fetchData = async () => {
     try {
@@ -189,6 +268,8 @@ export default function Profile() {
           state: biz.state || "",
           website: biz.website || "",
           meta_pixel_id: biz.meta_pixel_id || "",
+          currency: biz.currency || "USD",
+          markets: Array.isArray(biz.markets) ? biz.markets.join(", ") : "",
         }));
 
         if (biz.facebook_access_token) {
@@ -205,6 +286,63 @@ export default function Profile() {
               silent: true,
             });
           }
+        }
+
+        const [capiResult, policyResult, portfolioResult] = await Promise.all([
+          (supabase as any)
+            .from("capi_configs")
+            .select("*")
+            .eq("business_id", biz.id)
+            .maybeSingle(),
+          (supabase as any)
+            .from("autonomous_policies")
+            .select("*")
+            .eq("business_id", biz.id)
+            .maybeSingle(),
+          (supabase as any)
+            .from("audience_portfolios")
+            .select("*")
+            .eq("business_id", biz.id)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        if (capiResult.data) {
+          setCapiConfig(capiResult.data);
+          setEventMapping(
+            (capiResult.data.event_mapping as Record<string, { meta_event: string; value: number }>) ||
+              { ...DEFAULT_EVENT_MAPPING }
+          );
+          setFormData((prev) => ({
+            ...prev,
+            crm_source: capiResult.data.crm_source || "hubspot",
+            optimise_for: capiResult.data.optimise_for || prev.optimise_for,
+          }));
+        }
+
+        if (policyResult.data) {
+          setAutonomousPolicy(policyResult.data);
+          setFormData((prev) => ({
+            ...prev,
+            target_cpa_cents: policyResult.data.target_cpa_cents || Math.round((policyResult.data.target_cpa || 50) * 100),
+            max_daily_budget_cents:
+              policyResult.data.max_daily_budget_cents || Math.round((policyResult.data.max_daily_budget || 100) * 100),
+            optimise_for: policyResult.data.optimise_for || prev.optimise_for,
+            evaluation_frequency_hours: policyResult.data.evaluation_frequency_hours || 4,
+            capi_lookback_days: policyResult.data.capi_lookback_days || 30,
+            min_spend_before_evaluation_cents:
+              policyResult.data.min_spend_before_evaluation_cents || 500,
+          }));
+        }
+
+        if (portfolioResult.data) {
+          setAudiencePortfolio(portfolioResult.data);
+          setPortfolioTiers((portfolioResult.data.tiers as PortfolioTier[]) || []);
+          setFormData((prev) => ({
+            ...prev,
+            portfolio_name: portfolioResult.data.name || "",
+          }));
         }
       }
     } catch (error: any) {
@@ -238,7 +376,15 @@ export default function Profile() {
 
       // Update business details if business exists
       if (business) {
-        const bizUpdate: Record<string, string | null> = { phone: formData.phone };
+        const markets = formData.markets
+          .split(",")
+          .map((value) => value.trim().toUpperCase())
+          .filter(Boolean);
+        const bizUpdate: Record<string, string | string[] | null> = {
+          phone: formData.phone,
+          currency: formData.currency.trim().toUpperCase() || "USD",
+          markets,
+        };
         if (formData.business_name.trim()) bizUpdate.name = formData.business_name.trim();
         if (formData.trade.trim()) bizUpdate.trade = formData.trade.trim();
         if (formData.suburb.trim()) bizUpdate.suburb = formData.suburb.trim();
@@ -253,6 +399,72 @@ export default function Profile() {
           .eq("user_id", user.id);
 
         if (bizError) throw bizError;
+
+        const [capiResult, policyResult] = await Promise.all([
+          (supabase as any).from("capi_configs").upsert(
+            {
+              business_id: business.id,
+              user_id: user.id,
+              is_enabled: capiConfig?.is_enabled ?? false,
+              event_mapping: eventMapping,
+              currency: formData.currency.trim().toUpperCase() || "USD",
+              crm_source: formData.crm_source.trim().toLowerCase() || "hubspot",
+              optimise_for: formData.optimise_for,
+              webhook_secret: capiConfig?.webhook_secret,
+            },
+            { onConflict: "business_id" }
+          ),
+          (supabase as any).from("autonomous_policies").upsert(
+            {
+              business_id: business.id,
+              user_id: user.id,
+              enabled: autonomousPolicy?.enabled ?? true,
+              target_cpa: Number(formData.target_cpa_cents) / 100,
+              target_cpa_cents: Number(formData.target_cpa_cents),
+              pause_multiplier: autonomousPolicy?.pause_multiplier ?? 2.5,
+              scale_multiplier: autonomousPolicy?.scale_multiplier ?? 0.7,
+              frequency_cap: autonomousPolicy?.frequency_cap ?? 3.5,
+              max_daily_budget: Number(formData.max_daily_budget_cents) / 100,
+              max_daily_budget_cents: Number(formData.max_daily_budget_cents),
+              scale_pct: autonomousPolicy?.scale_pct ?? 0.2,
+              min_conversions_to_scale: autonomousPolicy?.min_conversions_to_scale ?? 3,
+              optimise_for: formData.optimise_for,
+              capi_lookback_days: Number(formData.capi_lookback_days),
+              min_spend_before_evaluation_cents: Number(formData.min_spend_before_evaluation_cents),
+              evaluation_frequency_hours: Number(formData.evaluation_frequency_hours),
+            },
+            { onConflict: "business_id" }
+          ),
+        ]);
+
+        if (capiResult.error) throw capiResult.error;
+        if (policyResult.error) throw policyResult.error;
+
+        if (portfolioTiers.length > 0) {
+          const portfolioPayload = {
+            business_id: business.id,
+            user_id: user.id,
+            name: formData.portfolio_name.trim() || audiencePortfolio?.name || `${formData.business_name || business.name} Portfolio`,
+            total_daily_budget_cents: Number(formData.max_daily_budget_cents),
+            tiers: portfolioTiers,
+            is_active: audiencePortfolio?.is_active ?? true,
+          };
+
+          const portfolioQuery = audiencePortfolio
+            ? (supabase as any)
+                .from("audience_portfolios")
+                .update(portfolioPayload)
+                .eq("id", audiencePortfolio.id)
+            : (supabase as any).from("audience_portfolios").insert(portfolioPayload);
+
+          const { data: savedPortfolio, error: portfolioError } = await portfolioQuery
+            .select("*")
+            .single();
+
+          if (portfolioError) throw portfolioError;
+          setAudiencePortfolio(savedPortfolio);
+        }
+
         setBusiness((prev) =>
           prev
             ? {
@@ -265,6 +477,8 @@ export default function Profile() {
                 state: formData.state.trim() || prev.state,
                 website: formData.website.trim() || null,
                 meta_pixel_id: formData.meta_pixel_id.trim() || null,
+                currency: formData.currency.trim().toUpperCase() || prev.currency,
+                markets,
               }
             : null
         );
@@ -273,6 +487,28 @@ export default function Profile() {
       setProfile((prev) =>
         prev ? { ...prev, full_name: formData.full_name } : null
       );
+      setCapiConfig((prev: any) => ({
+        ...(prev || {}),
+        business_id: business?.id,
+        user_id: user.id,
+        is_enabled: prev?.is_enabled ?? false,
+        event_mapping: eventMapping,
+        currency: formData.currency.trim().toUpperCase() || "USD",
+        crm_source: formData.crm_source.trim().toLowerCase() || "hubspot",
+        optimise_for: formData.optimise_for,
+        webhook_secret: prev?.webhook_secret || null,
+      }));
+      setAutonomousPolicy((prev: any) => ({
+        ...(prev || {}),
+        business_id: business?.id,
+        user_id: user.id,
+        target_cpa_cents: Number(formData.target_cpa_cents),
+        max_daily_budget_cents: Number(formData.max_daily_budget_cents),
+        optimise_for: formData.optimise_for,
+        evaluation_frequency_hours: Number(formData.evaluation_frequency_hours),
+        capi_lookback_days: Number(formData.capi_lookback_days),
+        min_spend_before_evaluation_cents: Number(formData.min_spend_before_evaluation_cents),
+      }));
       setEditMode(false);
 
       toast({ title: "Profile updated" });
@@ -836,7 +1072,34 @@ export default function Profile() {
                             state: business?.state || "",
                             website: business?.website || "",
                             meta_pixel_id: business?.meta_pixel_id || "",
+                            currency: business?.currency || "USD",
+                            markets: business?.markets?.join(", ") || "",
+                            target_cpa_cents:
+                              autonomousPolicy?.target_cpa_cents ||
+                              Math.round((autonomousPolicy?.target_cpa || 50) * 100),
+                            max_daily_budget_cents:
+                              autonomousPolicy?.max_daily_budget_cents ||
+                              Math.round((autonomousPolicy?.max_daily_budget || 100) * 100),
+                            crm_source: capiConfig?.crm_source || "hubspot",
+                            optimise_for:
+                              autonomousPolicy?.optimise_for ||
+                              capiConfig?.optimise_for ||
+                              "lead",
+                            evaluation_frequency_hours:
+                              autonomousPolicy?.evaluation_frequency_hours || 4,
+                            capi_lookback_days:
+                              autonomousPolicy?.capi_lookback_days || 30,
+                            min_spend_before_evaluation_cents:
+                              autonomousPolicy?.min_spend_before_evaluation_cents || 500,
+                            portfolio_name: audiencePortfolio?.name || "",
                           });
+                          setEventMapping(
+                            (capiConfig?.event_mapping as Record<string, { meta_event: string; value: number }>) ||
+                              { ...DEFAULT_EVENT_MAPPING }
+                          );
+                          setPortfolioTiers(
+                            (audiencePortfolio?.tiers as PortfolioTier[]) || []
+                          );
                         }}
                       >
                         <X className="w-4 h-4 mr-2" />
@@ -1013,6 +1276,415 @@ export default function Profile() {
                           </p>
                         )}
                       </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Currency
+                        </Label>
+                        {editMode ? (
+                          <Input
+                            value={formData.currency}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                currency: e.target.value.toUpperCase(),
+                              }))
+                            }
+                            placeholder="USD"
+                          />
+                        ) : (
+                          <p className="text-sm font-medium">{business.currency || "USD"}</p>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Markets
+                        </Label>
+                        {editMode ? (
+                          <Input
+                            value={formData.markets}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                markets: e.target.value,
+                              }))
+                            }
+                            placeholder="US, AU, GB"
+                          />
+                        ) : (
+                          <p className="text-sm font-medium">
+                            {business.markets?.join(", ") || "Not set"}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {business && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Autonomous Policy</CardTitle>
+                    <CardDescription>
+                      Per-business targets used for portfolio planning and autonomous evaluation.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Target CPA (cents)</Label>
+                        {editMode ? (
+                          <Input
+                            type="number"
+                            value={formData.target_cpa_cents}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                target_cpa_cents: Number(e.target.value) || 0,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                            {formData.target_cpa_cents}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Max daily budget (cents)</Label>
+                        {editMode ? (
+                          <Input
+                            type="number"
+                            value={formData.max_daily_budget_cents}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                max_daily_budget_cents: Number(e.target.value) || 0,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                            {formData.max_daily_budget_cents}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Optimise for</Label>
+                        {editMode ? (
+                          <Select
+                            value={formData.optimise_for}
+                            onValueChange={(value) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                optimise_for: value,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="lead">Lead</SelectItem>
+                              <SelectItem value="sql">SQL</SelectItem>
+                              <SelectItem value="customer">Customer</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm capitalize">
+                            {formData.optimise_for}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Evaluation cadence (hours)</Label>
+                        {editMode ? (
+                          <Input
+                            type="number"
+                            value={formData.evaluation_frequency_hours}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                evaluation_frequency_hours: Number(e.target.value) || 1,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                            {formData.evaluation_frequency_hours}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>CAPI lookback (days)</Label>
+                        {editMode ? (
+                          <Input
+                            type="number"
+                            value={formData.capi_lookback_days}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                capi_lookback_days: Number(e.target.value) || 1,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                            {formData.capi_lookback_days}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Min spend before evaluation</Label>
+                        {editMode ? (
+                          <Input
+                            type="number"
+                            value={formData.min_spend_before_evaluation_cents}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                min_spend_before_evaluation_cents: Number(e.target.value) || 0,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                            {formData.min_spend_before_evaluation_cents}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {business && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Audience Portfolio</CardTitle>
+                    <CardDescription>
+                      Tier-level budget splits copied into this business portfolio.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Portfolio name</Label>
+                      {editMode ? (
+                        <Input
+                          value={formData.portfolio_name}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              portfolio_name: e.target.value,
+                            }))
+                          }
+                        />
+                      ) : (
+                        <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                          {formData.portfolio_name || "Not set"}
+                        </div>
+                      )}
+                    </div>
+
+                    {portfolioTiers.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No audience portfolio has been configured for this business yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {portfolioTiers.map((tier) => (
+                          <div key={tier.tier} className="rounded-lg border p-4 space-y-3">
+                            <div>
+                              <p className="font-medium capitalize">
+                                {tier.tier.replace(/_/g, " ")}
+                              </p>
+                              {tier.description && (
+                                <p className="text-sm text-muted-foreground">
+                                  {tier.description}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label>Budget %</Label>
+                                {editMode ? (
+                                  <Input
+                                    type="number"
+                                    value={tier.budget_pct}
+                                    onChange={(e) =>
+                                      updatePortfolioTier(
+                                        tier.tier,
+                                        "budget_pct",
+                                        Number(e.target.value) || 0
+                                      )
+                                    }
+                                  />
+                                ) : (
+                                  <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                                    {tier.budget_pct}%
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label>CPA multiplier</Label>
+                                {editMode ? (
+                                  <Input
+                                    type="number"
+                                    value={tier.target_cpa_multiplier}
+                                    onChange={(e) =>
+                                      updatePortfolioTier(
+                                        tier.tier,
+                                        "target_cpa_multiplier",
+                                        Number(e.target.value) || 0
+                                      )
+                                    }
+                                  />
+                                ) : (
+                                  <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                                    {tier.target_cpa_multiplier}x
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {business && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Conversions API</CardTitle>
+                    <CardDescription>
+                      CRM mapping, webhook authentication, and downstream optimisation settings.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>CAPI enabled</Label>
+                        {editMode ? (
+                          <Select
+                            value={String(capiConfig?.is_enabled ?? false)}
+                            onValueChange={(value) =>
+                              setCapiConfig((prev: any) => ({
+                                ...(prev || {}),
+                                is_enabled: value === "true",
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">Enabled</SelectItem>
+                              <SelectItem value="false">Disabled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                            {capiConfig?.is_enabled ? "Enabled" : "Disabled"}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>CRM source</Label>
+                        {editMode ? (
+                          <Input
+                            value={formData.crm_source}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                crm_source: e.target.value,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                            {formData.crm_source || "hubspot"}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Webhook secret</Label>
+                      <div className="h-10 px-3 py-2 border rounded-md bg-muted/30 flex items-center text-sm text-muted-foreground">
+                        {capiConfig?.webhook_secret || "Will be generated on first save"}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label>Event mapping</Label>
+                      {Object.entries(eventMapping).map(([stage, mapping]) => (
+                        <div key={stage} className="grid grid-cols-[1.2fr_1fr_0.7fr] gap-3 items-end">
+                          <div className="space-y-2">
+                            <Label className="capitalize">{stage}</Label>
+                            <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                              {stage}
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Meta event</Label>
+                            {editMode ? (
+                              <Select
+                                value={mapping.meta_event}
+                                onValueChange={(value) =>
+                                  updateEventMappingField(stage, "meta_event", value)
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {META_STANDARD_EVENT_OPTIONS.map((eventName) => (
+                                    <SelectItem key={eventName} value={eventName}>
+                                      {eventName}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                                {mapping.meta_event}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Value</Label>
+                            {editMode ? (
+                              <Input
+                                type="number"
+                                value={mapping.value}
+                                onChange={(e) =>
+                                  updateEventMappingField(
+                                    stage,
+                                    "value",
+                                    Number(e.target.value) || 0
+                                  )
+                                }
+                              />
+                            ) : (
+                              <div className="h-10 px-3 py-2 border rounded-md bg-muted/50 flex items-center text-sm">
+                                {mapping.value}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </CardContent>
                 </Card>

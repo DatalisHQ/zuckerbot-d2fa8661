@@ -109,4 +109,14 @@ export class ZuckerBotClient {
     });
     return this.handleResponse(response);
   }
+
+  async put(path: string, body?: Record<string, unknown>): Promise<unknown> {
+    const url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: this.headers(),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return this.handleResponse(response);
+  }
 }

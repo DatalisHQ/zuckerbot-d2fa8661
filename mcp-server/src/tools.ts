@@ -582,4 +582,195 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
       }
     },
   );
+
+  // ── 19. CAPI Config ────────────────────────────────────────────
+  server.tool(
+    "zuckerbot_capi_config",
+    "Fetch or update the per-business Conversions API configuration, including stage-to-event mappings, CRM source, currency, and optimisation target.",
+    {
+      business_id: z.string().optional().describe("Optional business ID override for the authenticated API key"),
+      is_enabled: z.boolean().optional().describe("Enable or disable CAPI delivery for the business"),
+      currency: z.string().optional().describe("Business currency used for CAPI event values, such as USD or AUD"),
+      crm_source: z.string().optional().describe("CRM source label, such as hubspot"),
+      optimise_for: z.enum(["lead", "sql", "customer"]).optional().describe("Downstream optimisation target for autonomous evaluation"),
+      rotate_webhook_secret: z.boolean().optional().describe("Rotate the webhook secret on update"),
+      event_mapping: z
+        .record(
+          z.string(),
+          z.object({
+            meta_event: z.string().describe("Meta standard event name"),
+            value: z.number().optional().describe("Event value in major currency units"),
+          }),
+        )
+        .optional()
+        .describe("CRM stage mapping object keyed by source stage"),
+    },
+    async ({ business_id, is_enabled, currency, crm_source, optimise_for, rotate_webhook_secret, event_mapping }) => {
+      try {
+        const hasUpdateFields =
+          is_enabled !== undefined
+          || currency !== undefined
+          || crm_source !== undefined
+          || optimise_for !== undefined
+          || rotate_webhook_secret !== undefined
+          || event_mapping !== undefined;
+
+        if (!hasUpdateFields) {
+          const params = new URLSearchParams();
+          if (business_id) params.set("business_id", business_id);
+          const result = await client.get(`/capi/config${params.toString() ? `?${params.toString()}` : ""}`);
+          return formatResult(result);
+        }
+
+        const body: Record<string, unknown> = {};
+        if (business_id) body.business_id = business_id;
+        if (is_enabled !== undefined) body.is_enabled = is_enabled;
+        if (currency) body.currency = currency;
+        if (crm_source) body.crm_source = crm_source;
+        if (optimise_for) body.optimise_for = optimise_for;
+        if (rotate_webhook_secret !== undefined) body.rotate_webhook_secret = rotate_webhook_secret;
+        if (event_mapping) body.event_mapping = event_mapping;
+
+        const result = await client.put("/capi/config", body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 20. CAPI Status ────────────────────────────────────────────
+  server.tool(
+    "zuckerbot_capi_status",
+    "Get 7-day and 30-day Conversions API delivery, attribution, and event-type status for the authenticated business.",
+    {
+      business_id: z.string().optional().describe("Optional business ID override"),
+    },
+    async ({ business_id }) => {
+      try {
+        const params = new URLSearchParams();
+        if (business_id) params.set("business_id", business_id);
+        const result = await client.get(`/capi/status${params.toString() ? `?${params.toString()}` : ""}`);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 21. CAPI Test ──────────────────────────────────────────────
+  server.tool(
+    "zuckerbot_capi_test",
+    "Send a synthetic CAPI test event through the business configuration and log it as a test event.",
+    {
+      business_id: z.string().optional().describe("Optional business ID override"),
+      source_stage: z.string().optional().describe("CRM stage key to test against the mapping"),
+      crm_source: z.string().optional().describe("Optional CRM source label override"),
+      value: z.number().optional().describe("Optional event value override"),
+      user_data: z
+        .object({
+          email: z.string().optional(),
+          phone: z.string().optional(),
+          first_name: z.string().optional(),
+          last_name: z.string().optional(),
+        })
+        .optional()
+        .describe("Optional user data to hash into the test payload"),
+    },
+    async ({ business_id, source_stage, crm_source, value, user_data }) => {
+      try {
+        const body: Record<string, unknown> = {};
+        if (business_id) body.business_id = business_id;
+        if (source_stage) body.source_stage = source_stage;
+        if (crm_source) body.crm_source = crm_source;
+        if (value !== undefined) body.value = value;
+        if (user_data) body.user_data = user_data;
+
+        const result = await client.post("/capi/config/test", body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 22. Create Portfolio ───────────────────────────────────────
+  server.tool(
+    "zuckerbot_create_portfolio",
+    "Create a business-owned audience portfolio from a shared template or a custom tier definition.",
+    {
+      business_id: z.string().optional().describe("Optional business ID override"),
+      template_id: z.string().optional().describe("Optional portfolio template ID"),
+      template_name: z.string().optional().describe("Optional portfolio template name, such as 'Local Services'"),
+      name: z.string().optional().describe("Optional portfolio name"),
+      total_daily_budget_cents: z.number().int().optional().describe("Total daily budget in cents"),
+      is_active: z.boolean().optional().describe("Whether the portfolio should be active immediately"),
+      tiers: z
+        .array(
+          z.object({
+            tier: z.string(),
+            budget_pct: z.number(),
+            target_cpa_multiplier: z.number(),
+            description: z.string().optional(),
+          }),
+        )
+        .optional()
+        .describe("Optional custom tier array to override the template"),
+    },
+    async ({ business_id, template_id, template_name, name, total_daily_budget_cents, is_active, tiers }) => {
+      try {
+        const body: Record<string, unknown> = {};
+        if (business_id) body.business_id = business_id;
+        if (template_id) body.template_id = template_id;
+        if (template_name) body.template_name = template_name;
+        if (name) body.name = name;
+        if (total_daily_budget_cents !== undefined) body.total_daily_budget_cents = total_daily_budget_cents;
+        if (is_active !== undefined) body.is_active = is_active;
+        if (tiers) body.tiers = tiers;
+
+        const result = await client.post("/portfolios/create", body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 23. Portfolio Performance ─────────────────────────────────
+  server.tool(
+    "zuckerbot_portfolio_performance",
+    "Fetch tier-by-tier performance for a launched audience portfolio, including selected evaluation metric and downstream attributed conversions.",
+    {
+      portfolio_id: z.string().describe("Audience portfolio ID"),
+    },
+    async ({ portfolio_id }) => {
+      try {
+        const result = await client.get(`/portfolios/${portfolio_id}/performance`);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 24. Rebalance Portfolio ───────────────────────────────────
+  server.tool(
+    "zuckerbot_rebalance_portfolio",
+    "Dry-run or execute an audience portfolio rebalance using the same per-business cost metric hierarchy as autonomous evaluation.",
+    {
+      portfolio_id: z.string().describe("Audience portfolio ID"),
+      dry_run: z.boolean().default(true).describe("When true, returns recommendations without applying changes"),
+      meta_access_token: z.string().optional().describe("Optional Meta access token override for ad set budget updates"),
+    },
+    async ({ portfolio_id, dry_run, meta_access_token }) => {
+      try {
+        const body: Record<string, unknown> = { dry_run };
+        if (meta_access_token) body.meta_access_token = meta_access_token;
+        const result = await client.post(`/portfolios/${portfolio_id}/rebalance`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
 }

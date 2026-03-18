@@ -1,8 +1,7 @@
 import { supabaseAdmin, shouldRunAgent, shouldRunAutonomousLoop } from '../agents/_utils.js';
 import type { AgentType } from '../agents/_utils.js';
 
-// Autonomous loop frequency: run at most once every 4 hours per business
-const AUTONOMOUS_LOOP_FREQUENCY_HOURS = 4;
+const DEFAULT_AUTONOMOUS_LOOP_FREQUENCY_HOURS = 4;
 
 export const config = { maxDuration: 300 };
 
@@ -170,15 +169,19 @@ export default async function handler(req: any, res: any) {
         try {
           const { data: autonomousPolicy } = await supabaseAdmin
             .from('autonomous_policies')
-            .select('id')
+            .select('id, evaluation_frequency_hours')
             .eq('business_id', businessId)
             .eq('enabled', true)
             .maybeSingle();
 
           if (autonomousPolicy) {
+            const evaluationFrequencyHours =
+              typeof (autonomousPolicy as any).evaluation_frequency_hours === 'number'
+                ? (autonomousPolicy as any).evaluation_frequency_hours
+                : DEFAULT_AUTONOMOUS_LOOP_FREQUENCY_HOURS;
             // Throttle: check the last autonomous_loop run against frequency window.
             // Uses agent_type='autonomous_loop' directly — not performance_monitor proxy.
-            const shouldRunLoop = await shouldRunAutonomousLoop(businessId, AUTONOMOUS_LOOP_FREQUENCY_HOURS);
+            const shouldRunLoop = await shouldRunAutonomousLoop(businessId, evaluationFrequencyHours);
 
             if (shouldRunLoop) {
               fetch(`${baseUrl}/api/v1/autonomous/run`, {
@@ -204,7 +207,7 @@ export default async function handler(req: any, res: any) {
                 business_name: businessName,
                 agent: 'autonomous_loop' as unknown as AgentType,
                 status: 'skipped',
-                reason: `Last autonomous_loop run within ${AUTONOMOUS_LOOP_FREQUENCY_HOURS}h window`,
+                reason: `Last autonomous_loop run within ${evaluationFrequencyHours}h window`,
               });
             }
           }

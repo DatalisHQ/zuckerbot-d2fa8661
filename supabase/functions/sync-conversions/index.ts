@@ -40,6 +40,54 @@ interface Business {
   user_id: string;
   facebook_access_token: string | null;
   facebook_page_id: string | null;
+  meta_pixel_id: string | null;
+  currency: string | null;
+}
+
+interface CapiConfig {
+  is_enabled: boolean;
+  currency: string | null;
+}
+
+const encoder = new TextEncoder();
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function normalizeEmail(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized || null;
+}
+
+function normalizePhone(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const digits = value.replace(/[^\d+]/g, "");
+  if (!digits) return null;
+  return digits.startsWith("+")
+    ? `+${digits.slice(1).replace(/\D/g, "")}`
+    : digits.replace(/\D/g, "");
+}
+
+async function buildHashedUserData(lead: Lead): Promise<Record<string, string>> {
+  const userData: Record<string, string> = {};
+  const email = normalizeEmail(lead.email);
+  const phone = normalizePhone(lead.phone);
+
+  if (email) userData.em = await sha256Hex(email);
+  if (phone) userData.ph = await sha256Hex(phone);
+
+  if (lead.name) {
+    const parts = lead.name.trim().toLowerCase().split(/\s+/);
+    if (parts[0]) userData.fn = await sha256Hex(parts[0]);
+    if (parts.length > 1) userData.ln = await sha256Hex(parts[parts.length - 1]);
+  }
+
+  return userData;
 }
 
 Deno.serve(async (req) => {
@@ -115,6 +163,11 @@ Deno.serve(async (req) => {
     }
 
     const typedBusiness = business as unknown as Business;
+    const { data: capiConfig } = await supabase
+      .from("capi_configs")
+      .select("is_enabled, currency")
+      .eq("business_id", typedBusiness.id)
+      .maybeSingle();
 
     // Verify ownership
     if (typedBusiness.user_id !== user.id) {
@@ -135,10 +188,28 @@ Deno.serve(async (req) => {
     // ── Determine the access token to use ───────────────────────────────
     // Priority: business-level token > system user token from env
     const accessToken = typedBusiness.facebook_access_token || metaAccessToken;
-    const pixelId = metaPixelId;
+    const pixelId = typedBusiness.meta_pixel_id || metaPixelId;
+    const eventCurrency = capiConfig?.currency || typedBusiness.currency || "USD";
 
     if (!accessToken || !pixelId) {
       console.log("[sync-conversions] No Meta access token or pixel ID configured — skipping CAPI call");
+      await supabase.from("capi_events").insert({
+        business_id: typedBusiness.id,
+        user_id: user.id,
+        campaign_id: typedLead.campaign_id,
+        lead_id: typedLead.id,
+        crm_source: "manual_conversion",
+        source_stage: quality,
+        meta_event_name: "Lead",
+        meta_event_id: typedLead.meta_lead_id,
+        match_quality: "lead_id",
+        status: "skipped",
+        meta_response: {
+          reason: "missing_meta_credentials",
+          has_access_token: !!accessToken,
+          has_pixel_id: !!pixelId,
+        },
+      });
       return new Response(
         JSON.stringify({
           success: true,
@@ -152,27 +223,10 @@ Deno.serve(async (req) => {
     // ── Build Conversion API event ──────────────────────────────────────
     // See: https://developers.facebook.com/docs/marketing-api/conversions-api/using-the-api
     const eventTime = Math.floor(Date.now() / 1000);
-    const leadCreatedTime = Math.floor(new Date(typedLead.created_at).getTime() / 1000);
-
-    const userData: Record<string, string> = {};
-    if (typedLead.email) {
-      // Hash for CAPI (in production you'd SHA256 these — for now we send raw and let Meta hash)
-      userData.em = typedLead.email.toLowerCase().trim();
-    }
-    if (typedLead.phone) {
-      // Normalize AU phone: remove spaces, ensure +61 prefix
-      let phone = typedLead.phone.replace(/\s+/g, "");
-      if (phone.startsWith("0")) phone = "+61" + phone.slice(1);
-      userData.ph = phone;
-    }
-    if (typedLead.name) {
-      const parts = typedLead.name.trim().split(/\s+/);
-      if (parts[0]) userData.fn = parts[0].toLowerCase();
-      if (parts.length > 1) userData.ln = parts[parts.length - 1].toLowerCase();
-    }
+    const userData = await buildHashedUserData(typedLead);
 
     const event: Record<string, any> = {
-      event_name: quality === "good" ? "Lead" : "Other",
+      event_name: "Lead",
       event_time: eventTime,
       action_source: "system",
       user_data: userData,
@@ -181,7 +235,7 @@ Deno.serve(async (req) => {
         lead_id: typedLead.id,
         campaign_id: typedLead.campaign_id,
         value: quality === "good" ? 100 : 0,
-        currency: "AUD",
+        currency: eventCurrency,
       },
     };
 
@@ -210,6 +264,20 @@ Deno.serve(async (req) => {
 
     if (!capiResp.ok) {
       console.error("[sync-conversions] CAPI error:", JSON.stringify(capiResult));
+      await supabase.from("capi_events").insert({
+        business_id: typedBusiness.id,
+        user_id: user.id,
+        campaign_id: typedLead.campaign_id,
+        lead_id: typedLead.id,
+        crm_source: "manual_conversion",
+        source_stage: quality,
+        meta_event_name: "Lead",
+        event_time: new Date().toISOString(),
+        meta_event_id: typedLead.meta_lead_id,
+        match_quality: "lead_id",
+        status: "failed",
+        meta_response: capiResult,
+      });
       return new Response(
         JSON.stringify({
           success: false,
@@ -221,6 +289,20 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[sync-conversions] CAPI success:`, JSON.stringify(capiResult));
+    await supabase.from("capi_events").insert({
+      business_id: typedBusiness.id,
+      user_id: user.id,
+      campaign_id: typedLead.campaign_id,
+      lead_id: typedLead.id,
+      crm_source: "manual_conversion",
+      source_stage: quality,
+      meta_event_name: "Lead",
+      event_time: new Date().toISOString(),
+      meta_event_id: typedLead.meta_lead_id,
+      match_quality: "lead_id",
+      status: "sent",
+      meta_response: capiResult,
+    });
 
     return new Response(
       JSON.stringify({
