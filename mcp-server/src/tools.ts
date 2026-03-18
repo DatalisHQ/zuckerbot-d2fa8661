@@ -922,13 +922,17 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 19. CAPI Config ────────────────────────────────────────────
   server.tool(
     "zuckerbot_capi_config",
-    "Fetch or update the per-business Conversions API configuration, including stage-to-event mappings, CRM source, currency, and optimisation target.",
+    "Fetch or update the per-business Conversions API configuration, including stage-to-event mappings, CRM source, currency, optimisation target, and Meta action source.",
     {
       business_id: z.string().optional().describe("Optional business ID override for the authenticated API key"),
       is_enabled: z.boolean().optional().describe("Enable or disable CAPI delivery for the business"),
       currency: z.string().optional().describe("Business currency used for CAPI event values, such as USD or AUD"),
       crm_source: z.string().optional().describe("CRM source label, such as hubspot"),
       optimise_for: z.enum(["lead", "sql", "customer"]).optional().describe("Downstream optimisation target for autonomous evaluation"),
+      action_source: z
+        .enum(["website", "app", "email", "phone_call", "chat", "physical_store", "system_generated", "business_messaging", "other"])
+        .optional()
+        .describe("Meta Conversions API action_source. Defaults to website for CRM events"),
       rotate_webhook_secret: z.boolean().optional().describe("Rotate the webhook secret on update"),
       event_mapping: z
         .record(
@@ -941,13 +945,14 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         .optional()
         .describe("CRM stage mapping object keyed by source stage"),
     },
-    async ({ business_id, is_enabled, currency, crm_source, optimise_for, rotate_webhook_secret, event_mapping }) => {
+    async ({ business_id, is_enabled, currency, crm_source, optimise_for, action_source, rotate_webhook_secret, event_mapping }) => {
       try {
         const hasUpdateFields =
           is_enabled !== undefined
           || currency !== undefined
           || crm_source !== undefined
           || optimise_for !== undefined
+          || action_source !== undefined
           || rotate_webhook_secret !== undefined
           || event_mapping !== undefined;
 
@@ -964,6 +969,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         if (currency) body.currency = currency;
         if (crm_source) body.crm_source = crm_source;
         if (optimise_for) body.optimise_for = optimise_for;
+        if (action_source) body.action_source = action_source;
         if (rotate_webhook_secret !== undefined) body.rotate_webhook_secret = rotate_webhook_secret;
         if (event_mapping) body.event_mapping = event_mapping;
 

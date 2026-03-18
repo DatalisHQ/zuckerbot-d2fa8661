@@ -701,6 +701,7 @@ export type Database = {
       }
       capi_configs: {
         Row: {
+          action_source: string
           business_id: string
           created_at: string
           crm_source: string
@@ -714,6 +715,7 @@ export type Database = {
           webhook_secret: string
         }
         Insert: {
+          action_source?: string
           business_id: string
           created_at?: string
           crm_source?: string
@@ -727,6 +729,7 @@ export type Database = {
           webhook_secret?: string
         }
         Update: {
+          action_source?: string
           business_id?: string
           created_at?: string
           crm_source?: string

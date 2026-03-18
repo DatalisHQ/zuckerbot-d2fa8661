@@ -1419,7 +1419,7 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
                 { name: "zuckerbot_list_meta_pages", desc: "List Facebook pages for the connected Meta user" },
                 { name: "zuckerbot_select_meta_page", desc: "Switch the active Facebook Page" },
                 { name: "zuckerbot_get_launch_credentials", desc: "Resolve stored Meta launch credentials" },
-                { name: "zuckerbot_capi_config", desc: "Get or update the per-business CAPI configuration" },
+                { name: "zuckerbot_capi_config", desc: "Get or update the per-business CAPI configuration, including action_source" },
                 { name: "zuckerbot_capi_status", desc: "Inspect 7-day and 30-day CAPI delivery status" },
                 { name: "zuckerbot_capi_test", desc: "Send a synthetic CAPI test event" },
                 { name: "zuckerbot_create_portfolio", desc: "Create a business-owned audience portfolio" },

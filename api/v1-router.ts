@@ -443,6 +443,18 @@ const SUPPORTED_META_STANDARD_EVENTS = new Set([
   'ViewContent',
 ]);
 
+const SUPPORTED_META_ACTION_SOURCES = new Set([
+  'app',
+  'business_messaging',
+  'chat',
+  'email',
+  'other',
+  'phone_call',
+  'physical_store',
+  'system_generated',
+  'website',
+]);
+
 const DEFAULT_CAPI_EVENT_MAPPING = {
   lead: { meta_event: 'Lead', value: 0 },
   marketingqualifiedlead: { meta_event: 'Lead', value: 0 },
@@ -563,6 +575,12 @@ function sanitizeEventMapping(value: unknown): EventMappingConfig | null {
   }
 
   return Object.fromEntries(sanitizedEntries);
+}
+
+function normalizeMetaActionSource(value: unknown): string | null {
+  const normalized = normalizeString(value)?.toLowerCase() || null;
+  if (!normalized || !SUPPORTED_META_ACTION_SOURCES.has(normalized)) return null;
+  return normalized;
 }
 
 async function resolveOwnedBusiness(
@@ -940,6 +958,7 @@ async function dispatchCapiEvent(args: DispatchCapiEventArgs) {
   const businessToken = normalizeString(args.metaAccessTokenOverride) || normalizeString(args.business?.facebook_access_token);
   const pixelId = normalizeString(args.pixelIdOverride) || normalizeString(args.business?.meta_pixel_id);
   const currency = normalizeString(args.capiConfig?.currency) || normalizeString(args.business?.currency) || 'USD';
+  const actionSource = normalizeMetaActionSource(args.capiConfig?.action_source) || 'website';
   const isEnabled = args.capiConfig?.is_enabled !== false;
 
   let status = 'received';
@@ -959,7 +978,7 @@ async function dispatchCapiEvent(args: DispatchCapiEventArgs) {
     const event = {
       event_name: args.metaEventName,
       event_time: Math.floor(safeEventTime.getTime() / 1000),
-      action_source: 'system',
+      action_source: actionSource,
       event_id: eventId,
       user_data: args.userData,
       custom_data: {
@@ -6317,6 +6336,7 @@ async function handleCapiConfig(req: VercelRequest, res: VercelResponse) {
     currency,
     crm_source,
     optimise_for,
+    action_source,
     rotate_webhook_secret,
   } = req.body || {};
 
@@ -6338,6 +6358,19 @@ async function handleCapiConfig(req: VercelRequest, res: VercelResponse) {
   }
 
   const config = await resolveCapiConfigForBusiness(business);
+  const nextActionSource = action_source === undefined
+    ? (normalizeMetaActionSource(config?.action_source) || 'website')
+    : normalizeMetaActionSource(action_source);
+  if (action_source !== undefined && !nextActionSource) {
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: '`action_source` must be a supported Meta Conversions API action source.',
+        supported_action_sources: Array.from(SUPPORTED_META_ACTION_SOURCES),
+      },
+    });
+  }
+
   const nextCurrency = normalizeString(currency) || config?.currency || business.currency || 'USD';
   const nextConfig = {
     business_id: business.id,
@@ -6347,6 +6380,7 @@ async function handleCapiConfig(req: VercelRequest, res: VercelResponse) {
     currency: nextCurrency,
     crm_source: normalizeString(crm_source) || config?.crm_source || 'hubspot',
     optimise_for: (normalizeString(optimise_for) || config?.optimise_for || 'lead'),
+    action_source: nextActionSource,
     webhook_secret: rotate_webhook_secret ? randomBytes(24).toString('hex') : (config?.webhook_secret || randomBytes(24).toString('hex')),
   };
 
