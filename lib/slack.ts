@@ -70,6 +70,12 @@ interface CreativeLaunchArgs {
   metaAdId: string;
 }
 
+interface CampaignAssetsReadyArgs {
+  campaignName: string;
+  creativeCount: number;
+  tierName?: string | null;
+}
+
 function moneyFromCents(cents?: number | null): string {
   if (typeof cents !== "number" || Number.isNaN(cents)) return "n/a";
   return `$${(cents / 100).toFixed(2)}`;
@@ -285,6 +291,22 @@ export async function sendSlackCreativeLaunched(args: CreativeLaunchArgs): Promi
         elements: [
           { type: "mrkdwn", text: `Creative Queue ID: \`${args.queueId}\`` },
         ],
+      },
+    ],
+  });
+}
+
+export async function sendSlackCampaignAssetsReady(args: CampaignAssetsReadyArgs): Promise<boolean> {
+  const tierText = args.tierName ? `\n*Tier:* ${args.tierName}` : "";
+  return postSlackMessage({
+    text: `ZuckerBot creatives ready for activation: ${args.campaignName}`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Campaign Creatives Ready*\n*Campaign:* ${args.campaignName}${tierText}\n*Creatives Uploaded:* ${args.creativeCount}\nReady to activate.`,
+        },
       },
     ],
   });

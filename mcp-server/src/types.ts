@@ -24,7 +24,7 @@ export interface AdVariant {
   image_base64?: string;
   cta?: string;
   angle?: string;
-  image_prompt?: string;
+  image_prompt?: string | null;
 }
 
 export interface PreviewResponse {
@@ -44,13 +44,36 @@ export interface LocationInput {
   lng?: number;
 }
 
+export interface CampaignGoalsInput {
+  target_monthly_leads?: number;
+  target_cpl?: number;
+  target_monthly_budget?: number;
+  growth_multiplier?: number;
+  markets_to_target?: string[];
+  exclude_markets?: string[];
+}
+
+export interface CreativeHandoffInput {
+  webhook_url?: string;
+  callback_url?: string;
+  product_focus?: string;
+  font_preset?: string;
+  notes?: string;
+  reference_urls?: string[];
+  [key: string]: unknown;
+}
+
 export interface CreateCampaignRequest {
   url: string;
+  business_id?: string;
   business_name?: string;
   business_type?: string;
   location?: LocationInput;
   budget_daily_cents?: number;
-  objective?: "leads" | "traffic" | "awareness";
+  objective?: "leads" | "traffic" | "conversions" | "awareness";
+  mode?: "auto" | "legacy" | "intelligence";
+  goals?: CampaignGoalsInput;
+  creative_handoff?: CreativeHandoffInput;
 }
 
 export interface CampaignStrategy {
@@ -58,9 +81,9 @@ export interface CampaignStrategy {
   summary: string;
   strengths?: string[];
   opportunities?: string[];
-  recommended_daily_budget_cents?: number;
-  projected_cpl_cents?: number;
-  projected_monthly_leads?: number;
+  recommended_daily_budget_cents?: number | null;
+  projected_cpl_cents?: number | null;
+  projected_monthly_leads?: number | null;
 }
 
 export interface CampaignTargeting {
@@ -72,18 +95,156 @@ export interface CampaignTargeting {
   publisher_platforms?: string[];
   facebook_positions?: string[];
   instagram_positions?: string[];
+  custom_audiences?: Array<{ id: string }>;
+}
+
+export interface IntelligenceAudienceTier {
+  tier_name: string;
+  tier_type: "prospecting_broad" | "prospecting_lal" | "retargeting" | "reactivation";
+  geo: string[];
+  targeting_type: "broad" | "interest" | "lal" | "custom";
+  targeting_details: string;
+  age_min: number;
+  age_max: number;
+  daily_budget_cents: number;
+  budget_pct: number;
+  expected_cpl: number | null;
+  rationale: string;
+}
+
+export interface IntelligenceCreativeAngle {
+  angle_name: string;
+  hook: string;
+  message: string;
+  cta: string;
+  format: "video_ugc" | "video_reel" | "static_image" | "static_audio";
+  rationale: string;
+  variants_recommended: number;
+}
+
+export interface IntelligenceStrategyPayload {
+  strategy_summary: string;
+  audience_tiers: IntelligenceAudienceTier[];
+  creative_angles: IntelligenceCreativeAngle[];
+  total_daily_budget_cents: number;
+  total_monthly_budget: number;
+  projected_monthly_leads?: number | null;
+  projected_cpl?: number | null;
+  warnings: string[];
+  phase_1_actions: string[];
+  phase_2_actions: string[];
+  phase_3_actions: string[];
+}
+
+export interface CampaignContextSummary {
+  has_historical_data: boolean;
+  has_crm_data: boolean;
+  has_market_data: boolean;
+  has_portfolio: boolean;
+  months_of_data: number;
 }
 
 export interface CreateCampaignResponse {
   id: string;
   status: string;
+  campaign_version?: "legacy" | "intelligence";
+  creative_status?: string;
   business_name?: string;
   business_type?: string;
   strategy?: CampaignStrategy;
   targeting?: CampaignTargeting;
   variants?: AdVariant[];
   roadmap?: Record<string, string[]>;
+  audience_tiers?: IntelligenceAudienceTier[];
+  creative_angles?: IntelligenceCreativeAngle[];
+  total_daily_budget_cents?: number;
+  total_monthly_budget?: number;
+  projected_monthly_leads?: number | null;
+  projected_cpl?: number | null;
+  warnings?: string[];
+  context_summary?: CampaignContextSummary;
+  goals?: CampaignGoalsInput;
+  creative_handoff?: CreativeHandoffInput | null;
+  next_steps?: string[];
   created_at: string;
+}
+
+export interface CampaignCreativeInput {
+  tier_name: string;
+  asset_url: string;
+  asset_type?: "image" | "video";
+  headline: string;
+  body: string;
+  cta?: string;
+  link_url?: string;
+  angle_name?: string;
+  variant_index?: number;
+}
+
+export interface ApiCampaignCreative extends CampaignCreativeInput {
+  id: string;
+  api_campaign_id: string;
+  business_id: string;
+  user_id: string;
+  meta_campaign_id?: string | null;
+  meta_adset_id?: string | null;
+  meta_ad_id?: string | null;
+  meta_adcreative_id?: string | null;
+  meta_image_hash?: string | null;
+  meta_video_id?: string | null;
+  status: string;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface AudienceTierCampaignExecution {
+  id: string;
+  portfolio_id: string;
+  campaign_id: string;
+  tier: string;
+  meta_campaign_id?: string | null;
+  meta_adset_id?: string | null;
+  meta_audience_id?: string | null;
+  daily_budget_cents?: number | null;
+  status?: string | null;
+  performance_data?: Record<string, unknown> | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CampaignDetailResponse {
+  campaign: Record<string, unknown>;
+  creatives: ApiCampaignCreative[];
+  tier_campaigns: AudienceTierCampaignExecution[];
+  fetched_at: string;
+}
+
+export interface ApproveCampaignStrategyRequest {
+  campaign_id: string;
+  tier_names?: string[];
+  angle_names?: string[];
+}
+
+export interface RequestCreativeRequest {
+  campaign_id: string;
+  creative_handoff?: CreativeHandoffInput;
+}
+
+export interface UploadCampaignCreativeRequest {
+  campaign_id: string;
+  creatives: CampaignCreativeInput[];
+  meta_access_token?: string;
+  meta_ad_account_id?: string;
+  meta_page_id?: string;
+}
+
+export interface ActivateCampaignRequest {
+  campaign_id: string;
+  tier_names?: string[];
+  meta_access_token?: string;
+  meta_ad_account_id?: string;
+  meta_page_id?: string;
 }
 
 export interface LaunchCampaignRequest {
@@ -103,7 +264,7 @@ export interface LaunchCampaignResponse {
   meta_campaign_id: string;
   meta_adset_id: string;
   meta_ad_id: string;
-  meta_leadform_id: string;
+  meta_leadform_id?: string;
   daily_budget_cents: number;
   launched_at: string;
 }
@@ -127,6 +288,46 @@ export interface PerformanceResponse {
   };
   hours_since_launch: number;
   last_synced_at: string;
+}
+
+// ── Audience types ───────────────────────────────────────────────────
+
+export interface FacebookAudienceRecord {
+  id: string;
+  business_id: string;
+  audience_id: string;
+  audience_name: string;
+  audience_type: string;
+  audience_size?: number | null;
+  description?: string | null;
+  seed_source_stage?: string | null;
+  lookback_days?: number | null;
+  lookalike_pct?: number | null;
+  seed_audience_id?: string | null;
+  delivery_status?: string | null;
+  raw_data?: Record<string, unknown> | null;
+  last_refreshed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CreateSeedAudienceRequest {
+  business_id?: string;
+  source_stage: string;
+  name?: string;
+  lookback_days?: number;
+  min_contacts?: number;
+}
+
+export interface CreateLookalikeAudienceRequest {
+  seed_audience_id: string;
+  percentage?: number;
+  name?: string;
+  country?: string;
+}
+
+export interface RefreshAudienceRequest {
+  audience_id: string;
 }
 
 // ── Conversion types ─────────────────────────────────────────────────

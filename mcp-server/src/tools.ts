@@ -50,6 +50,56 @@ function formatError(err: unknown): { content: Array<{ type: "text"; text: strin
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+const locationSchema = z
+  .object({
+    city: z.string().optional(),
+    state: z.string().optional(),
+    country: z.string().optional(),
+    lat: z.number().optional(),
+    lng: z.number().optional(),
+  })
+  .optional();
+
+const goalsSchema = z
+  .object({
+    target_monthly_leads: z.number().int().optional(),
+    target_cpl: z.number().optional(),
+    target_monthly_budget: z.number().optional(),
+    growth_multiplier: z.number().optional(),
+    markets_to_target: z.array(z.string()).optional(),
+    exclude_markets: z.array(z.string()).optional(),
+  })
+  .optional();
+
+const creativeHandoffSchema = z
+  .object({
+    webhook_url: z.string().optional(),
+    callback_url: z.string().optional(),
+    product_focus: z.string().optional(),
+    font_preset: z.string().optional(),
+    notes: z.string().optional(),
+    reference_urls: z.array(z.string()).optional(),
+  })
+  .passthrough()
+  .optional();
+
+const creativeUploadSchema = z.object({
+  tier_name: z.string().describe("Approved audience tier name for this creative"),
+  asset_url: z.string().describe("Publicly reachable image or video URL to upload to Meta"),
+  asset_type: z.enum(["image", "video"]).default("image").describe("Asset type"),
+  headline: z.string().describe("Primary headline for the ad"),
+  body: z.string().describe("Primary body copy for the ad"),
+  cta: z.string().optional().describe("Call to action label"),
+  link_url: z.string().optional().describe("Optional landing page URL override"),
+  angle_name: z.string().optional().describe("Approved creative angle name"),
+  variant_index: z.number().int().optional().describe("Optional variant index for tracking"),
+});
+
 // ── Register all tools ───────────────────────────────────────────────
 
 export function registerTools(server: McpServer, client: ZuckerBotClient): void {
@@ -83,45 +133,183 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 2. Create Campaign ──────────────────────────────────────────
   server.tool(
     "zuckerbot_create_campaign",
-    "Create a full campaign with strategy, targeting, budget recommendations, and ad creatives. Returns a draft campaign ready to launch. Does NOT spend money or touch Meta until you call launch.",
+    "Create a campaign draft. In intelligence mode this returns context-aware audience tiers, creative angles, budget guidance, and workflow next steps. Does NOT spend money or touch Meta.",
     {
       url: z.string().describe("Business website URL"),
+      business_id: z.string().optional().describe("Existing ZuckerBot business ID to anchor intelligence mode"),
       business_name: z.string().optional().describe("Business name (auto-detected from URL if omitted)"),
       business_type: z
         .string()
         .optional()
         .describe("Business category (e.g., 'restaurant', 'fitness', 'roofing')"),
-      location: z
-        .object({
-          city: z.string().optional(),
-          state: z.string().optional(),
-          country: z.string().optional(),
-          lat: z.number().optional(),
-          lng: z.number().optional(),
-        })
-        .optional()
-        .describe("Business location for geo-targeting"),
+      location: locationSchema.describe("Business location for geo-targeting"),
       budget_daily_cents: z
         .number()
         .int()
         .optional()
         .describe("Daily budget in cents (e.g., 2000 = $20/day)"),
+      mode: z
+        .enum(["auto", "legacy", "intelligence"])
+        .optional()
+        .describe("Campaign planning mode. auto prefers intelligence when a business can be resolved"),
       objective: z
         .enum(["leads", "traffic", "conversions", "awareness"])
         .optional()
         .describe("Campaign objective. 'leads' for lead forms, 'traffic' for website visits, 'conversions' for website actions, 'awareness' for reach. Default: traffic"),
+      goals: goalsSchema.describe("Optional business goals to guide planning"),
+      creative_handoff: creativeHandoffSchema.describe("Optional creative-production handoff settings"),
     },
-    async ({ url, business_name, business_type, location, budget_daily_cents, objective }) => {
+    async ({ url, business_id, business_name, business_type, location, budget_daily_cents, mode, objective, goals, creative_handoff }) => {
       try {
         const body: Record<string, unknown> = { url };
+        if (business_id) body.business_id = business_id;
         if (business_name) body.business_name = business_name;
         if (business_type) body.business_type = business_type;
         if (location) body.location = location;
         if (budget_daily_cents !== undefined) body.budget_daily_cents = budget_daily_cents;
+        if (mode) body.mode = mode;
         if (objective) body.objective = objective;
+        if (goals) body.goals = goals;
+        if (creative_handoff) body.creative_handoff = creative_handoff;
 
         const result = await client.post("/campaigns/create", body);
         return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_get_campaign",
+    "Get a campaign draft or live campaign, including intelligence workflow state, stored creatives, and linked tier executions.",
+    {
+      campaign_id: z.string().describe("ZuckerBot campaign ID"),
+    },
+    async ({ campaign_id }) => {
+      try {
+        const result = await client.get(`/campaigns/${campaign_id}`);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_approve_campaign_strategy",
+    "Approve the generated intelligence strategy, optionally narrowing to specific audience tiers and creative angles before production starts.",
+    {
+      campaign_id: z.string().describe("Intelligence campaign ID"),
+      tier_names: z.array(z.string()).optional().describe("Optional subset of audience tier names to approve"),
+      angle_names: z.array(z.string()).optional().describe("Optional subset of creative angle names to approve"),
+    },
+    async ({ campaign_id, tier_names, angle_names }) => {
+      try {
+        const body: Record<string, unknown> = {};
+        if (tier_names?.length) body.tier_names = tier_names;
+        if (angle_names?.length) body.angle_names = angle_names;
+        const result = await client.post(`/campaigns/${campaign_id}/approve-strategy`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_request_creative",
+    "Create or dispatch a creative handoff package for an approved intelligence campaign. Supports webhook-based external production teams.",
+    {
+      campaign_id: z.string().describe("Intelligence campaign ID"),
+      creative_handoff: creativeHandoffSchema.describe("Optional creative handoff configuration"),
+    },
+    async ({ campaign_id, creative_handoff }) => {
+      try {
+        const body: Record<string, unknown> = {};
+        if (creative_handoff) body.creative_handoff = creative_handoff;
+        const result = await client.post(`/campaigns/${campaign_id}/request-creative`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_upload_creative",
+    "Upload finished creative assets for an approved intelligence campaign. This provisions paused tier executions when needed, uploads assets to Meta, and stores the resulting Meta IDs.",
+    {
+      campaign_id: z.string().describe("Intelligence campaign ID"),
+      creatives: z.array(creativeUploadSchema).min(1).describe("Creative assets to attach to the campaign"),
+      meta_access_token: z.string().optional().describe("Optional Meta/Facebook access token override"),
+      meta_ad_account_id: z.string().optional().describe("Optional Meta ad account ID override (format: act_XXXXX)"),
+      meta_page_id: z.string().optional().describe("Optional Facebook Page ID override"),
+    },
+    async ({ campaign_id, creatives, meta_access_token, meta_ad_account_id, meta_page_id }) => {
+      try {
+        const body: Record<string, unknown> = { creatives };
+        if (meta_access_token) body.meta_access_token = meta_access_token;
+        if (meta_ad_account_id) body.meta_ad_account_id = meta_ad_account_id;
+        if (meta_page_id) body.meta_page_id = meta_page_id;
+        const result = await client.post(`/campaigns/${campaign_id}/upload-creative`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_activate_campaign",
+    "Activate the ready audience tiers for an intelligence campaign after strategy approval and creative upload. Only tiers with valid paused executions and creatives are turned on.",
+    {
+      campaign_id: z.string().describe("Intelligence campaign ID"),
+      tier_names: z.array(z.string()).optional().describe("Optional subset of approved tiers to activate"),
+      meta_access_token: z.string().optional().describe("Optional Meta/Facebook access token override"),
+      meta_ad_account_id: z.string().optional().describe("Optional Meta ad account ID override (format: act_XXXXX)"),
+      meta_page_id: z.string().optional().describe("Optional Facebook Page ID override"),
+    },
+    async ({ campaign_id, tier_names, meta_access_token, meta_ad_account_id, meta_page_id }) => {
+      try {
+        const body: Record<string, unknown> = {};
+        if (tier_names?.length) body.tier_names = tier_names;
+        if (meta_access_token) body.meta_access_token = meta_access_token;
+        if (meta_ad_account_id) body.meta_ad_account_id = meta_ad_account_id;
+        if (meta_page_id) body.meta_page_id = meta_page_id;
+        const result = await client.post(`/campaigns/${campaign_id}/activate`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_suggest_angles",
+    "Convenience helper that reads a campaign draft and returns the currently proposed creative angles plus the linked audience tiers.",
+    {
+      campaign_id: z.string().describe("Campaign ID"),
+    },
+    async ({ campaign_id }) => {
+      try {
+        const result = await client.get(`/campaigns/${campaign_id}`);
+        const detail = asRecord(result) || {};
+        const campaign = asRecord(detail.campaign) || {};
+        const approvedStrategy = asRecord(campaign.approved_strategy);
+        const draftStrategy = asRecord(campaign.strategy);
+        const strategy = approvedStrategy || draftStrategy || {};
+        const audienceTiers = Array.isArray(strategy.audience_tiers) ? strategy.audience_tiers : [];
+        const creativeAngles = Array.isArray(strategy.creative_angles) ? strategy.creative_angles : [];
+
+        return formatResult({
+          campaign_id,
+          campaign_version: campaign.campaign_version ?? null,
+          creative_status: campaign.creative_status ?? null,
+          strategy_summary: strategy.strategy_summary ?? null,
+          audience_tiers: audienceTiers,
+          creative_angles: creativeAngles,
+        });
       } catch (err) {
         return formatError(err);
       }
@@ -245,6 +433,120 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     async ({ campaign_id }) => {
       try {
         const result = await client.get(`/campaigns/${campaign_id}/performance`);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_create_seed_audience",
+    "Build a Meta custom audience from stored hashed CAPI user data for a business and CRM stage.",
+    {
+      business_id: z.string().optional().describe("Optional business ID override"),
+      source_stage: z.string().describe("CRM lifecycle or source stage to seed from"),
+      name: z.string().optional().describe("Optional audience name override"),
+      lookback_days: z.number().int().optional().describe("How many days of CAPI events to include"),
+      min_contacts: z.number().int().optional().describe("Minimum matched contacts required before creation"),
+    },
+    async ({ business_id, source_stage, name, lookback_days, min_contacts }) => {
+      try {
+        const body: Record<string, unknown> = { source_stage };
+        if (business_id) body.business_id = business_id;
+        if (name) body.name = name;
+        if (lookback_days !== undefined) body.lookback_days = lookback_days;
+        if (min_contacts !== undefined) body.min_contacts = min_contacts;
+        const result = await client.post("/audiences/create-seed", body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_create_lookalike_audience",
+    "Create a Meta lookalike audience from a stored seed audience. Useful for intelligence tiers that need a 1%, 3%, or 5% prospecting expansion.",
+    {
+      seed_audience_id: z.string().describe("Stored seed audience row ID"),
+      percentage: z.number().min(1).max(20).optional().describe("Lookalike percentage, typically 1, 3, or 5"),
+      name: z.string().optional().describe("Optional audience name override"),
+      country: z.string().optional().describe("Lookalike country code, such as US or AU"),
+    },
+    async ({ seed_audience_id, percentage, name, country }) => {
+      try {
+        const body: Record<string, unknown> = { seed_audience_id };
+        if (percentage !== undefined) body.percentage = percentage;
+        if (name) body.name = name;
+        if (country) body.country = country;
+        const result = await client.post("/audiences/create-lal", body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_list_audiences",
+    "List stored Meta audiences for a business, including seed metadata, lookalike settings, sizes, and delivery status.",
+    {
+      business_id: z.string().optional().describe("Optional business ID override"),
+    },
+    async ({ business_id }) => {
+      try {
+        const params = new URLSearchParams();
+        if (business_id) params.set("business_id", business_id);
+        const result = await client.get(`/audiences/list${params.toString() ? `?${params.toString()}` : ""}`);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_refresh_audience",
+    "Refresh a stored audience. Seed audiences are rebuilt from hashed CAPI data; lookalikes sync their latest Meta status after the seed refreshes.",
+    {
+      audience_id: z.string().describe("Stored audience row ID"),
+    },
+    async ({ audience_id }) => {
+      try {
+        const result = await client.post("/audiences/refresh", { audience_id });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_get_audience_status",
+    "Fetch the latest Meta status for a stored audience and update the local audience registry row.",
+    {
+      audience_id: z.string().describe("Stored audience row ID"),
+    },
+    async ({ audience_id }) => {
+      try {
+        const result = await client.get(`/audiences/${audience_id}/status`);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_delete_audience",
+    "Delete a stored audience from Meta and remove it from ZuckerBot's local audience registry.",
+    {
+      audience_id: z.string().describe("Stored audience row ID"),
+    },
+    async ({ audience_id }) => {
+      try {
+        const result = await client.delete(`/audiences/${audience_id}`);
         return formatResult(result);
       } catch (err) {
         return formatError(err);

@@ -56,10 +56,17 @@ export type Database = {
       api_campaigns: {
         Row: {
           api_key_id: string
+          approved_strategy: Json | null
           business_name: string | null
+          business_id: string | null
           business_type: string | null
+          campaign_version: string
+          context: Json | null
           created_at: string
+          creative_handoff: Json | null
+          creative_status: string
           daily_budget_cents: number | null
+          goals: Json | null
           id: string
           launched_at: string | null
           meta_access_token: string | null
@@ -71,17 +78,26 @@ export type Database = {
           roadmap: Json | null
           status: string
           strategy: Json | null
+          strategy_approved_at: string | null
           targeting: Json | null
           url: string | null
           user_id: string
           variants: Json | null
+          workflow_state: Json
         }
         Insert: {
           api_key_id: string
+          approved_strategy?: Json | null
           business_name?: string | null
+          business_id?: string | null
           business_type?: string | null
+          campaign_version?: string
+          context?: Json | null
           created_at?: string
+          creative_handoff?: Json | null
+          creative_status?: string
           daily_budget_cents?: number | null
+          goals?: Json | null
           id: string
           launched_at?: string | null
           meta_access_token?: string | null
@@ -93,17 +109,26 @@ export type Database = {
           roadmap?: Json | null
           status?: string
           strategy?: Json | null
+          strategy_approved_at?: string | null
           targeting?: Json | null
           url?: string | null
           user_id: string
           variants?: Json | null
+          workflow_state?: Json
         }
         Update: {
           api_key_id?: string
+          approved_strategy?: Json | null
           business_name?: string | null
+          business_id?: string | null
           business_type?: string | null
+          campaign_version?: string
+          context?: Json | null
           created_at?: string
+          creative_handoff?: Json | null
+          creative_status?: string
           daily_budget_cents?: number | null
+          goals?: Json | null
           id?: string
           launched_at?: string | null
           meta_access_token?: string | null
@@ -115,12 +140,115 @@ export type Database = {
           roadmap?: Json | null
           status?: string
           strategy?: Json | null
+          strategy_approved_at?: string | null
           targeting?: Json | null
           url?: string | null
           user_id?: string
           variants?: Json | null
+          workflow_state?: Json
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "api_campaigns_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      api_campaign_creatives: {
+        Row: {
+          angle_name: string | null
+          api_campaign_id: string
+          asset_type: string
+          asset_url: string
+          body: string | null
+          business_id: string | null
+          created_at: string
+          cta: string | null
+          headline: string | null
+          id: string
+          link_url: string | null
+          meta_ad_id: string | null
+          meta_adcreative_id: string | null
+          meta_adset_id: string | null
+          meta_campaign_id: string | null
+          meta_image_hash: string | null
+          meta_video_id: string | null
+          metadata: Json
+          status: string
+          tier_name: string
+          updated_at: string
+          user_id: string
+          variant_index: number
+        }
+        Insert: {
+          angle_name?: string | null
+          api_campaign_id: string
+          asset_type?: string
+          asset_url: string
+          body?: string | null
+          business_id?: string | null
+          created_at?: string
+          cta?: string | null
+          headline?: string | null
+          id?: string
+          link_url?: string | null
+          meta_ad_id?: string | null
+          meta_adcreative_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string | null
+          meta_image_hash?: string | null
+          meta_video_id?: string | null
+          metadata?: Json
+          status?: string
+          tier_name: string
+          updated_at?: string
+          user_id: string
+          variant_index?: number
+        }
+        Update: {
+          angle_name?: string | null
+          api_campaign_id?: string
+          asset_type?: string
+          asset_url?: string
+          body?: string | null
+          business_id?: string | null
+          created_at?: string
+          cta?: string | null
+          headline?: string | null
+          id?: string
+          link_url?: string | null
+          meta_ad_id?: string | null
+          meta_adcreative_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string | null
+          meta_image_hash?: string | null
+          meta_video_id?: string | null
+          metadata?: Json
+          status?: string
+          tier_name?: string
+          updated_at?: string
+          user_id?: string
+          variant_index?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_campaign_creatives_api_campaign_id_fkey"
+            columns: ["api_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "api_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_campaign_creatives_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       api_keys: {
         Row: {
@@ -626,8 +754,10 @@ export type Database = {
           business_id: string
           campaign_id: string | null
           created_at: string
+          crm_attributes: Json
           crm_source: string
           event_time: string
+          hashed_user_data: Json
           hubspot_contact_id: string | null
           id: string
           is_test: boolean
@@ -644,8 +774,10 @@ export type Database = {
           business_id: string
           campaign_id?: string | null
           created_at?: string
+          crm_attributes?: Json
           crm_source?: string
           event_time?: string
+          hashed_user_data?: Json
           hubspot_contact_id?: string | null
           id?: string
           is_test?: boolean
@@ -662,8 +794,10 @@ export type Database = {
           business_id?: string
           campaign_id?: string | null
           created_at?: string
+          crm_attributes?: Json
           crm_source?: string
           event_time?: string
+          hashed_user_data?: Json
           hubspot_contact_id?: string | null
           id?: string
           is_test?: boolean
@@ -872,6 +1006,83 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "campaigns_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facebook_audiences: {
+        Row: {
+          audience_id: string
+          audience_name: string
+          audience_size: number | null
+          audience_type: string | null
+          behaviors: Json | null
+          business_id: string | null
+          created_at: string
+          delivery_status: string | null
+          demographics: Json | null
+          description: string | null
+          id: string
+          interests: Json | null
+          last_refreshed_at: string | null
+          lookalike_pct: number | null
+          lookback_days: number | null
+          raw_data: Json | null
+          seed_audience_id: string | null
+          seed_source_stage: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audience_id: string
+          audience_name: string
+          audience_size?: number | null
+          audience_type?: string | null
+          behaviors?: Json | null
+          business_id?: string | null
+          created_at?: string
+          delivery_status?: string | null
+          demographics?: Json | null
+          description?: string | null
+          id?: string
+          interests?: Json | null
+          last_refreshed_at?: string | null
+          lookalike_pct?: number | null
+          lookback_days?: number | null
+          raw_data?: Json | null
+          seed_audience_id?: string | null
+          seed_source_stage?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audience_id?: string
+          audience_name?: string
+          audience_size?: number | null
+          audience_type?: string | null
+          behaviors?: Json | null
+          business_id?: string | null
+          created_at?: string
+          delivery_status?: string | null
+          demographics?: Json | null
+          description?: string | null
+          id?: string
+          interests?: Json | null
+          last_refreshed_at?: string | null
+          lookalike_pct?: number | null
+          lookback_days?: number | null
+          raw_data?: Json | null
+          seed_audience_id?: string | null
+          seed_source_stage?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_audiences_business_id_fkey"
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"

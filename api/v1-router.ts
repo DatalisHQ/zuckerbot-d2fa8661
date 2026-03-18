@@ -7,6 +7,12 @@
  * Routing table:
  *   POST /api/v1/campaigns/preview          → handlePreview
  *   POST /api/v1/campaigns/create           → handleCreate
+ *   GET  /api/v1/campaigns/:id              → handleCampaignDetail
+ *   POST /api/v1/campaigns/:id/approve-strategy → handleCampaignApproveStrategy
+ *   POST /api/v1/campaigns/:id/request-creative → handleCampaignRequestCreative
+ *   POST /api/v1/campaigns/:id/creative-callback → handleCampaignUploadCreative
+ *   POST /api/v1/campaigns/:id/upload-creative → handleCampaignUploadCreative
+ *   POST /api/v1/campaigns/:id/activate     → handleCampaignActivate
  *   POST /api/v1/campaigns/:id/launch       → handleLaunch
  *   POST /api/v1/campaigns/:id/pause        → handlePause
  *   GET  /api/v1/campaigns/:id/performance  → handlePerformance
@@ -16,6 +22,12 @@
  *   POST /api/v1/capi/config/test           → handleCapiConfigTest
  *   POST /api/v1/capi/events                → handleCapiEvents
  *   GET  /api/v1/capi/status                → handleCapiStatus
+ *   POST /api/v1/audiences/create-seed      → handleAudiencesCreateSeed
+ *   POST /api/v1/audiences/create-lal       → handleAudiencesCreateLal
+ *   GET  /api/v1/audiences/list             → handleAudiencesList
+ *   POST /api/v1/audiences/refresh          → handleAudiencesRefresh
+ *   DELETE /api/v1/audiences/:id            → handleAudienceDelete
+ *   GET  /api/v1/audiences/:id/status       → handleAudienceStatus
  *   POST /api/v1/portfolios/create          → handlePortfolioCreate
  *   GET  /api/v1/portfolios/:id             → handlePortfolioDetail
  *   PUT  /api/v1/portfolios/:id             → handlePortfolioDetail
@@ -57,7 +69,7 @@ import {
   buildCreativeLinkData,
 } from '../lib/objective.js';
 import { queueCreativeRefresh } from '../lib/creative-queue.js';
-import { sendSlackApprovalRequest } from '../lib/slack.js';
+import { sendSlackApprovalRequest, sendSlackCampaignAssetsReady } from '../lib/slack.js';
 
 export const config = { maxDuration: 120 };
 
@@ -275,7 +287,7 @@ async function logUsage(opts: {
 function setCors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
 }
 
 function applyRateLimitHeaders(res: VercelResponse, headers: Record<string, string>) {
@@ -907,6 +919,8 @@ interface DispatchCapiEventArgs {
   metaEventName: string | null;
   eventTime?: string | Date | null;
   userData: Record<string, string>;
+  hashedUserData?: Record<string, string>;
+  crmAttributes?: Record<string, any>;
   customData?: Record<string, any>;
   lead: CapiAttributionLead | null;
   matchQuality: string;
@@ -986,6 +1000,8 @@ async function dispatchCapiEvent(args: DispatchCapiEventArgs) {
         match_quality: args.matchQuality,
         status,
         meta_response: metaResponse,
+        hashed_user_data: args.hashedUserData || args.userData || {},
+        crm_attributes: args.crmAttributes || {},
         is_test: !!args.isTest,
       })
       .then(() => {});
@@ -1015,6 +1031,8 @@ async function dispatchCapiEvent(args: DispatchCapiEventArgs) {
       match_quality: args.matchQuality,
       status,
       meta_response: metaResponse,
+      hashed_user_data: args.hashedUserData || args.userData || {},
+      crm_attributes: args.crmAttributes || {},
       is_test: !!args.isTest,
     })
     .then(() => {});
@@ -1059,6 +1077,2025 @@ async function updatePortfolioTierCampaign(
     .select('*')
     .single();
   return data;
+}
+
+type CampaignMode = 'auto' | 'legacy' | 'intelligence';
+
+interface CampaignGoalsInput {
+  target_monthly_leads?: number;
+  target_cpl?: number;
+  target_monthly_budget?: number;
+  growth_multiplier?: number;
+  markets_to_target?: string[];
+  exclude_markets?: string[];
+}
+
+interface IntelligenceAudienceTier {
+  tier_name: string;
+  tier_type: 'prospecting_broad' | 'prospecting_lal' | 'retargeting' | 'reactivation';
+  geo: string[];
+  targeting_type: 'broad' | 'interest' | 'lal' | 'custom';
+  targeting_details: string;
+  age_min: number;
+  age_max: number;
+  daily_budget_cents: number;
+  budget_pct: number;
+  expected_cpl: number | null;
+  rationale: string;
+}
+
+interface IntelligenceCreativeAngle {
+  angle_name: string;
+  hook: string;
+  message: string;
+  cta: string;
+  format: 'video_ugc' | 'video_reel' | 'static_image' | 'static_audio';
+  rationale: string;
+  variants_recommended: number;
+}
+
+interface IntelligenceStrategyPayload {
+  strategy_summary: string;
+  audience_tiers: IntelligenceAudienceTier[];
+  creative_angles: IntelligenceCreativeAngle[];
+  total_daily_budget_cents: number;
+  total_monthly_budget: number;
+  projected_monthly_leads: number | null;
+  projected_cpl: number | null;
+  warnings: string[];
+  phase_1_actions: string[];
+  phase_2_actions: string[];
+  phase_3_actions: string[];
+}
+
+interface CampaignContextPayload {
+  business: {
+    id: string;
+    name: string;
+    url: string;
+    type: string;
+    markets: string[];
+    currency: string;
+    deal_value?: number | null;
+  };
+  historical?: Record<string, any> | null;
+  pipeline?: Record<string, any> | null;
+  market?: Record<string, any> | null;
+  portfolio?: Record<string, any> | null;
+  goals: CampaignGoalsInput;
+}
+
+function getJsonObject(value: unknown): Record<string, any> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, any>;
+}
+
+function sanitizeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value
+    .map((entry) => normalizeString(entry))
+    .filter(Boolean) as string[];
+  return items.length > 0 ? items : undefined;
+}
+
+function normalizeCampaignMode(value: unknown): CampaignMode {
+  if (value === 'legacy' || value === 'intelligence') return value;
+  return 'auto';
+}
+
+function sanitizeGoals(value: unknown): CampaignGoalsInput {
+  const raw = getJsonObject(value) || {};
+  const next: CampaignGoalsInput = {};
+  const targetMonthlyLeads = normalizeNumber(raw.target_monthly_leads);
+  const targetCpl = normalizeNumber(raw.target_cpl);
+  const targetMonthlyBudget = normalizeNumber(raw.target_monthly_budget);
+  const growthMultiplier = normalizeNumber(raw.growth_multiplier);
+  const marketsToTarget = sanitizeStringArray(raw.markets_to_target);
+  const excludeMarkets = sanitizeStringArray(raw.exclude_markets);
+
+  if (targetMonthlyLeads !== null) next.target_monthly_leads = Math.max(0, Math.round(targetMonthlyLeads));
+  if (targetCpl !== null) next.target_cpl = targetCpl;
+  if (targetMonthlyBudget !== null) next.target_monthly_budget = targetMonthlyBudget;
+  if (growthMultiplier !== null) next.growth_multiplier = growthMultiplier;
+  if (marketsToTarget) next.markets_to_target = marketsToTarget;
+  if (excludeMarkets) next.exclude_markets = excludeMarkets;
+  return next;
+}
+
+function sanitizeCreativeHandoff(value: unknown): Record<string, any> | null {
+  const raw = getJsonObject(value);
+  if (!raw) return null;
+
+  const handoff: Record<string, any> = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    if (typeof entry === 'string') {
+      const normalized = normalizeString(entry);
+      if (normalized) handoff[key] = normalized;
+      continue;
+    }
+    if (typeof entry === 'number' || typeof entry === 'boolean') {
+      handoff[key] = entry;
+      continue;
+    }
+    if (Array.isArray(entry)) {
+      handoff[key] = entry.filter((item) => ['string', 'number', 'boolean'].includes(typeof item));
+      continue;
+    }
+    if (entry && typeof entry === 'object') {
+      handoff[key] = entry;
+    }
+  }
+
+  return Object.keys(handoff).length > 0 ? handoff : null;
+}
+
+function sanitizeCrmAttributes(value: unknown): Record<string, any> {
+  const raw = getJsonObject(value) || {};
+  const next: Record<string, any> = {};
+
+  const passthroughKeys = ['country', 'industry', 'segment', 'source_campaign', 'lifecycle_stage', 'deal_value', 'customer_value', 'revenue', 'market'];
+  for (const key of passthroughKeys) {
+    const entry = raw[key];
+    if (typeof entry === 'string') {
+      const normalized = normalizeString(entry);
+      if (normalized) next[key] = normalized;
+    } else if (typeof entry === 'number' && Number.isFinite(entry)) {
+      next[key] = entry;
+    } else if (typeof entry === 'boolean') {
+      next[key] = entry;
+    }
+  }
+
+  return next;
+}
+
+function formatDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function monthsAgoDate(months: number): string {
+  const date = new Date();
+  date.setUTCMonth(date.getUTCMonth() - months);
+  return formatDateOnly(date);
+}
+
+function daysAgoIso(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString();
+}
+
+function safeActionCount(actions: any[] | undefined, actionType: string): number {
+  const rawValue = actions?.find((action: any) => normalizeString(action?.action_type) === actionType)?.value;
+  const parsed = normalizeNumber(rawValue);
+  return parsed === null ? 0 : parsed;
+}
+
+function safeNumber(value: unknown, fallback = 0): number {
+  const normalized = normalizeNumber(value);
+  return normalized === null ? fallback : normalized;
+}
+
+function computeTrendLabel(values: number[], lowerIsBetter = false): 'improving' | 'stable' | 'degrading' {
+  const filtered = values.filter((value) => Number.isFinite(value) && value > 0);
+  if (filtered.length < 2) return 'stable';
+
+  const pivot = Math.max(1, Math.floor(filtered.length / 2));
+  const firstHalf = filtered.slice(0, pivot);
+  const secondHalf = filtered.slice(pivot);
+  if (firstHalf.length === 0 || secondHalf.length === 0) return 'stable';
+
+  const firstAvg = firstHalf.reduce((sum, value) => sum + value, 0) / firstHalf.length;
+  const secondAvg = secondHalf.reduce((sum, value) => sum + value, 0) / secondHalf.length;
+  if (firstAvg === 0) return 'stable';
+
+  const delta = (secondAvg - firstAvg) / firstAvg;
+  if (lowerIsBetter) {
+    if (delta <= -0.1) return 'improving';
+    if (delta >= 0.1) return 'degrading';
+    return 'stable';
+  }
+
+  if (delta >= 0.1) return 'improving';
+  if (delta <= -0.1) return 'degrading';
+  return 'stable';
+}
+
+function summariseHistoricalRows(rows: Array<Record<string, any>>) {
+  const monthly = rows
+    .map((row) => {
+      const spend = safeNumber(row.spend);
+      const leads = safeNumber(row.leads);
+      const ctr = safeNumber(row.ctr);
+      const frequency = safeNumber(row.frequency);
+      const cpl = leads > 0 ? spend / leads : null;
+      return {
+        month: normalizeString(row.month) || normalizeString(row.date_start) || new Date().toISOString().slice(0, 7),
+        spend,
+        leads,
+        ctr,
+        frequency,
+        cpl,
+      };
+    })
+    .filter((row) => row.spend > 0 || row.leads > 0);
+
+  if (monthly.length === 0) return null;
+
+  const totalSpend = monthly.reduce((sum, row) => sum + row.spend, 0);
+  const totalLeads = monthly.reduce((sum, row) => sum + row.leads, 0);
+  const rowsWithCpl = monthly.filter((row) => typeof row.cpl === 'number' && row.cpl > 0) as Array<typeof monthly[number] & { cpl: number }>;
+  const bestRow = rowsWithCpl.length > 0
+    ? rowsWithCpl.reduce((best, row) => (row.cpl < best.cpl ? row : best))
+    : monthly[0];
+  const worstRow = rowsWithCpl.length > 0
+    ? rowsWithCpl.reduce((worst, row) => (row.cpl > worst.cpl ? row : worst))
+    : monthly[monthly.length - 1];
+  const latestRow = monthly[monthly.length - 1];
+
+  return {
+    months_of_data: monthly.length,
+    total_spend: Math.round(totalSpend * 100) / 100,
+    total_leads: totalLeads,
+    avg_cpl: totalLeads > 0 ? Math.round((totalSpend / totalLeads) * 100) / 100 : null,
+    best_cpl_month: {
+      month: bestRow.month,
+      cpl: bestRow.cpl,
+      spend: Math.round(bestRow.spend * 100) / 100,
+      leads: bestRow.leads,
+    },
+    worst_cpl_month: {
+      month: worstRow.month,
+      cpl: worstRow.cpl,
+      spend: Math.round(worstRow.spend * 100) / 100,
+      leads: worstRow.leads,
+    },
+    sweet_spot: {
+      month: bestRow.month,
+      cpl: bestRow.cpl,
+      spend: Math.round(bestRow.spend * 100) / 100,
+      leads: bestRow.leads,
+      ctr: bestRow.ctr,
+    },
+    cpl_trend: computeTrendLabel(rowsWithCpl.map((row) => row.cpl), true),
+    ctr_trend: computeTrendLabel(monthly.map((row) => row.ctr), false),
+    frequency_issues: monthly.some((row) => row.frequency > 3),
+    current_monthly_spend: Math.round(latestRow.spend * 100) / 100,
+    current_cpl: latestRow.cpl,
+  };
+}
+
+function summariseHistoricalFromStoredHistory(value: unknown) {
+  const history = getJsonObject(value);
+  if (!history) return null;
+
+  const campaigns = Array.isArray(history.campaigns) ? history.campaigns : [];
+  const grouped = new Map<string, { month: string; spend: number; leads: number; ctr: number; frequency: number }>();
+
+  for (const campaign of campaigns) {
+    const createdTime = normalizeString((campaign as any)?.created_time) || normalizeString(history.fetched_at);
+    const month = createdTime ? createdTime.slice(0, 7) : new Date().toISOString().slice(0, 7);
+    const insights = getJsonObject((campaign as any)?.insights) || {};
+    const spend = safeNumber(insights.spend);
+    const impressions = safeNumber(insights.impressions);
+    const clicks = safeNumber(insights.clicks);
+    const ctr = impressions > 0 ? (clicks / impressions) * 100 : safeNumber(insights.ctr);
+    const frequency = safeNumber(insights.frequency);
+    const leads = safeActionCount(Array.isArray(insights.actions) ? insights.actions : [], 'lead');
+    const existing = grouped.get(month) || { month, spend: 0, leads: 0, ctr: 0, frequency: 0 };
+    existing.spend += spend;
+    existing.leads += leads;
+    existing.ctr = Math.max(existing.ctr, ctr);
+    existing.frequency = Math.max(existing.frequency, frequency);
+    grouped.set(month, existing);
+  }
+
+  if (grouped.size > 0) {
+    return summariseHistoricalRows(Array.from(grouped.values()));
+  }
+
+  const summary = getJsonObject(history.summary);
+  if (!summary) return null;
+  const spend = safeNumber(summary.total_spend);
+  const leads = safeNumber(summary.total_leads);
+  if (spend <= 0 && leads <= 0) return null;
+
+  return summariseHistoricalRows([{
+    month: normalizeString(history.fetched_at)?.slice(0, 7) || new Date().toISOString().slice(0, 7),
+    spend,
+    leads,
+    ctr: 0,
+    frequency: 0,
+  }]);
+}
+
+async function getActivePortfolioForBusiness(businessId: string) {
+  const { data: portfolio } = await supabaseAdmin
+    .from('audience_portfolios')
+    .select('*')
+    .eq('business_id', businessId)
+    .eq('is_active', true)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return portfolio || null;
+}
+
+async function fetchHistoricalSummaryForBusiness(business: any) {
+  const accessToken = resolveAutonomousAccessToken(business.id, business.facebook_access_token);
+  const adAccountId = normalizeString(business.facebook_ad_account_id)?.replace(/^act_/, '');
+
+  if (accessToken && adAccountId) {
+    try {
+      const params = new URLSearchParams({
+        fields: 'spend,impressions,clicks,actions,cost_per_action_type,cpc,cpm,ctr,reach,frequency,date_start,date_stop',
+        time_range: JSON.stringify({ since: monthsAgoDate(12), until: formatDateOnly(new Date()) }),
+        time_increment: 'monthly',
+        access_token: accessToken,
+      });
+
+      const response = await fetch(`${GRAPH_BASE}/act_${adAccountId}/insights?${params.toString()}`);
+      const payload = await response.json();
+      if (response.ok && !payload.error && Array.isArray(payload.data) && payload.data.length > 0) {
+        const summary = summariseHistoricalRows(payload.data.map((row: any) => ({
+          month: row.date_start ? String(row.date_start).slice(0, 7) : undefined,
+          date_start: row.date_start,
+          spend: parseFloat(row.spend || '0'),
+          leads: safeActionCount(Array.isArray(row.actions) ? row.actions : [], 'lead'),
+          ctr: safeNumber(row.ctr),
+          frequency: safeNumber(row.frequency),
+        })));
+        if (summary) return summary;
+      }
+    } catch (error) {
+      console.warn('[campaign-intelligence] Failed to fetch live historical insights:', error);
+    }
+  }
+
+  return summariseHistoricalFromStoredHistory(business.facebook_ad_history);
+}
+
+function buildPipelineSummary(events: Array<Record<string, any>>, historical: Record<string, any> | null) {
+  if (!Array.isArray(events) || events.length === 0) return null;
+
+  const leadEvents = events.filter((event) => normalizeString(event.meta_event_name) === 'Lead');
+  const customerEvents = events.filter((event) => normalizeString(event.meta_event_name) === 'Purchase');
+  const totalLeads = leadEvents.length;
+  const totalCustomers = customerEvents.length;
+
+  const leadsByCountry: Record<string, number> = {};
+  const customersByCountry: Record<string, number> = {};
+  const leadsByIndustry: Record<string, number> = {};
+  const customersByIndustry: Record<string, number> = {};
+
+  for (const event of leadEvents) {
+    const attrs = getJsonObject(event.crm_attributes) || {};
+    const country = normalizeString(attrs.country);
+    const industry = normalizeString(attrs.industry);
+    if (country) leadsByCountry[country] = (leadsByCountry[country] || 0) + 1;
+    if (industry) leadsByIndustry[industry] = (leadsByIndustry[industry] || 0) + 1;
+  }
+
+  for (const event of customerEvents) {
+    const attrs = getJsonObject(event.crm_attributes) || {};
+    const country = normalizeString(attrs.country);
+    const industry = normalizeString(attrs.industry);
+    if (country) customersByCountry[country] = (customersByCountry[country] || 0) + 1;
+    if (industry) customersByIndustry[industry] = (customersByIndustry[industry] || 0) + 1;
+  }
+
+  const topConvertingSegments = [
+    ...Object.entries(customersByCountry)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([country, count]) => `${country} (${count} customers)`),
+    ...Object.entries(customersByIndustry)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([industry, count]) => `${industry} (${count} customers)`),
+  ].slice(0, 5);
+
+  const nonConvertingSegments = [
+    ...Object.entries(leadsByCountry)
+      .filter(([country, count]) => count >= 5 && !customersByCountry[country])
+      .map(([country, count]) => `${country}: ${count} leads, 0 customers`),
+    ...Object.entries(leadsByIndustry)
+      .filter(([industry, count]) => count >= 5 && !customersByIndustry[industry])
+      .map(([industry, count]) => `${industry}: ${count} leads, 0 customers`),
+  ].slice(0, 6);
+
+  const totalSpend = safeNumber(historical?.total_spend);
+
+  return {
+    total_leads: totalLeads,
+    total_customers: totalCustomers,
+    lead_to_customer_rate: totalLeads > 0 ? totalCustomers / totalLeads : 0,
+    cost_per_customer: totalCustomers > 0 && totalSpend > 0 ? Math.round((totalSpend / totalCustomers) * 100) / 100 : null,
+    customers_by_country: customersByCountry,
+    customers_by_industry: customersByIndustry,
+    top_converting_segments: topConvertingSegments,
+    non_converting_segments: nonConvertingSegments,
+  };
+}
+
+async function getAverageDealValueFromCapi(businessId: string) {
+  const since = daysAgoIso(365);
+  const { data: rows } = await supabaseAdmin
+    .from('capi_events')
+    .select('crm_attributes')
+    .eq('business_id', businessId)
+    .eq('status', 'sent')
+    .eq('is_test', false)
+    .gte('created_at', since);
+
+  const values = (rows || [])
+    .map((row: any) => {
+      const attrs = getJsonObject(row.crm_attributes) || {};
+      return normalizeNumber(attrs.deal_value) ?? normalizeNumber(attrs.customer_value) ?? normalizeNumber(attrs.revenue);
+    })
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
+
+  if (values.length === 0) return null;
+  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100;
+}
+
+async function getMarketResearchSummary(args: { industry: string; location: string; country: string }) {
+  if (!BRAVE_API_KEY || !ANTHROPIC_API_KEY) return null;
+
+  try {
+    const queries = [
+      `${args.industry} market ${args.location} ${args.country}`,
+      `${args.industry} ${args.location} advertising benchmarks ${args.country}`,
+      `${args.industry} ${args.location} competitors pricing`,
+    ];
+
+    const [marketResults, adResults, competitorResults] = await Promise.all(queries.map((query) => braveSearch(query, 5)));
+    const context = [
+      ...(marketResults || []).slice(0, 4).map((result: any) => `${result.title}: ${result.description || ''}`),
+      ...(adResults || []).slice(0, 4).map((result: any) => `${result.title}: ${result.description || ''}`),
+      ...(competitorResults || []).slice(0, 4).map((result: any) => `${result.title}: ${result.description || ''}`),
+    ].join('\n');
+
+    const response = await callClaude(
+      'You are a market intelligence analyst. Return valid JSON only.',
+      `Summarise market advertising context for this business.
+
+Industry: ${args.industry}
+Location: ${args.location}
+Country: ${args.country}
+
+Context:
+${context || 'No market context available.'}
+
+Return JSON:
+{
+  "competition_level": "low|medium|high",
+  "estimated_avg_cpl": 0,
+  "estimated_avg_cpc": 0,
+  "key_players": ["string"],
+  "opportunities": ["string"],
+  "recommended_positioning": "string"
+}`,
+      1200,
+    );
+
+    const parsed = parseClaudeJson(response);
+    return {
+      competition_level: normalizeString(parsed.competition_level) || 'unknown',
+      estimated_avg_cpl: safeNumber(parsed.estimated_avg_cpl),
+      estimated_avg_cpc: safeNumber(parsed.estimated_avg_cpc),
+      key_players: Array.isArray(parsed.key_players) ? parsed.key_players.map((item: unknown) => normalizeString(item)).filter(Boolean) : [],
+      opportunities: Array.isArray(parsed.opportunities) ? parsed.opportunities.map((item: unknown) => normalizeString(item)).filter(Boolean) : [],
+      recommended_positioning: normalizeString(parsed.recommended_positioning) || 'Insufficient data to recommend positioning.',
+    };
+  } catch (error) {
+    console.warn('[campaign-intelligence] Failed to fetch market research:', error);
+    return null;
+  }
+}
+
+function sanitizeIntelligenceAudienceTier(value: any, fallbackGeo: string[], totalBudgetCents: number, fallbackIndex: number): IntelligenceAudienceTier {
+  const geo = sanitizeStringArray(value?.geo) || fallbackGeo;
+  const budgetPct = Math.max(1, Math.round(normalizeNumber(value?.budget_pct) || 0) || 0);
+  const dailyBudget = Math.max(
+    500,
+    Math.round(normalizeNumber(value?.daily_budget_cents) || (totalBudgetCents * budgetPct) / 100 || (totalBudgetCents / Math.max(1, fallbackGeo.length))),
+  );
+
+  return {
+    tier_name: normalizeString(value?.tier_name) || `Tier ${fallbackIndex + 1}`,
+    tier_type: (normalizeString(value?.tier_type) as IntelligenceAudienceTier['tier_type']) || (fallbackIndex === 0 ? 'prospecting_broad' : 'retargeting'),
+    geo,
+    targeting_type: (normalizeString(value?.targeting_type) as IntelligenceAudienceTier['targeting_type']) || 'broad',
+    targeting_details: normalizeString(value?.targeting_details) || 'Broad targeting informed by campaign context.',
+    age_min: Math.max(18, Math.round(normalizeNumber(value?.age_min) || 25)),
+    age_max: Math.max(18, Math.round(normalizeNumber(value?.age_max) || 55)),
+    daily_budget_cents: dailyBudget,
+    budget_pct: budgetPct,
+    expected_cpl: normalizeNumber(value?.expected_cpl),
+    rationale: normalizeString(value?.rationale) || 'Included as part of the recommended audience architecture.',
+  };
+}
+
+function sanitizeIntelligenceCreativeAngle(value: any, index: number): IntelligenceCreativeAngle {
+  const cta = normalizeString(value?.cta) || 'Learn More';
+  return {
+    angle_name: normalizeString(value?.angle_name) || `Angle ${index + 1}`,
+    hook: normalizeString(value?.hook) || `Hook ${index + 1}`,
+    message: normalizeString(value?.message) || 'Core campaign message',
+    cta,
+    format: (normalizeString(value?.format) as IntelligenceCreativeAngle['format']) || 'static_image',
+    rationale: normalizeString(value?.rationale) || 'Recommended from available context.',
+    variants_recommended: Math.max(1, Math.round(normalizeNumber(value?.variants_recommended) || 3)),
+  };
+}
+
+function buildDefaultAudienceTiers(ctx: CampaignContextPayload, budgetCents: number): IntelligenceAudienceTier[] {
+  const markets = ctx.goals.markets_to_target || ctx.business.markets;
+  const hasCustomerVolume = safeNumber(ctx.pipeline?.total_customers) >= 100;
+  const tiers: IntelligenceAudienceTier[] = [
+    {
+      tier_name: `${markets[0] || 'Primary'} Broad ADV+`,
+      tier_type: 'prospecting_broad',
+      geo: markets,
+      targeting_type: 'broad',
+      targeting_details: 'Broad/ADV+ targeting informed by available performance and market data.',
+      age_min: 25,
+      age_max: 55,
+      daily_budget_cents: Math.max(500, Math.round(budgetCents * (hasCustomerVolume ? 0.45 : 0.7))),
+      budget_pct: hasCustomerVolume ? 45 : 70,
+      expected_cpl: normalizeNumber(ctx.market?.estimated_avg_cpl) ? Math.round(Number(ctx.market?.estimated_avg_cpl) / 100) : null,
+      rationale: 'Primary scale tier for the account.',
+    },
+  ];
+
+  if (hasCustomerVolume) {
+    tiers.push({
+      tier_name: `${markets[0] || 'Primary'} Customer LAL`,
+      tier_type: 'prospecting_lal',
+      geo: markets.slice(0, 2),
+      targeting_type: 'lal',
+      targeting_details: '1% customer lookalike audience seeded from CAPI customer signals.',
+      age_min: 25,
+      age_max: 55,
+      daily_budget_cents: Math.max(500, Math.round(budgetCents * 0.35)),
+      budget_pct: 35,
+      expected_cpl: normalizeNumber(ctx.market?.estimated_avg_cpl) ? Math.round((Number(ctx.market?.estimated_avg_cpl) / 100) * 0.9) : null,
+      rationale: 'Use downstream customer data to find adjacent high-intent prospects.',
+    });
+  }
+
+  tiers.push({
+    tier_name: `${markets[0] || 'Primary'} Retargeting`,
+    tier_type: 'retargeting',
+    geo: markets,
+    targeting_type: 'custom',
+    targeting_details: 'Retarget website visitors, engaged leads, and ad engagers when available.',
+    age_min: 25,
+    age_max: 65,
+    daily_budget_cents: Math.max(500, budgetCents - tiers.reduce((sum, tier) => sum + tier.daily_budget_cents, 0)),
+    budget_pct: Math.max(10, 100 - tiers.reduce((sum, tier) => sum + tier.budget_pct, 0)),
+    expected_cpl: normalizeNumber(ctx.market?.estimated_avg_cpl) ? Math.round((Number(ctx.market?.estimated_avg_cpl) / 100) * 0.8) : null,
+    rationale: 'Capture warm demand generated by prospecting.',
+  });
+
+  return tiers;
+}
+
+function buildDefaultCreativeAngles(ctx: CampaignContextPayload): IntelligenceCreativeAngle[] {
+  const marketHint = normalizeString(ctx.market?.recommended_positioning) || 'Emphasise the strongest market differentiator.';
+  return [
+    {
+      angle_name: 'Proof Over Promise',
+      hook: 'Show the real-world outcome in the first 3 seconds.',
+      message: `${ctx.business.name} turns attention into qualified action with credible proof points.`,
+      cta: 'Learn More',
+      format: 'video_ugc',
+      rationale: marketHint,
+      variants_recommended: 3,
+    },
+    {
+      angle_name: 'Pain Interruption',
+      hook: 'Call out the cost of doing nothing.',
+      message: `Frame the core problem ${ctx.business.name} solves and the operational cost of delay.`,
+      cta: 'Get Quote',
+      format: 'static_image',
+      rationale: 'Useful when market competition is noisy and attention is scarce.',
+      variants_recommended: 3,
+    },
+    {
+      angle_name: 'Operator Clarity',
+      hook: 'Show how the offer actually works.',
+      message: 'Explain the mechanism, process, or promise in plain language.',
+      cta: 'Sign Up',
+      format: 'video_reel',
+      rationale: 'Supports higher-intent users who need confidence before converting.',
+      variants_recommended: 2,
+    },
+  ];
+}
+
+function sanitizeIntelligenceStrategy(
+  parsed: Record<string, any>,
+  ctx: CampaignContextPayload,
+  budgetCents: number,
+): IntelligenceStrategyPayload {
+  const fallbackTiers = buildDefaultAudienceTiers(ctx, budgetCents);
+  const parsedTiers = Array.isArray(parsed.audience_tiers)
+    ? parsed.audience_tiers.map((tier: any, index: number) => sanitizeIntelligenceAudienceTier(tier, ctx.goals.markets_to_target || ctx.business.markets, budgetCents, index))
+    : fallbackTiers;
+  const parsedAngles = Array.isArray(parsed.creative_angles)
+    ? parsed.creative_angles.map((angle: any, index: number) => sanitizeIntelligenceCreativeAngle(angle, index))
+    : buildDefaultCreativeAngles(ctx);
+
+  return {
+    strategy_summary: normalizeString(parsed.strategy_summary) || `Use ${parsedTiers[0]?.tier_name || 'a multi-tier prospecting'} as the primary acquisition motion, support it with retargeting, and bias budget toward segments backed by the available data.`,
+    audience_tiers: parsedTiers.length > 0 ? parsedTiers : fallbackTiers,
+    creative_angles: parsedAngles.length > 0 ? parsedAngles : buildDefaultCreativeAngles(ctx),
+    total_daily_budget_cents: Math.max(500, Math.round(normalizeNumber(parsed.total_daily_budget_cents) || budgetCents)),
+    total_monthly_budget: Math.max(15000, Math.round(normalizeNumber(parsed.total_monthly_budget) || ((normalizeNumber(parsed.total_daily_budget_cents) || budgetCents) * 30))),
+    projected_monthly_leads: normalizeNumber(parsed.projected_monthly_leads),
+    projected_cpl: normalizeNumber(parsed.projected_cpl),
+    warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map((item: unknown) => normalizeString(item)).filter(Boolean) : [],
+    phase_1_actions: Array.isArray(parsed.phase_1_actions) ? parsed.phase_1_actions.map((item: unknown) => normalizeString(item)).filter(Boolean) : ['Approve the recommended strategy and creative angles.'],
+    phase_2_actions: Array.isArray(parsed.phase_2_actions) ? parsed.phase_2_actions.map((item: unknown) => normalizeString(item)).filter(Boolean) : ['Launch the highest-confidence tier once creative is ready.'],
+    phase_3_actions: Array.isArray(parsed.phase_3_actions) ? parsed.phase_3_actions.map((item: unknown) => normalizeString(item)).filter(Boolean) : ['Rebalance budget using downstream conversion signals.'],
+  };
+}
+
+function buildCampaignPlanningPrompt(ctx: CampaignContextPayload, objective: ZuckerObjective, budgetCents: number) {
+  const lines = [
+    'You are a senior performance marketing strategist creating a Meta Ads campaign plan.',
+    '',
+    '## Business Context',
+    `- Name: ${ctx.business.name}`,
+    `- Type: ${ctx.business.type}`,
+    `- URL: ${ctx.business.url}`,
+    `- Target Markets: ${ctx.business.markets.join(', ')}`,
+    `- Currency: ${ctx.business.currency}`,
+    ctx.business.deal_value ? `- Average Deal Value: ${ctx.business.deal_value}` : null,
+    '',
+    '## Campaign Goal',
+    `- Objective: ${objective}`,
+    `- Daily Budget Ceiling: ${budgetCents}`,
+    ctx.goals.target_monthly_leads ? `- Target monthly leads: ${ctx.goals.target_monthly_leads}` : null,
+    ctx.goals.target_cpl ? `- Target CPL: ${ctx.goals.target_cpl}` : null,
+    ctx.goals.target_monthly_budget ? `- Target monthly budget: ${ctx.goals.target_monthly_budget}` : null,
+    ctx.goals.growth_multiplier ? `- Growth multiplier target: ${ctx.goals.growth_multiplier}` : null,
+    ctx.goals.markets_to_target?.length ? `- Markets to target: ${ctx.goals.markets_to_target.join(', ')}` : null,
+    ctx.goals.exclude_markets?.length ? `- Markets to exclude: ${ctx.goals.exclude_markets.join(', ')}` : null,
+    '',
+    `## Historical Performance\n${JSON.stringify(ctx.historical || { note: 'No historical ad account insights available.' }, null, 2)}`,
+    '',
+    `## CRM Pipeline Signals\n${JSON.stringify(ctx.pipeline || { note: 'No downstream CRM data available.' }, null, 2)}`,
+    '',
+    `## Market Research\n${JSON.stringify(ctx.market || { note: 'No market research available.' }, null, 2)}`,
+    '',
+    `## Existing Portfolio\n${JSON.stringify(ctx.portfolio || { note: 'No active portfolio configured.' }, null, 2)}`,
+    '',
+    'Return valid JSON only with this structure:',
+    `{
+  "strategy_summary": "string",
+  "audience_tiers": [
+    {
+      "tier_name": "string",
+      "tier_type": "prospecting_broad | prospecting_lal | retargeting | reactivation",
+      "geo": ["AU"],
+      "targeting_type": "broad | interest | lal | custom",
+      "targeting_details": "string",
+      "age_min": 25,
+      "age_max": 55,
+      "daily_budget_cents": 1500,
+      "budget_pct": 40,
+      "expected_cpl": 45,
+      "rationale": "string"
+    }
+  ],
+  "creative_angles": [
+    {
+      "angle_name": "string",
+      "hook": "string",
+      "message": "string",
+      "cta": "Learn More",
+      "format": "video_ugc | video_reel | static_image | static_audio",
+      "rationale": "string",
+      "variants_recommended": 3
+    }
+  ],
+  "total_daily_budget_cents": 5000,
+  "total_monthly_budget": 150000,
+  "projected_monthly_leads": 100,
+  "projected_cpl": 50,
+  "warnings": ["string"],
+  "phase_1_actions": ["string"],
+  "phase_2_actions": ["string"],
+  "phase_3_actions": ["string"]
+}`,
+    '',
+    'Rules:',
+    '- Default to broad/ADV+ targeting unless the data clearly supports a narrower tactic.',
+    '- Only recommend lookalikes when the context indicates at least 100 customer or SQL records are available.',
+    '- If a market has leads but zero customers, warn about it and avoid giving it significant budget.',
+    '- If frequency is above 3, recommend audience expansion or new geos.',
+    '- If no historical data is available, keep the plan conservative.',
+  ].filter(Boolean);
+
+  return lines.join('\n');
+}
+
+function buildCompatibilityResponse(strategy: IntelligenceStrategyPayload, ctx: CampaignContextPayload, objective: ZuckerObjective) {
+  const firstTier = strategy.audience_tiers[0];
+  const markets = firstTier?.geo?.length ? firstTier.geo : ctx.business.markets;
+  const targeting: Record<string, any> = {
+    age_min: firstTier?.age_min || 25,
+    age_max: firstTier?.age_max || 55,
+    radius_km: 25,
+    interests: firstTier?.targeting_type === 'interest'
+      ? firstTier.targeting_details.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 6)
+      : [],
+    geo_locations: {
+      countries: markets.length > 0 ? markets : ['US'],
+    },
+    publisher_platforms: ['facebook', 'instagram'],
+    facebook_positions: ['feed'],
+    instagram_positions: ['stream'],
+  };
+
+  const variants = strategy.creative_angles.slice(0, 3).map((angle) => ({
+    headline: angle.angle_name.slice(0, 40),
+    copy: `${angle.hook} ${angle.message}`.slice(0, 125),
+    rationale: angle.rationale,
+    cta: angle.cta,
+    angle: angle.angle_name.toLowerCase().replace(/\s+/g, '_'),
+    image_prompt: null,
+  }));
+
+  return {
+    strategy: {
+      objective,
+      summary: strategy.strategy_summary,
+      strengths: strategy.creative_angles.slice(0, 2).map((angle) => angle.angle_name),
+      opportunities: strategy.warnings.slice(0, 3),
+      recommended_daily_budget_cents: strategy.total_daily_budget_cents,
+      projected_cpl_cents: strategy.projected_cpl !== null ? Math.round(strategy.projected_cpl * 100) : null,
+      projected_monthly_leads: strategy.projected_monthly_leads,
+    },
+    targeting,
+    variants,
+    roadmap: {
+      week_1_2: strategy.phase_1_actions,
+      week_3_4: strategy.phase_2_actions,
+      month_2: strategy.phase_3_actions,
+      month_3: strategy.warnings.length > 0 ? strategy.warnings : ['Scale the highest-converting audience tiers.'],
+    },
+  };
+}
+
+function summariseContextAvailability(ctx: CampaignContextPayload) {
+  return {
+    has_historical_data: !!ctx.historical,
+    has_crm_data: !!ctx.pipeline,
+    has_market_data: !!ctx.market,
+    has_portfolio: !!ctx.portfolio,
+    months_of_data: safeNumber(ctx.historical?.months_of_data),
+  };
+}
+
+function buildTierKey(tierName: string) {
+  return tierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
+
+function mapApprovedStrategyToPortfolioTiers(strategy: IntelligenceStrategyPayload, baseTargetCpaCents: number): PortfolioTierConfig[] {
+  return strategy.audience_tiers.map((tier, index) => {
+    const expectedCplCents = tier.expected_cpl ? Math.round(tier.expected_cpl * 100) : baseTargetCpaCents;
+    const pct = tier.budget_pct > 0
+      ? tier.budget_pct
+      : Math.max(1, Math.round((tier.daily_budget_cents / Math.max(strategy.total_daily_budget_cents, 1)) * 100));
+    return {
+      tier: buildTierKey(tier.tier_name) || `tier_${index + 1}`,
+      budget_pct: pct,
+      target_cpa_multiplier: baseTargetCpaCents > 0 ? Math.max(0.2, expectedCplCents / baseTargetCpaCents) : 1,
+      description: tier.rationale,
+    };
+  });
+}
+
+function mergeWorkflowState(existingValue: unknown, patch: Record<string, any>) {
+  const existing = getJsonObject(existingValue) || {};
+  const merged = { ...existing, ...patch };
+  if (existing.tier_campaigns || patch.tier_campaigns) {
+    merged.tier_campaigns = {
+      ...(getJsonObject(existing.tier_campaigns) || {}),
+      ...(getJsonObject(patch.tier_campaigns) || {}),
+    };
+  }
+  return merged;
+}
+
+async function getOwnedApiCampaign(campaignId: string, apiKeyId: string) {
+  const { data: campaign } = await supabaseAdmin
+    .from('api_campaigns')
+    .select('*')
+    .eq('id', campaignId)
+    .eq('api_key_id', apiKeyId)
+    .maybeSingle();
+
+  return campaign || null;
+}
+
+function getIntelligenceStrategySource(campaign: any): IntelligenceStrategyPayload | null {
+  const approved = getJsonObject(campaign?.approved_strategy);
+  if (approved) return approved as unknown as IntelligenceStrategyPayload;
+  const strategy = getJsonObject(campaign?.strategy);
+  if (strategy && Array.isArray(strategy.audience_tiers) && Array.isArray(strategy.creative_angles)) {
+    return strategy as unknown as IntelligenceStrategyPayload;
+  }
+  return null;
+}
+
+function findStrategyTier(strategy: IntelligenceStrategyPayload, tierName: string) {
+  const matchKey = buildTierKey(tierName);
+  return strategy.audience_tiers.find((tier) => buildTierKey(tier.tier_name) === matchKey) || null;
+}
+
+function findStrategyAngle(strategy: IntelligenceStrategyPayload, angleName: string) {
+  const matchKey = buildTierKey(angleName);
+  return strategy.creative_angles.find((angle) => buildTierKey(angle.angle_name) === matchKey) || null;
+}
+
+async function ensurePortfolioForIntelligenceCampaign(args: {
+  campaign: any;
+  business: any;
+  userId: string;
+  strategy: IntelligenceStrategyPayload;
+}) {
+  const workflowState = getJsonObject(args.campaign.workflow_state) || {};
+  const { data: policy } = await supabaseAdmin
+    .from('autonomous_policies')
+    .select('target_cpa_cents, target_cpa')
+    .eq('business_id', args.business.id)
+    .maybeSingle();
+  const baseTargetCpaCents = getPolicyTargetCpaCents(policy);
+  const tiers = mapApprovedStrategyToPortfolioTiers(args.strategy, baseTargetCpaCents);
+
+  const existingPortfolioId = normalizeString(workflowState.portfolio_id);
+  if (existingPortfolioId) {
+    const { data: updated } = await supabaseAdmin
+      .from('audience_portfolios')
+      .update({
+        name: `${args.business.name || 'Business'} Intelligence ${args.campaign.id}`,
+        total_daily_budget_cents: args.strategy.total_daily_budget_cents,
+        tiers,
+        is_active: false,
+      })
+      .eq('id', existingPortfolioId)
+      .eq('user_id', args.userId)
+      .select('*')
+      .maybeSingle();
+    if (updated) return updated;
+  }
+
+  const { data: inserted } = await supabaseAdmin
+    .from('audience_portfolios')
+    .insert({
+      business_id: args.business.id,
+      user_id: args.userId,
+      template_id: null,
+      name: `${args.business.name || 'Business'} Intelligence ${args.campaign.id}`,
+      total_daily_budget_cents: args.strategy.total_daily_budget_cents,
+      tiers,
+      is_active: false,
+    })
+    .select('*')
+    .single();
+
+  return inserted || null;
+}
+
+async function upsertManagedCampaignExecutionRecord(args: {
+  businessId: string;
+  campaignName: string;
+  status: string;
+  dailyBudgetCents: number;
+  radiusKm: number;
+  headline: string;
+  adBody: string;
+  imageUrl: string | null;
+  metaCampaignId: string;
+  metaAdSetId: string;
+  metaAdId: string;
+  metaLeadFormId?: string | null;
+  launchedAt?: string | null;
+}) {
+  const existing = await supabaseAdmin
+    .from('campaigns')
+    .select('id')
+    .eq('meta_campaign_id', args.metaCampaignId)
+    .maybeSingle();
+
+  const payload = {
+    business_id: args.businessId,
+    name: args.campaignName,
+    status: args.status,
+    daily_budget_cents: args.dailyBudgetCents,
+    radius_km: args.radiusKm,
+    ad_headline: args.headline,
+    ad_copy: args.adBody,
+    ad_image_url: args.imageUrl,
+    meta_campaign_id: args.metaCampaignId,
+    meta_adset_id: args.metaAdSetId,
+    meta_ad_id: args.metaAdId,
+    meta_leadform_id: args.metaLeadFormId || null,
+    launched_at: args.launchedAt || null,
+  };
+
+  if (existing.data?.id) {
+    const { data } = await supabaseAdmin
+      .from('campaigns')
+      .update(payload)
+      .eq('id', existing.data.id)
+      .select('id')
+      .single();
+    return data?.id || existing.data.id;
+  }
+
+  const { data } = await supabaseAdmin
+    .from('campaigns')
+    .insert({
+      ...payload,
+      leads_count: 0,
+      spend_cents: 0,
+      performance_status: 'learning',
+    })
+    .select('id')
+    .single();
+
+  return data?.id || null;
+}
+
+function buildTargetingFromAudienceTier(tier: IntelligenceAudienceTier, business: any, metaAudienceId?: string | null) {
+  const geo = Array.isArray(tier.geo) && tier.geo.length > 0 ? tier.geo : (business.markets || ['US']);
+  const geoLocations: Record<string, any> = {};
+  if (business.lat && business.lng && geo.length === 1 && /^[A-Z]{2,3}$/.test(String(geo[0]))) {
+    geoLocations.custom_locations = [{
+      latitude: business.lat,
+      longitude: business.lng,
+      radius: business.target_radius_km || 25,
+      distance_unit: 'kilometer',
+    }];
+  } else {
+    geoLocations.countries = geo;
+  }
+
+  const targeting: Record<string, any> = {
+    age_min: tier.age_min,
+    age_max: tier.age_max,
+    radius_km: business.target_radius_km || 25,
+    geo_locations: geoLocations,
+    publisher_platforms: ['facebook', 'instagram'],
+    facebook_positions: ['feed'],
+    instagram_positions: ['stream'],
+  };
+
+  if (tier.targeting_type === 'interest') {
+    const interests = tier.targeting_details.split(',').map((item) => item.trim()).filter(Boolean);
+    if (interests.length > 0) {
+      targeting.interests = interests.map((interest, index) => ({ id: `${index + 1}`, name: interest }));
+    }
+  }
+
+  if (metaAudienceId && (tier.targeting_type === 'lal' || tier.targeting_type === 'custom')) {
+    targeting.custom_audiences = [{ id: metaAudienceId }];
+  }
+
+  return targeting;
+}
+
+function buildDraftCampaignFromTier(args: {
+  apiCampaign: any;
+  business: any;
+  tier: IntelligenceAudienceTier;
+  asset: {
+    headline: string;
+    body: string;
+    cta: string;
+    asset_url: string;
+  };
+  targeting: Record<string, any>;
+}) {
+  return {
+    business_name: `${args.business.name} ${args.tier.tier_name}`.slice(0, 100),
+    business_type: args.business.trade || suggestPortfolioBusinessType(args.business.trade),
+    objective: isValidObjective(args.apiCampaign.objective) ? args.apiCampaign.objective : 'leads',
+    url: args.apiCampaign.url || args.business.website_url || args.business.website || null,
+    targeting: args.targeting,
+    variants: [
+      {
+        headline: args.asset.headline,
+        copy: args.asset.body,
+        cta: args.asset.cta,
+        angle: buildTierKey(args.tier.tier_name),
+        image_url: args.asset.asset_url,
+      },
+    ],
+    strategy: {
+      objective: isValidObjective(args.apiCampaign.objective) ? args.apiCampaign.objective : 'leads',
+      summary: args.tier.rationale,
+      recommended_daily_budget_cents: args.tier.daily_budget_cents,
+      projected_cpl_cents: args.tier.expected_cpl ? Math.round(args.tier.expected_cpl * 100) : null,
+    },
+  };
+}
+
+function buildMetaCallToAction(objective: ZuckerObjective, ctaType: string, linkUrl: string | null, leadFormId?: string | null) {
+  if (objective === 'leads' && leadFormId) {
+    return {
+      type: ctaType,
+      value: { lead_gen_form_id: leadFormId },
+    };
+  }
+
+  if (linkUrl) {
+    return {
+      type: ctaType,
+      value: { link: linkUrl },
+    };
+  }
+
+  return { type: ctaType };
+}
+
+async function metaGet(endpoint: string, accessToken: string) {
+  const response = await fetch(`${GRAPH_BASE}${endpoint}${endpoint.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(accessToken)}`);
+  const payload = await response.json().catch(() => ({}));
+  return { ok: response.ok && !payload?.error, data: payload };
+}
+
+async function metaDelete(endpoint: string, accessToken: string) {
+  const response = await fetch(`${GRAPH_BASE}${endpoint}${endpoint.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(accessToken)}`, {
+    method: 'DELETE',
+  });
+  const payload = await response.json().catch(() => ({}));
+  return { ok: response.ok && !payload?.error, data: payload };
+}
+
+async function uploadMetaAssetToAdAccount(args: {
+  adAccountId: string;
+  accessToken: string;
+  assetUrl: string;
+  assetType: 'image' | 'video';
+}) {
+  if (args.assetType === 'video') {
+    const result = await metaPost(`/act_${args.adAccountId}/advideos`, {
+      file_url: args.assetUrl,
+    }, args.accessToken);
+
+    return {
+      ok: result.ok && !!result.data?.id,
+      metaVideoId: normalizeString(result.data?.id),
+      metaImageHash: null,
+      raw: result.data,
+    };
+  }
+
+  const result = await metaPost(`/act_${args.adAccountId}/adimages`, {
+    url: args.assetUrl,
+  }, args.accessToken);
+  const images = getJsonObject(result.data?.images) || {};
+  const firstImage = Object.values(images)[0] as any;
+
+  return {
+    ok: result.ok && !!firstImage?.hash,
+    metaVideoId: null,
+    metaImageHash: normalizeString(firstImage?.hash),
+    raw: result.data,
+  };
+}
+
+async function createPausedCreativeForExistingAdSet(args: {
+  adAccountId: string;
+  accessToken: string;
+  metaAdSetId: string;
+  metaPageId: string;
+  objective: ZuckerObjective;
+  headline: string;
+  body: string;
+  cta: string;
+  linkUrl: string | null;
+  assetUrl: string;
+  assetType: 'image' | 'video';
+  leadFormId?: string | null;
+}) {
+  const ctaType = (args.cta || 'Learn More').toUpperCase().replace(/\s+/g, '_');
+  const uploaded = await uploadMetaAssetToAdAccount({
+    adAccountId: args.adAccountId,
+    accessToken: args.accessToken,
+    assetUrl: args.assetUrl,
+    assetType: args.assetType,
+  });
+
+  if (!uploaded.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'meta_asset_upload_failed',
+        message: 'Failed to upload creative asset to Meta.',
+        meta_error: uploaded.raw,
+      },
+    };
+  }
+
+  let objectStorySpec: Record<string, any>;
+  if (args.assetType === 'video' && uploaded.metaVideoId) {
+    objectStorySpec = {
+      page_id: args.metaPageId,
+      video_data: {
+        video_id: uploaded.metaVideoId,
+        message: args.body,
+        title: args.headline,
+        call_to_action: buildMetaCallToAction(args.objective, ctaType, args.linkUrl, args.leadFormId),
+        ...(args.linkUrl ? { link_description: args.body, link_url: args.linkUrl } : {}),
+      },
+    };
+  } else {
+    const linkData = buildCreativeLinkData(args.objective, {
+      headline: args.headline,
+      body: args.body,
+      ctaType,
+      imageUrl: uploaded.metaImageHash ? null : args.assetUrl,
+      imageHash: uploaded.metaImageHash || undefined,
+      leadFormId: args.leadFormId || undefined,
+      campaignUrl: args.linkUrl || undefined,
+    });
+    objectStorySpec = {
+      page_id: args.metaPageId,
+      link_data: linkData,
+    };
+  }
+
+  const creativeResult = await metaPost(`/act_${args.adAccountId}/adcreatives`, {
+    name: `${args.headline.slice(0, 80)} Creative`,
+    object_story_spec: JSON.stringify(objectStorySpec),
+  }, args.accessToken);
+
+  if (!creativeResult.ok || !creativeResult.data?.id) {
+    return {
+      ok: false,
+      error: {
+        code: 'meta_creative_failed',
+        message: creativeResult.data?.error?.message || 'Failed to create Meta ad creative.',
+        meta_error: creativeResult.data?.error || creativeResult.data,
+      },
+    };
+  }
+
+  const adResult = await metaPost(`/act_${args.adAccountId}/ads`, {
+    name: `${args.headline.slice(0, 80)} Ad`,
+    adset_id: args.metaAdSetId,
+    creative: JSON.stringify({ creative_id: creativeResult.data.id }),
+    status: 'PAUSED',
+  }, args.accessToken);
+
+  if (!adResult.ok || !adResult.data?.id) {
+    return {
+      ok: false,
+      error: {
+        code: 'meta_ad_failed',
+        message: adResult.data?.error?.message || 'Failed to create paused Meta ad.',
+        meta_error: adResult.data?.error || adResult.data,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    metaAdId: normalizeString(adResult.data.id),
+    metaAdCreativeId: normalizeString(creativeResult.data.id),
+    metaImageHash: uploaded.metaImageHash,
+    metaVideoId: uploaded.metaVideoId,
+  };
+}
+
+async function getAudienceRowForUser(audienceId: string, userId: string) {
+  const { data: audience } = await supabaseAdmin
+    .from('facebook_audiences')
+    .select('*')
+    .eq('id', audienceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return audience || null;
+}
+
+async function upsertFacebookAudienceRow(args: {
+  existingId?: string | null;
+  userId: string;
+  businessId: string;
+  audienceId: string;
+  audienceName: string;
+  audienceType: string;
+  audienceSize?: number | null;
+  description?: string | null;
+  seedSourceStage?: string | null;
+  lookbackDays?: number | null;
+  lookalikePct?: number | null;
+  seedAudienceId?: string | null;
+  deliveryStatus?: string | null;
+  rawData?: Record<string, any> | null;
+  lastRefreshedAt?: string | null;
+}) {
+  const existing = args.existingId
+    ? await supabaseAdmin
+        .from('facebook_audiences')
+        .select('id')
+        .eq('id', args.existingId)
+        .eq('user_id', args.userId)
+        .maybeSingle()
+    : await supabaseAdmin
+        .from('facebook_audiences')
+        .select('id')
+        .eq('user_id', args.userId)
+        .eq('audience_id', args.audienceId)
+        .maybeSingle();
+
+  const payload = {
+    user_id: args.userId,
+    business_id: args.businessId,
+    audience_id: args.audienceId,
+    audience_name: args.audienceName,
+    audience_type: args.audienceType,
+    audience_size: args.audienceSize || null,
+    description: args.description || null,
+    raw_data: args.rawData || null,
+    seed_source_stage: args.seedSourceStage || null,
+    lookback_days: args.lookbackDays || null,
+    lookalike_pct: args.lookalikePct || null,
+    seed_audience_id: args.seedAudienceId || null,
+    delivery_status: args.deliveryStatus || null,
+    last_refreshed_at: args.lastRefreshedAt || new Date().toISOString(),
+  };
+
+  if (existing.data?.id) {
+    const { data } = await supabaseAdmin
+      .from('facebook_audiences')
+      .update(payload)
+      .eq('id', existing.data.id)
+      .select('*')
+      .single();
+    return data;
+  }
+
+  const { data } = await supabaseAdmin
+    .from('facebook_audiences')
+    .insert(payload)
+    .select('*')
+    .single();
+  return data;
+}
+
+function buildAudienceUploadPayload(hashedUsers: Array<Record<string, string>>) {
+  const metaKeyToSchema: Record<string, string> = {
+    em: 'EMAIL_SHA256',
+    ph: 'PHONE_SHA256',
+    fn: 'FN_SHA256',
+    ln: 'LN_SHA256',
+  };
+
+  const schemaKeys = Object.keys(metaKeyToSchema).filter((key) => hashedUsers.some((row) => normalizeString(row[key])));
+  const schema = schemaKeys.map((key) => metaKeyToSchema[key]);
+  const data = hashedUsers
+    .map((row) => schemaKeys.map((key) => row[key] || ''))
+    .filter((row) => row.some((value) => !!value));
+
+  return { schema, data };
+}
+
+async function collectSeedAudienceUsers(args: {
+  businessId: string;
+  sourceStage: string;
+  lookbackDays: number;
+}) {
+  const { data: rows } = await supabaseAdmin
+    .from('capi_events')
+    .select('hashed_user_data')
+    .eq('business_id', args.businessId)
+    .eq('status', 'sent')
+    .eq('is_test', false)
+    .eq('source_stage', args.sourceStage)
+    .gte('created_at', daysAgoIso(args.lookbackDays));
+
+  const dedupe = new Set<string>();
+  const users: Array<Record<string, string>> = [];
+
+  for (const row of rows || []) {
+    const hashed = getJsonObject((row as any).hashed_user_data) || {};
+    const payload: Record<string, string> = {};
+    for (const key of ['em', 'ph', 'fn', 'ln']) {
+      const value = normalizeString(hashed[key]);
+      if (value) payload[key] = value;
+    }
+    if (Object.keys(payload).length === 0) continue;
+    const dedupeKey = JSON.stringify(payload);
+    if (dedupe.has(dedupeKey)) continue;
+    dedupe.add(dedupeKey);
+    users.push(payload);
+  }
+
+  return users;
+}
+
+async function createSeedAudienceInternal(args: {
+  business: any;
+  userId: string;
+  accessToken: string;
+  adAccountId: string;
+  name: string;
+  sourceStage: string;
+  lookbackDays: number;
+  minContacts: number;
+  existingAudience?: any | null;
+}) {
+  const users = await collectSeedAudienceUsers({
+    businessId: args.business.id,
+    sourceStage: args.sourceStage,
+    lookbackDays: args.lookbackDays,
+  });
+
+  if (users.length < args.minContacts) {
+    return {
+      ok: false,
+      error: {
+        code: 'insufficient_seed_contacts',
+        message: `Insufficient contacts: found ${users.length}, need at least ${args.minContacts}.`,
+      },
+    };
+  }
+
+  const audienceName = args.name || `${args.business.name} ${args.sourceStage} Seed`;
+  let metaAudienceId = normalizeString(args.existingAudience?.audience_id);
+
+  if (!metaAudienceId) {
+    const createResult = await metaPost(`/act_${args.adAccountId}/customaudiences`, {
+      name: audienceName,
+      subtype: 'CUSTOM',
+      description: `ZuckerBot seed audience for ${args.sourceStage}`,
+      customer_file_source: 'USER_PROVIDED_ONLY',
+    }, args.accessToken);
+
+    if (!createResult.ok || !createResult.data?.id) {
+      return {
+        ok: false,
+        error: {
+          code: 'meta_seed_create_failed',
+          message: createResult.data?.error?.message || 'Failed to create Meta custom audience.',
+          meta_error: createResult.data?.error || createResult.data,
+        },
+      };
+    }
+
+    metaAudienceId = createResult.data.id;
+  }
+
+  const uploadPayload = buildAudienceUploadPayload(users);
+  const uploadResult = await metaPost(`/${metaAudienceId}/users`, {
+    payload: JSON.stringify(uploadPayload),
+  }, args.accessToken);
+
+  if (!uploadResult.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'meta_seed_upload_failed',
+        message: uploadResult.data?.error?.message || 'Failed to upload users to Meta custom audience.',
+        meta_error: uploadResult.data?.error || uploadResult.data,
+      },
+    };
+  }
+
+  const stored = await upsertFacebookAudienceRow({
+    existingId: args.existingAudience?.id || null,
+    userId: args.userId,
+    businessId: args.business.id,
+    audienceId: metaAudienceId,
+    audienceName,
+    audienceType: 'custom',
+    audienceSize: users.length,
+    description: `Seed audience for ${args.sourceStage}`,
+    seedSourceStage: args.sourceStage,
+    lookbackDays: args.lookbackDays,
+    deliveryStatus: safeNumber(uploadResult.data?.num_received) > 0 ? 'uploaded' : 'ready',
+    rawData: uploadResult.data,
+  });
+
+  return { ok: true, audience: stored, uploaded_users: users.length };
+}
+
+async function createLookalikeAudienceInternal(args: {
+  business: any;
+  userId: string;
+  accessToken: string;
+  adAccountId: string;
+  seedAudience: any;
+  name: string;
+  percentage: number;
+  country: string;
+}) {
+  const ratio = Math.max(0.01, Math.min(0.2, args.percentage / 100));
+  const lookalikeSpec = {
+    ratio,
+    country: args.country,
+  };
+
+  const createResult = await metaPost(`/act_${args.adAccountId}/customaudiences`, {
+    name: args.name,
+    subtype: 'LOOKALIKE',
+    origin_audience_id: args.seedAudience.audience_id,
+    lookalike_spec: JSON.stringify(lookalikeSpec),
+    description: `ZuckerBot ${args.percentage}% lookalike seeded from ${args.seedAudience.audience_name}`,
+  }, args.accessToken);
+
+  if (!createResult.ok || !createResult.data?.id) {
+    return {
+      ok: false,
+      error: {
+        code: 'meta_lal_create_failed',
+        message: createResult.data?.error?.message || 'Failed to create lookalike audience.',
+        meta_error: createResult.data?.error || createResult.data,
+      },
+    };
+  }
+
+  const stored = await upsertFacebookAudienceRow({
+    userId: args.userId,
+    businessId: args.business.id,
+    audienceId: createResult.data.id,
+    audienceName: args.name,
+    audienceType: 'lookalike',
+    description: `Lookalike audience seeded from ${args.seedAudience.audience_name}`,
+    seedSourceStage: args.seedAudience.seed_source_stage,
+    lookbackDays: args.seedAudience.lookback_days,
+    lookalikePct: args.percentage,
+    seedAudienceId: args.seedAudience.audience_id,
+    deliveryStatus: 'building',
+    rawData: createResult.data,
+  });
+
+  return { ok: true, audience: stored };
+}
+
+async function refreshAudienceInternal(args: {
+  audience: any;
+  business: any;
+  accessToken: string;
+  adAccountId: string;
+}) {
+  if (normalizeString(args.audience.audience_type) === 'lookalike' && normalizeString(args.audience.seed_source_stage)) {
+    const existingSeed = await supabaseAdmin
+      .from('facebook_audiences')
+      .select('*')
+      .eq('user_id', args.audience.user_id)
+      .eq('business_id', args.business.id)
+      .eq('audience_type', 'custom')
+      .eq('seed_source_stage', args.audience.seed_source_stage)
+      .maybeSingle();
+
+    if (existingSeed.data) {
+      const seedRefresh = await createSeedAudienceInternal({
+        business: args.business,
+        userId: args.audience.user_id,
+        accessToken: args.accessToken,
+        adAccountId: args.adAccountId,
+        name: existingSeed.data.audience_name,
+        sourceStage: existingSeed.data.seed_source_stage,
+        lookbackDays: existingSeed.data.lookback_days || 180,
+        minContacts: 100,
+        existingAudience: existingSeed.data,
+      });
+      if (!seedRefresh.ok) return seedRefresh;
+    }
+
+    return getAudienceStatusInternal(args.audience, args.accessToken);
+  }
+
+  return createSeedAudienceInternal({
+    business: args.business,
+    userId: args.audience.user_id,
+    accessToken: args.accessToken,
+    adAccountId: args.adAccountId,
+    name: args.audience.audience_name,
+    sourceStage: args.audience.seed_source_stage,
+    lookbackDays: args.audience.lookback_days || 180,
+    minContacts: 100,
+    existingAudience: args.audience,
+  });
+}
+
+async function getAudienceStatusInternal(audience: any, accessToken: string) {
+  const metaAudienceId = normalizeString(audience.audience_id);
+  if (!metaAudienceId) {
+    return {
+      ok: false,
+      error: {
+        code: 'missing_meta_audience_id',
+        message: 'Audience is missing a Meta audience id.',
+      },
+    };
+  }
+
+  const response = await metaGet(`/${metaAudienceId}?fields=id,name,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status,subtype,time_updated`, accessToken);
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'meta_audience_status_failed',
+        message: response.data?.error?.message || 'Failed to fetch audience status from Meta.',
+        meta_error: response.data?.error || response.data,
+      },
+    };
+  }
+
+  const size = safeNumber(response.data?.approximate_count_lower_bound) || safeNumber(response.data?.approximate_count_upper_bound) || audience.audience_size || null;
+  const deliveryStatus = normalizeString(response.data?.delivery_status?.description)
+    || normalizeString(response.data?.operation_status?.description)
+    || normalizeString(response.data?.delivery_status)
+    || audience.delivery_status
+    || 'unknown';
+
+  const stored = await upsertFacebookAudienceRow({
+    existingId: audience.id,
+    userId: audience.user_id,
+    businessId: audience.business_id,
+    audienceId: audience.audience_id,
+    audienceName: normalizeString(response.data?.name) || audience.audience_name,
+    audienceType: audience.audience_type,
+    audienceSize: size,
+    description: audience.description,
+    seedSourceStage: audience.seed_source_stage,
+    lookbackDays: audience.lookback_days,
+    lookalikePct: audience.lookalike_pct,
+    seedAudienceId: audience.seed_audience_id,
+    deliveryStatus,
+    rawData: response.data,
+    lastRefreshedAt: normalizeString(response.data?.time_updated) || new Date().toISOString(),
+  });
+
+  return { ok: true, audience: stored, meta_status: response.data };
+}
+
+async function deleteAudienceInternal(audience: any, accessToken: string) {
+  const metaAudienceId = normalizeString(audience.audience_id);
+  if (!metaAudienceId) {
+    return {
+      ok: false,
+      error: {
+        code: 'missing_meta_audience_id',
+        message: 'Audience is missing a Meta audience id.',
+      },
+    };
+  }
+
+  const response = await metaDelete(`/${metaAudienceId}`, accessToken);
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'meta_audience_delete_failed',
+        message: response.data?.error?.message || 'Failed to delete Meta audience.',
+        meta_error: response.data?.error || response.data,
+      },
+    };
+  }
+
+  await supabaseAdmin
+    .from('facebook_audiences')
+    .delete()
+    .eq('id', audience.id)
+    .eq('user_id', audience.user_id);
+
+  return { ok: true };
+}
+
+async function ensureLookalikeAudienceForTier(args: {
+  business: any;
+  userId: string;
+  accessToken: string;
+  adAccountId: string;
+  tier: IntelligenceAudienceTier;
+}) {
+  if (args.tier.targeting_type !== 'lal' && args.tier.tier_type !== 'prospecting_lal') {
+    return { ok: true, audience: null };
+  }
+
+  const desiredPct = normalizeNumber(args.tier.targeting_details.match(/(\d+(?:\.\d+)?)%/)?.[1]) || 1;
+  const preferredStages = ['customer', 'salesqualifiedlead', 'marketingqualifiedlead', 'lead'];
+
+  let selectedStage: string | null = null;
+  for (const stage of preferredStages) {
+    const users = await collectSeedAudienceUsers({
+      businessId: args.business.id,
+      sourceStage: stage,
+      lookbackDays: 180,
+    });
+    if (users.length >= 100) {
+      selectedStage = stage;
+      break;
+    }
+  }
+
+  if (!selectedStage) {
+    return {
+      ok: false,
+      error: {
+        code: 'insufficient_seed_contacts',
+        message: 'This tier requires at least 100 seed contacts to create a lookalike audience.',
+      },
+    };
+  }
+
+  const { data: existingLookalike } = await supabaseAdmin
+    .from('facebook_audiences')
+    .select('*')
+    .eq('user_id', args.userId)
+    .eq('business_id', args.business.id)
+    .eq('audience_type', 'lookalike')
+    .eq('seed_source_stage', selectedStage)
+    .eq('lookalike_pct', desiredPct)
+    .maybeSingle();
+
+  if (existingLookalike) {
+    return { ok: true, audience: existingLookalike };
+  }
+
+  const { data: existingSeed } = await supabaseAdmin
+    .from('facebook_audiences')
+    .select('*')
+    .eq('user_id', args.userId)
+    .eq('business_id', args.business.id)
+    .eq('audience_type', 'custom')
+    .eq('seed_source_stage', selectedStage)
+    .maybeSingle();
+
+  const seedResult = existingSeed
+    ? await createSeedAudienceInternal({
+        business: args.business,
+        userId: args.userId,
+        accessToken: args.accessToken,
+        adAccountId: args.adAccountId,
+        name: existingSeed.audience_name,
+        sourceStage: selectedStage,
+        lookbackDays: existingSeed.lookback_days || 180,
+        minContacts: 100,
+        existingAudience: existingSeed,
+      })
+    : await createSeedAudienceInternal({
+        business: args.business,
+        userId: args.userId,
+        accessToken: args.accessToken,
+        adAccountId: args.adAccountId,
+        name: `${args.business.name} ${selectedStage} Seed`,
+        sourceStage: selectedStage,
+        lookbackDays: 180,
+        minContacts: 100,
+      });
+
+  if (!seedResult.ok || !seedResult.audience) {
+    return seedResult;
+  }
+
+  const country = args.tier.geo?.[0] || args.business.markets?.[0] || args.business.country || 'US';
+  return createLookalikeAudienceInternal({
+    business: args.business,
+    userId: args.userId,
+    accessToken: args.accessToken,
+    adAccountId: args.adAccountId,
+    seedAudience: seedResult.audience,
+    name: `${args.business.name} ${desiredPct}% ${selectedStage} LAL`,
+    percentage: desiredPct,
+    country,
+  });
+}
+
+async function ensureTierExecutionForCreative(args: {
+  auth: AuthSuccess;
+  apiCampaign: any;
+  business: any;
+  portfolioId: string;
+  tier: IntelligenceAudienceTier;
+  accessToken: string;
+  adAccountId: string;
+  metaPageId: string;
+  metaPixelId?: string | null;
+  creative: {
+    asset_url: string;
+    asset_type: 'image' | 'video';
+    headline: string;
+    body: string;
+    cta: string;
+    link_url: string;
+    angle_name?: string | null;
+    variant_index?: number | null;
+  };
+}) {
+  const tierKey = buildTierKey(args.tier.tier_name);
+  const workflowState = getJsonObject(args.apiCampaign.workflow_state) || {};
+  const tierState = getJsonObject(getJsonObject(workflowState.tier_campaigns || {})?.[tierKey]) || {};
+
+  let linkedTierCampaign = normalizeString(tierState.tier_campaign_id)
+    ? await supabaseAdmin.from('audience_tier_campaigns').select('*').eq('id', tierState.tier_campaign_id).maybeSingle().then((result) => result.data || null)
+    : null;
+
+  let metaAudienceId: string | null = normalizeString(linkedTierCampaign?.meta_audience_id) || normalizeString(tierState.meta_audience_id);
+  if (!metaAudienceId && (args.tier.targeting_type === 'lal' || args.tier.tier_type === 'prospecting_lal')) {
+    const audienceResult = await ensureLookalikeAudienceForTier({
+      business: args.business,
+      userId: args.auth.keyRecord.user_id,
+      accessToken: args.accessToken,
+      adAccountId: args.adAccountId,
+      tier: args.tier,
+    });
+    if (!audienceResult.ok || !audienceResult.audience) return audienceResult;
+    metaAudienceId = normalizeString(audienceResult.audience.audience_id);
+  }
+
+  const targeting = buildTargetingFromAudienceTier(args.tier, args.business, metaAudienceId);
+
+  if (!linkedTierCampaign?.meta_campaign_id || !linkedTierCampaign?.meta_adset_id) {
+    const draftCampaign = buildDraftCampaignFromTier({
+      apiCampaign: args.apiCampaign,
+      business: args.business,
+      tier: args.tier,
+      asset: {
+        headline: args.creative.headline,
+        body: args.creative.body,
+        cta: args.creative.cta,
+        asset_url: args.creative.asset_url,
+      },
+      targeting,
+    });
+
+    const launchResult = await launchCampaignInternal({
+      campaignId: `${args.apiCampaign.id}:${tierKey}`,
+      meta_access_token: args.accessToken,
+      meta_ad_account_id: args.adAccountId,
+      meta_page_id: args.metaPageId,
+      meta_pixel_id: args.metaPixelId || null,
+      variant_index: 0,
+      daily_budget_cents: args.tier.daily_budget_cents,
+      radius_km: args.business.target_radius_km || 25,
+      campaign: draftCampaign,
+      auth: args.auth.keyRecord,
+      activate: false,
+    });
+
+    if (!launchResult.success || !launchResult.data) {
+      return launchResult;
+    }
+
+    const managedCampaignId = await upsertManagedCampaignExecutionRecord({
+      businessId: args.business.id,
+      campaignName: draftCampaign.business_name,
+      status: 'paused',
+      dailyBudgetCents: args.tier.daily_budget_cents,
+      radiusKm: args.business.target_radius_km || 25,
+      headline: args.creative.headline,
+      adBody: args.creative.body,
+      imageUrl: args.creative.asset_type === 'image' ? args.creative.asset_url : null,
+      metaCampaignId: launchResult.data.meta_campaign_id,
+      metaAdSetId: launchResult.data.meta_adset_id,
+      metaAdId: launchResult.data.meta_ad_id,
+      metaLeadFormId: launchResult.data.lead_form_id || null,
+      launchedAt: null,
+    });
+
+    linkedTierCampaign = await updatePortfolioTierCampaign(linkedTierCampaign?.id || null, {
+      ...(linkedTierCampaign || {}),
+      portfolio_id: args.portfolioId,
+      business_id: args.business.id,
+      user_id: args.auth.keyRecord.user_id,
+      tier: tierKey,
+      campaign_id: managedCampaignId,
+      meta_campaign_id: launchResult.data.meta_campaign_id,
+      meta_adset_id: launchResult.data.meta_adset_id,
+      meta_audience_id: metaAudienceId,
+      daily_budget_cents: args.tier.daily_budget_cents,
+      status: 'paused',
+      performance_data: {
+        source: 'campaign_intelligence',
+        tier_name: args.tier.tier_name,
+        created_at: new Date().toISOString(),
+      },
+    });
+
+    return {
+      ok: true,
+      created: true,
+      linkedTierCampaign,
+      metaCampaignId: launchResult.data.meta_campaign_id,
+      metaAdSetId: launchResult.data.meta_adset_id,
+      metaAdId: launchResult.data.meta_ad_id,
+      metaAdCreativeId: launchResult.data.ad_creative_id || null,
+      metaLeadFormId: launchResult.data.lead_form_id || null,
+      metaAudienceId,
+    };
+  }
+
+  const { data: linkedCampaign } = await supabaseAdmin
+    .from('campaigns')
+    .select('*')
+    .eq('id', linkedTierCampaign.campaign_id)
+    .maybeSingle();
+
+  const creativeResult = await createPausedCreativeForExistingAdSet({
+    adAccountId: args.adAccountId,
+    accessToken: args.accessToken,
+    metaAdSetId: linkedTierCampaign.meta_adset_id,
+    metaPageId: args.metaPageId,
+    objective: isValidObjective(args.apiCampaign.objective) ? args.apiCampaign.objective : 'leads',
+    headline: args.creative.headline,
+    body: args.creative.body,
+    cta: args.creative.cta,
+    linkUrl: args.creative.link_url || args.apiCampaign.url || args.business.website_url || args.business.website || null,
+    assetUrl: args.creative.asset_url,
+    assetType: args.creative.asset_type,
+    leadFormId: linkedCampaign?.meta_leadform_id || null,
+  });
+
+  if (!creativeResult.ok) {
+    return creativeResult;
+  }
+
+  return {
+    ok: true,
+    created: false,
+    linkedTierCampaign,
+    metaCampaignId: linkedTierCampaign.meta_campaign_id,
+    metaAdSetId: linkedTierCampaign.meta_adset_id,
+    metaAdId: creativeResult.metaAdId,
+    metaAdCreativeId: creativeResult.metaAdCreativeId,
+    metaLeadFormId: linkedCampaign?.meta_leadform_id || null,
+    metaAudienceId,
+    metaImageHash: creativeResult.metaImageHash,
+    metaVideoId: creativeResult.metaVideoId,
+  };
+}
+
+async function activateTierExecution(args: {
+  apiCampaign: any;
+  linkedTierCampaign: any;
+  creativeRows: any[];
+  accessToken: string;
+}) {
+  const metaCampaignId = normalizeString(args.linkedTierCampaign?.meta_campaign_id);
+  const metaAdSetId = normalizeString(args.linkedTierCampaign?.meta_adset_id);
+  const metaAdIds = args.creativeRows
+    .map((row) => normalizeString(row.meta_ad_id))
+    .filter(Boolean) as string[];
+
+  if (!metaCampaignId || !metaAdSetId || metaAdIds.length === 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'tier_not_ready',
+        message: 'Tier execution does not have a complete paused campaign/adset/ad set to activate.',
+      },
+    };
+  }
+
+  await Promise.allSettled([
+    ...metaAdIds.map((adId) => metaPost(`/${adId}`, { status: 'ACTIVE' }, args.accessToken)),
+    metaPost(`/${metaAdSetId}`, { status: 'ACTIVE' }, args.accessToken),
+    metaPost(`/${metaCampaignId}`, { status: 'ACTIVE' }, args.accessToken),
+  ]);
+
+  const launchedAt = new Date().toISOString();
+  await supabaseAdmin
+    .from('campaigns')
+    .update({ status: 'active', launched_at: launchedAt })
+    .eq('id', args.linkedTierCampaign.campaign_id)
+    .then(() => {});
+
+  await supabaseAdmin
+    .from('audience_tier_campaigns')
+    .update({
+      status: 'active',
+      updated_at: launchedAt,
+      performance_data: {
+        ...(getJsonObject(args.linkedTierCampaign.performance_data) || {}),
+        activated_at: launchedAt,
+      },
+    })
+    .eq('id', args.linkedTierCampaign.id)
+    .then(() => {});
+
+  await supabaseAdmin
+    .from('api_campaign_creatives')
+    .update({ status: 'active' })
+    .eq('api_campaign_id', args.apiCampaign.id)
+    .in('id', args.creativeRows.map((row) => row.id))
+    .then(() => {});
+
+  return { ok: true, launchedAt, metaCampaignId, metaAdSetId, metaAdIds };
+}
+
+async function resolveLaunchMetaForBusiness(args: {
+  auth: AuthSuccess;
+  business: any;
+  overrides?: {
+    meta_access_token?: string | null;
+    meta_ad_account_id?: string | null;
+    meta_page_id?: string | null;
+  };
+}) {
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: args.auth.keyRecord.id,
+    userId: args.auth.keyRecord.user_id,
+    meta_access_token: args.overrides?.meta_access_token || null,
+    meta_ad_account_id: args.overrides?.meta_ad_account_id || null,
+    meta_page_id: args.overrides?.meta_page_id || null,
+  });
+
+  let metaAccessToken = resolvedMeta.meta_access_token;
+  let metaAdAccountId = resolvedMeta.meta_ad_account_id;
+  let metaPageId = resolvedMeta.meta_page_id;
+  let metaPixelId = resolvedMeta.meta_pixel_id || normalizeString(args.business?.meta_pixel_id) || null;
+
+  const adAccountResolution = await resolveAdAccountIdForLaunch({
+    userId: args.auth.keyRecord.user_id,
+    resolvedMeta: {
+      ...resolvedMeta,
+      meta_access_token: metaAccessToken,
+      meta_ad_account_id: metaAdAccountId,
+      meta_page_id: metaPageId,
+      meta_pixel_id: metaPixelId,
+    },
+  });
+  if (!metaAdAccountId && adAccountResolution.meta_ad_account_id) {
+    metaAdAccountId = adAccountResolution.meta_ad_account_id;
+  }
+  if (!metaPixelId && adAccountResolution.meta_pixel_id) {
+    metaPixelId = adAccountResolution.meta_pixel_id;
+  }
+
+  const pageResolution = await resolvePageIdForLaunch({
+    userId: args.auth.keyRecord.user_id,
+    resolvedMeta: {
+      ...resolvedMeta,
+      meta_access_token: metaAccessToken,
+      meta_ad_account_id: metaAdAccountId,
+      meta_page_id: metaPageId,
+      meta_pixel_id: metaPixelId,
+    },
+  });
+  if (!metaPageId && pageResolution.meta_page_id) {
+    metaPageId = pageResolution.meta_page_id;
+  }
+
+  if (!metaAccessToken || !metaAdAccountId || !metaPageId) {
+    return {
+      ok: false,
+      error: {
+        code: 'missing_meta_credentials',
+        message: 'Missing Meta launch credentials. Provide overrides or connect Meta on the business profile.',
+        available_ad_accounts: adAccountResolution.available_ad_accounts || [],
+        available_pages: pageResolution.available_pages || [],
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    metaAccessToken,
+    metaAdAccountId,
+    metaPageId,
+    metaPixelId,
+  };
+}
+
+function normalizeCreativeUploads(body: Record<string, any>) {
+  const items = Array.isArray(body.creatives) ? body.creatives : [body];
+  return items
+    .map((item) => ({
+      tier_name: normalizeString(item.tier_name || body.tier_name),
+      asset_url: normalizeString(item.asset_url),
+      asset_type: (normalizeString(item.asset_type) || 'image') as 'image' | 'video',
+      headline: normalizeString(item.headline),
+      body: normalizeString(item.body || item.copy),
+      cta: normalizeString(item.cta) || 'Learn More',
+      link_url: normalizeString(item.link_url) || normalizeString(body.link_url),
+      angle_name: normalizeString(item.angle_name),
+      variant_index: normalizeNumber(item.variant_index),
+    }))
+    .filter((item) => item.tier_name && item.asset_url && item.headline && item.body) as Array<{
+      tier_name: string;
+      asset_url: string;
+      asset_type: 'image' | 'video';
+      headline: string;
+      body: string;
+      cta: string;
+      link_url: string | null;
+      angle_name: string | null;
+      variant_index: number | null;
+    }>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1778,11 +3815,13 @@ async function launchCampaignInternal(params: {
   radius_km: number;
   campaign: any;
   auth: any;
+  activate?: boolean;
 }): Promise<{success: boolean, data?: any, error?: any}> {
   
   const {
     campaignId, meta_access_token, meta_ad_account_id, meta_page_id,
-    meta_pixel_id, variant_index, daily_budget_cents, radius_km, campaign, auth
+    meta_pixel_id, variant_index, daily_budget_cents, radius_km, campaign, auth,
+    activate = true,
   } = params;
 
   try {
@@ -1841,6 +3880,8 @@ async function launchCampaignInternal(params: {
     const geoLocations: Record<string, any> = {};
     if (targeting?.geo_locations?.custom_locations?.length) {
       geoLocations.custom_locations = targeting.geo_locations.custom_locations;
+    } else if (Array.isArray(targeting?.geo_locations?.countries) && targeting.geo_locations.countries.length > 0) {
+      geoLocations.countries = targeting.geo_locations.countries;
     } else {
       geoLocations.countries = ['US'];
     }
@@ -1849,10 +3890,16 @@ async function launchCampaignInternal(params: {
       age_min: targeting?.age_min || 25,
       age_max: targeting?.age_max || 65,
       geo_locations: geoLocations,
-      publisher_platforms: ['facebook', 'instagram'],
-      facebook_positions: ['feed'],
-      instagram_positions: ['stream'],
+      publisher_platforms: targeting?.publisher_platforms || ['facebook', 'instagram'],
+      facebook_positions: targeting?.facebook_positions || ['feed'],
+      instagram_positions: targeting?.instagram_positions || ['stream'],
     };
+    if (Array.isArray(targeting?.interests) && targeting.interests.length > 0) {
+      adSetTargeting.interests = targeting.interests;
+    }
+    if (Array.isArray(targeting?.custom_audiences) && targeting.custom_audiences.length > 0) {
+      adSetTargeting.custom_audiences = targeting.custom_audiences;
+    }
 
     const adSetResult = await metaPost(`/act_${adAccountId}/adsets`, {
       name: `${campaignName} – Ad Set`,
@@ -1986,24 +4033,26 @@ async function launchCampaignInternal(params: {
     }
     const metaAdId = adResult.data.id;
 
-    // Step 6: Activate everything
-    const activationResults = await Promise.allSettled([
-      fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'status=ACTIVE'
-      }),
-      fetch(`${GRAPH_BASE}/${metaAdSetId}?access_token=${meta_access_token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'status=ACTIVE'
-      }),
-      fetch(`${GRAPH_BASE}/${metaAdId}?access_token=${meta_access_token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'status=ACTIVE'
-      })
-    ]);
+    // Step 6: Activate everything unless the caller is intentionally staging paused assets
+    if (activate) {
+      await Promise.allSettled([
+        fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'status=ACTIVE'
+        }),
+        fetch(`${GRAPH_BASE}/${metaAdSetId}?access_token=${meta_access_token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'status=ACTIVE'
+        }),
+        fetch(`${GRAPH_BASE}/${metaAdId}?access_token=${meta_access_token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'status=ACTIVE'
+        })
+      ]);
+    }
 
     return {
       success: true,
@@ -2017,8 +4066,8 @@ async function launchCampaignInternal(params: {
         selected_variant: selectedVariant,
         daily_budget_cents: daily_budget_cents,
         targeting_radius_km: radius_km,
-        launched_at: new Date().toISOString(),
-        status: 'active'
+        launched_at: activate ? new Date().toISOString() : null,
+        status: activate ? 'active' : 'paused'
       }
     };
 
@@ -2032,6 +4081,152 @@ async function launchCampaignInternal(params: {
       }
     };
   }
+}
+
+async function handleCreateIntelligence(args: {
+  req: VercelRequest;
+  res: VercelResponse;
+  auth: AuthSuccess;
+  startTime: number;
+  url: string;
+  business: any;
+  budgetCents: number;
+  objective: ZuckerObjective;
+  businessNameOverride?: string | null;
+  businessTypeOverride?: string | null;
+  goals: CampaignGoalsInput;
+  creativeHandoff: Record<string, any> | null;
+}) {
+  const resolvedName = normalizeString(args.businessNameOverride) || normalizeString(args.business?.name) || args.url;
+  const resolvedType = normalizeString(args.businessTypeOverride) || suggestPortfolioBusinessType(args.business?.trade);
+  const markets = Array.isArray(args.business?.markets) && args.business.markets.length > 0
+    ? args.business.markets
+    : [normalizeString(args.business?.country) || 'US'];
+
+  const [historical, portfolio, dealValue, market, pipelineRows] = await Promise.all([
+    fetchHistoricalSummaryForBusiness(args.business),
+    getActivePortfolioForBusiness(args.business.id),
+    getAverageDealValueFromCapi(args.business.id),
+    getMarketResearchSummary({
+      industry: resolvedType || 'business',
+      location: markets[0] || normalizeString(args.business?.country) || 'US',
+      country: normalizeString(args.business?.country) || markets[0] || 'US',
+    }),
+    supabaseAdmin
+      .from('capi_events')
+      .select('meta_event_name, source_stage, crm_attributes, created_at, status, is_test')
+      .eq('business_id', args.business.id)
+      .eq('status', 'sent')
+      .eq('is_test', false)
+      .gte('created_at', daysAgoIso(180)),
+  ]);
+
+  const context: CampaignContextPayload = {
+    business: {
+      id: args.business.id,
+      name: resolvedName,
+      url: args.url,
+      type: resolvedType || 'business',
+      markets,
+      currency: normalizeString(args.business?.currency) || 'USD',
+      deal_value: dealValue,
+    },
+    historical,
+    pipeline: buildPipelineSummary((pipelineRows.data || []) as Array<Record<string, any>>, historical),
+    market,
+    portfolio: portfolio
+      ? {
+          id: portfolio.id,
+          name: portfolio.name,
+          total_daily_budget_cents: portfolio.total_daily_budget_cents,
+          tiers: portfolio.tiers,
+          is_active: portfolio.is_active,
+        }
+      : null,
+    goals: args.goals,
+  };
+
+  const prompt = buildCampaignPlanningPrompt(context, args.objective, args.budgetCents);
+  const claudeText = await callClaude(
+    'You are a senior performance marketing strategist. Return valid JSON only. No prose, no markdown fences.',
+    prompt,
+    2500,
+  );
+  const parsed = parseClaudeJson(claudeText);
+  const intelligenceStrategy = sanitizeIntelligenceStrategy(parsed, context, args.budgetCents);
+  const compatibility = buildCompatibilityResponse(intelligenceStrategy, context, args.objective);
+  const campaignId = `camp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+  const workflowState = {
+    mode: 'intelligence',
+    strategy_status: 'draft',
+    tier_campaigns: {},
+    context_summary: summariseContextAvailability(context),
+  };
+
+  await supabaseAdmin
+    .from('api_campaigns')
+    .insert({
+      id: campaignId,
+      api_key_id: args.auth.keyRecord.id,
+      user_id: args.auth.keyRecord.user_id,
+      business_id: args.business.id,
+      campaign_version: 'intelligence',
+      status: 'draft',
+      url: args.url,
+      business_name: resolvedName,
+      business_type: resolvedType || 'business',
+      strategy: intelligenceStrategy,
+      targeting: compatibility.targeting,
+      variants: compatibility.variants,
+      roadmap: compatibility.roadmap,
+      objective: args.objective,
+      daily_budget_cents: args.budgetCents,
+      goals: args.goals,
+      context,
+      workflow_state: workflowState,
+      creative_handoff: args.creativeHandoff,
+      creative_status: 'awaiting_strategy_approval',
+      created_at: new Date().toISOString(),
+    })
+    .then(() => {});
+
+  await logUsage({
+    apiKeyId: args.auth.keyRecord.id,
+    endpoint: '/v1/campaigns/create',
+    method: 'POST',
+    statusCode: 200,
+    responseTimeMs: Date.now() - args.startTime,
+    detected_industry: resolvedType || undefined,
+  });
+
+  return args.res.status(200).json({
+    id: campaignId,
+    campaign_version: 'intelligence',
+    status: 'draft',
+    business_name: resolvedName,
+    business_type: resolvedType || 'business',
+    strategy: compatibility.strategy,
+    targeting: compatibility.targeting,
+    variants: compatibility.variants,
+    roadmap: compatibility.roadmap,
+    audience_tiers: intelligenceStrategy.audience_tiers,
+    creative_angles: intelligenceStrategy.creative_angles,
+    total_daily_budget_cents: intelligenceStrategy.total_daily_budget_cents,
+    total_monthly_budget: intelligenceStrategy.total_monthly_budget,
+    projected_monthly_leads: intelligenceStrategy.projected_monthly_leads,
+    projected_cpl: intelligenceStrategy.projected_cpl,
+    warnings: intelligenceStrategy.warnings,
+    context_summary: summariseContextAvailability(context),
+    goals: args.goals,
+    creative_handoff: args.creativeHandoff,
+    next_steps: [
+      'Approve the strategy and audience tiers.',
+      'Request or upload finished creative assets.',
+      'Activate the ready audience tiers once assets are attached.',
+    ],
+    created_at: new Date().toISOString(),
+  });
 }
 
 // ── POST /api/v1/campaigns/create ───────────────────────────────────────
@@ -2049,13 +4244,50 @@ async function handleCreate(req: VercelRequest, res: VercelResponse) {
   applyRateLimitHeaders(res, auth.rateLimitHeaders);
 
   let { 
-    url, business_name, business_type, location, budget_daily_cents, objective, 
+    url, business_id, business_name, business_type, location, budget_daily_cents, objective,
+    mode, goals, creative_handoff,
     meta_access_token, auto_launch, meta_ad_account_id, meta_page_id, variant_index = 0, radius_km
   } = req.body || {};
 
   if (!url || typeof url !== 'string') {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
     return res.status(400).json({ error: { code: 'validation_error', message: '`url` is required and must be a string' } });
+  }
+
+  const requestedMode = normalizeCampaignMode(mode);
+  const resolvedBusiness = requestedMode === 'legacy'
+    ? null
+    : await resolveOwnedBusiness(auth, normalizeString(business_id));
+  const sanitizedGoals = sanitizeGoals(goals);
+  const sanitizedCreativeHandoff = sanitizeCreativeHandoff(creative_handoff);
+  const requestedBudgetCents = budget_daily_cents || 2000;
+  const requestedObjective: ZuckerObjective = isValidObjective(objective) ? objective : 'traffic';
+
+  if (requestedMode === 'intelligence' && !resolvedBusiness) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/create', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'business_required',
+        message: 'Intelligence mode requires a resolvable business. Provide `business_id` or use an API key linked to a business.',
+      },
+    });
+  }
+
+  if (requestedMode === 'intelligence' || (requestedMode === 'auto' && resolvedBusiness)) {
+    return handleCreateIntelligence({
+      req,
+      res,
+      auth,
+      startTime,
+      url,
+      business: resolvedBusiness,
+      budgetCents: requestedBudgetCents,
+      objective: requestedObjective,
+      businessNameOverride: business_name,
+      businessTypeOverride: business_type,
+      goals: sanitizedGoals,
+      creativeHandoff: sanitizedCreativeHandoff,
+    });
   }
 
   try {
@@ -2422,6 +4654,925 @@ RULES:
   }
 }
 
+async function processCampaignCreativeUpload(args: {
+  auth: AuthSuccess;
+  apiCampaign: any;
+  business: any;
+  uploads: Array<{
+    tier_name: string;
+    asset_url: string;
+    asset_type: 'image' | 'video';
+    headline: string;
+    body: string;
+    cta: string;
+    link_url: string | null;
+    angle_name: string | null;
+    variant_index: number | null;
+  }>;
+  metaOverrides?: {
+    meta_access_token?: string | null;
+    meta_ad_account_id?: string | null;
+    meta_page_id?: string | null;
+  };
+  source: 'upload' | 'callback';
+}) {
+  const strategy = getIntelligenceStrategySource(args.apiCampaign);
+  if (!strategy) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: {
+        code: 'strategy_not_ready',
+        message: 'Strategy must exist before creative assets can be uploaded.',
+      },
+    };
+  }
+
+  if (!getJsonObject(args.apiCampaign.approved_strategy)) {
+    return {
+      ok: false,
+      statusCode: 409,
+      error: {
+        code: 'strategy_not_approved',
+        message: 'Approve the strategy before uploading creative assets.',
+      },
+    };
+  }
+
+  const portfolio = await ensurePortfolioForIntelligenceCampaign({
+    campaign: args.apiCampaign,
+    business: args.business,
+    userId: args.auth.keyRecord.user_id,
+    strategy,
+  });
+  if (!portfolio?.id) {
+    return {
+      ok: false,
+      statusCode: 500,
+      error: {
+        code: 'portfolio_create_failed',
+        message: 'Failed to provision the intelligence portfolio for this campaign.',
+      },
+    };
+  }
+
+  const resolvedMeta = await resolveLaunchMetaForBusiness({
+    auth: args.auth,
+    business: args.business,
+    overrides: args.metaOverrides,
+  });
+  if (!resolvedMeta.ok) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: resolvedMeta.error,
+    };
+  }
+
+  const tierPatch: Record<string, any> = {};
+  const createdRows: any[] = [];
+
+  for (const upload of args.uploads) {
+    const tier = findStrategyTier(strategy, upload.tier_name);
+    if (!tier) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'unknown_tier',
+          message: `Tier '${upload.tier_name}' is not part of the approved strategy.`,
+        },
+      };
+    }
+
+    if (upload.angle_name && !findStrategyAngle(strategy, upload.angle_name)) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'unknown_angle',
+          message: `Angle '${upload.angle_name}' is not part of the approved strategy.`,
+        },
+      };
+    }
+
+    const executionResult = await ensureTierExecutionForCreative({
+      auth: args.auth,
+      apiCampaign: args.apiCampaign,
+      business: args.business,
+      portfolioId: portfolio.id,
+      tier,
+      accessToken: resolvedMeta.metaAccessToken,
+      adAccountId: resolvedMeta.metaAdAccountId,
+      metaPageId: resolvedMeta.metaPageId,
+      metaPixelId: resolvedMeta.metaPixelId,
+      creative: {
+        ...upload,
+        link_url: upload.link_url || args.apiCampaign.url || args.business.website_url || args.business.website || null,
+      },
+    });
+
+    if (!executionResult.ok) {
+      return {
+        ok: false,
+        statusCode: executionResult.error?.code?.startsWith('meta_') ? 502 : 400,
+        error: executionResult.error,
+      };
+    }
+
+    const { data: creativeRow } = await supabaseAdmin
+      .from('api_campaign_creatives')
+      .insert({
+        api_campaign_id: args.apiCampaign.id,
+        business_id: args.business.id,
+        user_id: args.auth.keyRecord.user_id,
+        tier_name: tier.tier_name,
+        angle_name: upload.angle_name,
+        variant_index: upload.variant_index || 0,
+        asset_url: upload.asset_url,
+        asset_type: upload.asset_type,
+        headline: upload.headline,
+        body: upload.body,
+        cta: upload.cta,
+        link_url: upload.link_url || args.apiCampaign.url || args.business.website_url || args.business.website || null,
+        meta_campaign_id: executionResult.metaCampaignId,
+        meta_adset_id: executionResult.metaAdSetId,
+        meta_ad_id: executionResult.metaAdId,
+        meta_adcreative_id: executionResult.metaAdCreativeId,
+        meta_image_hash: executionResult.metaImageHash || null,
+        meta_video_id: executionResult.metaVideoId || null,
+        status: 'paused',
+        metadata: {
+          upload_source: args.source,
+          meta_audience_id: executionResult.metaAudienceId || null,
+          linked_tier_campaign_id: executionResult.linkedTierCampaign?.id || null,
+          created_execution: !!executionResult.created,
+        },
+      })
+      .select('*')
+      .single();
+
+    createdRows.push(creativeRow);
+
+    const tierKey = buildTierKey(tier.tier_name);
+    tierPatch[tierKey] = {
+      tier_name: tier.tier_name,
+      tier_campaign_id: executionResult.linkedTierCampaign?.id || null,
+      campaign_id: executionResult.linkedTierCampaign?.campaign_id || null,
+      meta_campaign_id: executionResult.metaCampaignId,
+      meta_adset_id: executionResult.metaAdSetId,
+      meta_audience_id: executionResult.metaAudienceId || null,
+      latest_creative_id: creativeRow?.id || null,
+      last_asset_type: upload.asset_type,
+      status: 'paused',
+    };
+  }
+
+  const workflowState = mergeWorkflowState(args.apiCampaign.workflow_state, {
+    portfolio_id: portfolio.id,
+    last_creative_upload_at: new Date().toISOString(),
+    tier_campaigns: tierPatch,
+  });
+
+  await supabaseAdmin
+    .from('api_campaigns')
+    .update({
+      workflow_state: workflowState,
+      creative_status: 'ready_to_activate',
+      creative_handoff: args.apiCampaign.creative_handoff || null,
+    })
+    .eq('id', args.apiCampaign.id)
+    .eq('api_key_id', args.auth.keyRecord.id)
+    .then(() => {});
+
+  sendSlackCampaignAssetsReady({
+    campaignName: args.apiCampaign.business_name || args.business.name || 'Campaign',
+    creativeCount: createdRows.length,
+  }).catch(() => {});
+
+  return {
+    ok: true,
+    portfolioId: portfolio.id,
+    creativeRows: createdRows,
+    workflowState,
+  };
+}
+
+async function handleCampaignDetail(req: VercelRequest, res: VercelResponse, campaignId: string) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const campaign = await getOwnedApiCampaign(campaignId, auth.keyRecord.id);
+  if (!campaign) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Campaign not found' } });
+  }
+
+  const workflowState = getJsonObject(campaign.workflow_state) || {};
+  const portfolioId = normalizeString(workflowState.portfolio_id);
+  const { data: creatives } = await supabaseAdmin
+    .from('api_campaign_creatives')
+    .select('*')
+    .eq('api_campaign_id', campaign.id)
+    .order('created_at', { ascending: true });
+
+  const { data: tierCampaigns } = portfolioId
+    ? await supabaseAdmin
+        .from('audience_tier_campaigns')
+        .select('*')
+        .eq('portfolio_id', portfolioId)
+        .order('created_at', { ascending: true })
+    : { data: [] as any[] };
+
+  return res.status(200).json({
+    campaign,
+    creatives: creatives || [],
+    tier_campaigns: tierCampaigns || [],
+    fetched_at: new Date().toISOString(),
+  });
+}
+
+async function handleCampaignApproveStrategy(req: VercelRequest, res: VercelResponse, campaignId: string) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const campaign = await getOwnedApiCampaign(campaignId, auth.keyRecord.id);
+  if (!campaign) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Campaign not found' } });
+  }
+  if (normalizeString(campaign.campaign_version) !== 'intelligence') {
+    return res.status(409).json({ error: { code: 'legacy_campaign', message: 'Strategy approval is only supported for intelligence campaigns.' } });
+  }
+
+  const strategy = getIntelligenceStrategySource(campaign);
+  if (!strategy) {
+    return res.status(400).json({ error: { code: 'strategy_missing', message: 'This campaign does not have a strategy to approve.' } });
+  }
+
+  const approvedPayload = getJsonObject(req.body?.approved_strategy);
+  const requestedTierNames = sanitizeStringArray(req.body?.tier_names)
+    || (Array.isArray(approvedPayload?.audience_tiers) ? approvedPayload.audience_tiers.map((tier: any) => normalizeString(tier?.tier_name)).filter(Boolean) as string[] : undefined)
+    || strategy.audience_tiers.map((tier) => tier.tier_name);
+  const requestedAngleNames = sanitizeStringArray(req.body?.angle_names)
+    || (Array.isArray(approvedPayload?.creative_angles) ? approvedPayload.creative_angles.map((angle: any) => normalizeString(angle?.angle_name)).filter(Boolean) as string[] : undefined)
+    || strategy.creative_angles.map((angle) => angle.angle_name);
+
+  const approvedTiers = requestedTierNames.map((name) => findStrategyTier(strategy, name)).filter(Boolean) as IntelligenceAudienceTier[];
+  const approvedAngles = requestedAngleNames.map((name) => findStrategyAngle(strategy, name)).filter(Boolean) as IntelligenceCreativeAngle[];
+
+  if (approvedTiers.length !== requestedTierNames.length) {
+    return res.status(400).json({ error: { code: 'unknown_tier', message: 'One or more requested tiers are not present in the generated strategy.' } });
+  }
+  if (approvedAngles.length !== requestedAngleNames.length) {
+    return res.status(400).json({ error: { code: 'unknown_angle', message: 'One or more requested angles are not present in the generated strategy.' } });
+  }
+
+  const approvedStrategy: IntelligenceStrategyPayload = {
+    ...strategy,
+    audience_tiers: approvedTiers,
+    creative_angles: approvedAngles,
+    total_daily_budget_cents: approvedTiers.reduce((sum, tier) => sum + tier.daily_budget_cents, 0),
+    total_monthly_budget: approvedTiers.reduce((sum, tier) => sum + tier.daily_budget_cents, 0) * 30,
+  };
+
+  const business = campaign.business_id
+    ? await supabaseAdmin.from('businesses').select('*').eq('id', campaign.business_id).maybeSingle().then((result) => result.data || null)
+    : null;
+  if (!business) {
+    return res.status(404).json({ error: { code: 'business_not_found', message: 'Linked business not found.' } });
+  }
+
+  const portfolio = await ensurePortfolioForIntelligenceCampaign({
+    campaign,
+    business,
+    userId: auth.keyRecord.user_id,
+    strategy: approvedStrategy,
+  });
+
+  const approvedAt = new Date().toISOString();
+  const workflowState = mergeWorkflowState(campaign.workflow_state, {
+    strategy_status: 'approved',
+    portfolio_id: portfolio?.id || null,
+    strategy_approved_at: approvedAt,
+  });
+
+  await supabaseAdmin
+    .from('api_campaigns')
+    .update({
+      approved_strategy: approvedStrategy,
+      strategy_approved_at: approvedAt,
+      creative_status: 'awaiting_creative',
+      workflow_state: workflowState,
+    })
+    .eq('id', campaign.id)
+    .eq('api_key_id', auth.keyRecord.id)
+    .then(() => {});
+
+  return res.status(200).json({
+    id: campaign.id,
+    campaign_version: 'intelligence',
+    status: campaign.status,
+    approved_strategy: approvedStrategy,
+    creative_status: 'awaiting_creative',
+    portfolio_id: portfolio?.id || null,
+    approved_at: approvedAt,
+  });
+}
+
+async function handleCampaignRequestCreative(req: VercelRequest, res: VercelResponse, campaignId: string) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const campaign = await getOwnedApiCampaign(campaignId, auth.keyRecord.id);
+  if (!campaign) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Campaign not found' } });
+  }
+  if (normalizeString(campaign.campaign_version) !== 'intelligence') {
+    return res.status(409).json({ error: { code: 'legacy_campaign', message: 'Creative handoff is only supported for intelligence campaigns.' } });
+  }
+
+  const strategy = getIntelligenceStrategySource(campaign);
+  if (!strategy || !getJsonObject(campaign.approved_strategy)) {
+    return res.status(409).json({ error: { code: 'strategy_not_approved', message: 'Approve the strategy before requesting creative production.' } });
+  }
+
+  const business = campaign.business_id
+    ? await supabaseAdmin.from('businesses').select('*').eq('id', campaign.business_id).maybeSingle().then((result) => result.data || null)
+    : null;
+  if (!business) {
+    return res.status(404).json({ error: { code: 'business_not_found', message: 'Linked business not found.' } });
+  }
+
+  const existingHandoff = getJsonObject(campaign.creative_handoff) || {};
+  const requestHandoff = sanitizeCreativeHandoff(req.body?.creative_handoff || req.body) || {};
+  const creativeHandoff = { ...existingHandoff, ...requestHandoff };
+  const webhookUrl = normalizeString(creativeHandoff.webhook_url);
+  const callbackUrl = normalizeString(creativeHandoff.callback_url) || `${getApiBaseUrl()}/api/v1/campaigns/${campaign.id}/creative-callback`;
+
+  const payload = {
+    campaign_id: campaign.id,
+    callback_url: callbackUrl,
+    market: strategy.audience_tiers[0]?.geo?.[0] || business.markets?.[0] || business.country || 'US',
+    product_focus: normalizeString(creativeHandoff.product_focus) || business.trade || campaign.business_type || business.name,
+    font_preset: normalizeString(creativeHandoff.font_preset) || null,
+    angles: strategy.creative_angles.map((angle) => ({
+      angle_name: angle.angle_name,
+      hook: angle.hook,
+      message: angle.message,
+      cta: angle.cta,
+      variants: angle.variants_recommended,
+    })),
+  };
+
+  let dispatched = false;
+  let upstreamResponse: any = null;
+  if (webhookUrl) {
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      upstreamResponse = await response.text().catch(() => null);
+      if (!response.ok) {
+        return res.status(502).json({
+          error: {
+            code: 'creative_webhook_failed',
+            message: `Creative webhook returned ${response.status}.`,
+            upstream_response: upstreamResponse,
+          },
+        });
+      }
+      dispatched = true;
+    } catch (error: any) {
+      return res.status(502).json({
+        error: {
+          code: 'creative_webhook_failed',
+          message: error?.message || 'Creative webhook request failed.',
+        },
+      });
+    }
+  }
+
+  const workflowState = mergeWorkflowState(campaign.workflow_state, {
+    latest_creative_request: {
+      requested_at: new Date().toISOString(),
+      dispatched,
+      callback_url: callbackUrl,
+      webhook_url: webhookUrl,
+    },
+  });
+
+  await supabaseAdmin
+    .from('api_campaigns')
+    .update({
+      creative_handoff: creativeHandoff,
+      creative_status: 'requested',
+      workflow_state: workflowState,
+    })
+    .eq('id', campaign.id)
+    .eq('api_key_id', auth.keyRecord.id)
+    .then(() => {});
+
+  return res.status(200).json({
+    campaign_id: campaign.id,
+    dispatched,
+    creative_request: payload,
+    upstream_response: upstreamResponse,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+async function handleCampaignUploadCreative(req: VercelRequest, res: VercelResponse, campaignId: string, source: 'upload' | 'callback') {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const campaign = await getOwnedApiCampaign(campaignId, auth.keyRecord.id);
+  if (!campaign) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Campaign not found' } });
+  }
+  if (normalizeString(campaign.campaign_version) !== 'intelligence') {
+    return res.status(409).json({ error: { code: 'legacy_campaign', message: 'Creative upload is only supported for intelligence campaigns.' } });
+  }
+
+  const business = campaign.business_id
+    ? await supabaseAdmin.from('businesses').select('*').eq('id', campaign.business_id).maybeSingle().then((result) => result.data || null)
+    : null;
+  if (!business) {
+    return res.status(404).json({ error: { code: 'business_not_found', message: 'Linked business not found.' } });
+  }
+
+  const uploads = normalizeCreativeUploads((req.body || {}) as Record<string, any>);
+  if (uploads.length === 0) {
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: 'Provide at least one creative with `tier_name`, `asset_url`, `asset_type`, `headline`, and `body`.',
+      },
+    });
+  }
+
+  const result = await processCampaignCreativeUpload({
+    auth,
+    apiCampaign: campaign,
+    business,
+    uploads,
+    metaOverrides: {
+      meta_access_token: normalizeString(req.body?.meta_access_token),
+      meta_ad_account_id: normalizeString(req.body?.meta_ad_account_id),
+      meta_page_id: normalizeString(req.body?.meta_page_id),
+    },
+    source,
+  });
+
+  if (!result.ok) {
+    return res.status(result.statusCode).json({ error: result.error });
+  }
+
+  return res.status(200).json({
+    campaign_id: campaign.id,
+    creative_status: 'ready_to_activate',
+    creatives: result.creativeRows,
+    portfolio_id: result.portfolioId,
+    uploaded_at: new Date().toISOString(),
+  });
+}
+
+async function handleCampaignActivate(req: VercelRequest, res: VercelResponse, campaignId: string) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const campaign = await getOwnedApiCampaign(campaignId, auth.keyRecord.id);
+  if (!campaign) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Campaign not found' } });
+  }
+  if (normalizeString(campaign.campaign_version) !== 'intelligence') {
+    return res.status(409).json({ error: { code: 'legacy_campaign', message: 'Use /campaigns/:id/launch for legacy campaigns.' } });
+  }
+
+  const strategy = getIntelligenceStrategySource(campaign);
+  if (!strategy || !getJsonObject(campaign.approved_strategy)) {
+    return res.status(409).json({ error: { code: 'strategy_not_approved', message: 'Approve the strategy before activation.' } });
+  }
+
+  const business = campaign.business_id
+    ? await supabaseAdmin.from('businesses').select('*').eq('id', campaign.business_id).maybeSingle().then((result) => result.data || null)
+    : null;
+  if (!business) {
+    return res.status(404).json({ error: { code: 'business_not_found', message: 'Linked business not found.' } });
+  }
+
+  const workflowState = getJsonObject(campaign.workflow_state) || {};
+  const portfolioId = normalizeString(workflowState.portfolio_id);
+  if (!portfolioId) {
+    return res.status(409).json({ error: { code: 'portfolio_missing', message: 'No intelligence portfolio was provisioned for this campaign yet.' } });
+  }
+
+  const resolvedMeta = await resolveLaunchMetaForBusiness({
+    auth,
+    business,
+    overrides: {
+      meta_access_token: normalizeString(req.body?.meta_access_token),
+      meta_ad_account_id: normalizeString(req.body?.meta_ad_account_id),
+      meta_page_id: normalizeString(req.body?.meta_page_id),
+    },
+  });
+  if (!resolvedMeta.ok) {
+    return res.status(400).json({ error: resolvedMeta.error });
+  }
+
+  const requestedTierNames = sanitizeStringArray(req.body?.tier_names) || strategy.audience_tiers.map((tier) => tier.tier_name);
+  const { data: tierCampaigns } = await supabaseAdmin
+    .from('audience_tier_campaigns')
+    .select('*')
+    .eq('portfolio_id', portfolioId);
+  const { data: creativeRows } = await supabaseAdmin
+    .from('api_campaign_creatives')
+    .select('*')
+    .eq('api_campaign_id', campaign.id)
+    .order('created_at', { ascending: true });
+
+  const tierPatch: Record<string, any> = {};
+  const activated: Array<Record<string, any>> = [];
+  const skipped: Array<Record<string, any>> = [];
+
+  for (const tierName of requestedTierNames) {
+    const tier = findStrategyTier(strategy, tierName);
+    if (!tier) {
+      skipped.push({ tier_name: tierName, reason: 'Tier is not part of the approved strategy.' });
+      continue;
+    }
+
+    const tierKey = buildTierKey(tier.tier_name);
+    const linkedTierCampaign = (tierCampaigns || []).find((row: any) => normalizeString(row.tier) === tierKey);
+    const tierCreatives = (creativeRows || []).filter((row: any) => buildTierKey(row.tier_name || '') === tierKey && normalizeString(row.meta_ad_id));
+
+    if (!linkedTierCampaign || tierCreatives.length === 0) {
+      skipped.push({ tier_name: tier.tier_name, reason: 'Tier has no ready creatives to activate.' });
+      continue;
+    }
+
+    const activation = await activateTierExecution({
+      apiCampaign: campaign,
+      linkedTierCampaign,
+      creativeRows: tierCreatives,
+      accessToken: resolvedMeta.metaAccessToken,
+    });
+
+    if (!activation.ok) {
+      skipped.push({ tier_name: tier.tier_name, reason: activation.error?.message || 'Activation failed.' });
+      continue;
+    }
+
+    activated.push({
+      tier_name: tier.tier_name,
+      meta_campaign_id: activation.metaCampaignId,
+      meta_adset_id: activation.metaAdSetId,
+      meta_ad_ids: activation.metaAdIds,
+      launched_at: activation.launchedAt,
+    });
+    tierPatch[tierKey] = {
+      ...(getJsonObject(getJsonObject(workflowState.tier_campaigns || {})?.[tierKey]) || {}),
+      status: 'active',
+      activated_at: activation.launchedAt,
+    };
+  }
+
+  if (activated.length === 0) {
+    return res.status(409).json({
+      error: {
+        code: 'no_ready_tiers',
+        message: 'No audience tiers were ready to activate.',
+        skipped,
+      },
+    });
+  }
+
+  const nextWorkflowState = mergeWorkflowState(workflowState, {
+    activated_at: new Date().toISOString(),
+    tier_campaigns: tierPatch,
+  });
+
+  await supabaseAdmin
+    .from('api_campaigns')
+    .update({
+      status: 'active',
+      creative_status: 'active',
+      workflow_state: nextWorkflowState,
+      launched_at: new Date().toISOString(),
+    })
+    .eq('id', campaign.id)
+    .eq('api_key_id', auth.keyRecord.id)
+    .then(() => {});
+
+  return res.status(200).json({
+    id: campaign.id,
+    campaign_version: 'intelligence',
+    status: 'active',
+    activated_tiers: activated,
+    skipped_tiers: skipped,
+    activated_at: new Date().toISOString(),
+  });
+}
+
+async function handleAudiencesCreateSeed(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const business = await resolveOwnedBusiness(auth, normalizeString(req.body?.business_id));
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  const sourceStage = normalizeStageKey(req.body?.source_stage);
+  if (!sourceStage) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`source_stage` is required' } });
+  }
+
+  const resolvedMeta = await resolveLaunchMetaForBusiness({ auth, business });
+  if (!resolvedMeta.ok) {
+    return res.status(400).json({ error: resolvedMeta.error });
+  }
+
+  const result = await createSeedAudienceInternal({
+    business,
+    userId: auth.keyRecord.user_id,
+    accessToken: resolvedMeta.metaAccessToken,
+    adAccountId: resolvedMeta.metaAdAccountId,
+    name: normalizeString(req.body?.name) || `${business.name} ${sourceStage} Seed`,
+    sourceStage,
+    lookbackDays: Math.max(1, Math.round(normalizeNumber(req.body?.lookback_days) || 180)),
+    minContacts: Math.max(1, Math.round(normalizeNumber(req.body?.min_contacts) || 100)),
+  });
+
+  if (!result.ok) {
+    return res.status(result.error?.code === 'insufficient_seed_contacts' ? 400 : 502).json({ error: result.error });
+  }
+
+  return res.status(200).json({
+    audience: result.audience,
+    uploaded_users: result.uploaded_users,
+    created_at: new Date().toISOString(),
+  });
+}
+
+async function handleAudiencesCreateLal(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const seedAudienceId = normalizeString(req.body?.seed_audience_id);
+  if (!seedAudienceId) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`seed_audience_id` is required' } });
+  }
+
+  const seedAudience = await getAudienceRowForUser(seedAudienceId, auth.keyRecord.user_id);
+  if (!seedAudience) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Seed audience not found' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('*')
+    .eq('id', seedAudience.business_id)
+    .maybeSingle();
+  if (!business) {
+    return res.status(404).json({ error: { code: 'business_not_found', message: 'Linked business not found' } });
+  }
+
+  const resolvedMeta = await resolveLaunchMetaForBusiness({ auth, business });
+  if (!resolvedMeta.ok) {
+    return res.status(400).json({ error: resolvedMeta.error });
+  }
+
+  const percentage = Math.max(1, Math.min(20, normalizeNumber(req.body?.percentage) || 1));
+  const result = await createLookalikeAudienceInternal({
+    business,
+    userId: auth.keyRecord.user_id,
+    accessToken: resolvedMeta.metaAccessToken,
+    adAccountId: resolvedMeta.metaAdAccountId,
+    seedAudience,
+    name: normalizeString(req.body?.name) || `${business.name} ${percentage}% LAL`,
+    percentage,
+    country: normalizeString(req.body?.country) || business.markets?.[0] || business.country || 'US',
+  });
+
+  if (!result.ok) {
+    return res.status(502).json({ error: result.error });
+  }
+
+  return res.status(200).json({ audience: result.audience, created_at: new Date().toISOString() });
+}
+
+async function handleAudiencesList(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const business = await resolveOwnedBusiness(auth, normalizeString(req.query.business_id as string | undefined));
+  if (!business) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Business not found' } });
+  }
+
+  const { data: audiences } = await supabaseAdmin
+    .from('facebook_audiences')
+    .select('*')
+    .eq('user_id', auth.keyRecord.user_id)
+    .eq('business_id', business.id)
+    .order('created_at', { ascending: false });
+
+  return res.status(200).json({
+    business_id: business.id,
+    audiences: audiences || [],
+    fetched_at: new Date().toISOString(),
+  });
+}
+
+async function handleAudiencesRefresh(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const audienceId = normalizeString(req.body?.audience_id);
+  if (!audienceId) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`audience_id` is required' } });
+  }
+
+  const audience = await getAudienceRowForUser(audienceId, auth.keyRecord.user_id);
+  if (!audience) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Audience not found' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('*')
+    .eq('id', audience.business_id)
+    .maybeSingle();
+  if (!business) {
+    return res.status(404).json({ error: { code: 'business_not_found', message: 'Linked business not found' } });
+  }
+
+  const resolvedMeta = await resolveLaunchMetaForBusiness({ auth, business });
+  if (!resolvedMeta.ok) {
+    return res.status(400).json({ error: resolvedMeta.error });
+  }
+
+  const result = await refreshAudienceInternal({
+    audience,
+    business,
+    accessToken: resolvedMeta.metaAccessToken,
+    adAccountId: resolvedMeta.metaAdAccountId,
+  });
+
+  if (!result.ok) {
+    return res.status(result.error?.code === 'insufficient_seed_contacts' ? 400 : 502).json({ error: result.error });
+  }
+
+  return res.status(200).json({
+    audience: result.audience,
+    refreshed_at: new Date().toISOString(),
+  });
+}
+
+async function handleAudienceStatus(req: VercelRequest, res: VercelResponse, audienceId: string) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const audience = await getAudienceRowForUser(audienceId, auth.keyRecord.user_id);
+  if (!audience) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Audience not found' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('*')
+    .eq('id', audience.business_id)
+    .maybeSingle();
+  if (!business) {
+    return res.status(404).json({ error: { code: 'business_not_found', message: 'Linked business not found' } });
+  }
+
+  const resolvedMeta = await resolveLaunchMetaForBusiness({ auth, business });
+  if (!resolvedMeta.ok) {
+    return res.status(400).json({ error: resolvedMeta.error });
+  }
+
+  const result = await getAudienceStatusInternal(audience, resolvedMeta.metaAccessToken);
+  if (!result.ok) {
+    return res.status(502).json({ error: result.error });
+  }
+
+  return res.status(200).json({
+    audience: result.audience,
+    meta_status: result.meta_status,
+    fetched_at: new Date().toISOString(),
+  });
+}
+
+async function handleAudienceDelete(req: VercelRequest, res: VercelResponse, audienceId: string) {
+  if (req.method !== 'DELETE') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'DELETE required' } });
+
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const audience = await getAudienceRowForUser(audienceId, auth.keyRecord.user_id);
+  if (!audience) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Audience not found' } });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('*')
+    .eq('id', audience.business_id)
+    .maybeSingle();
+  if (!business) {
+    return res.status(404).json({ error: { code: 'business_not_found', message: 'Linked business not found' } });
+  }
+
+  const resolvedMeta = await resolveLaunchMetaForBusiness({ auth, business });
+  if (!resolvedMeta.ok) {
+    return res.status(400).json({ error: resolvedMeta.error });
+  }
+
+  const result = await deleteAudienceInternal(audience, resolvedMeta.metaAccessToken);
+  if (!result.ok) {
+    return res.status(502).json({ error: result.error });
+  }
+
+  return res.status(200).json({ success: true, deleted_at: new Date().toISOString() });
+}
+
 // ── POST /api/v1/campaigns/:id/launch ───────────────────────────────────
 
 async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId: string) {
@@ -2532,6 +5683,17 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     const { data: apiCampaign } = await supabaseAdmin
       .from('api_campaigns').select('*').eq('id', campaignId).eq('api_key_id', auth.keyRecord.id).single();
     if (apiCampaign) campaign = apiCampaign;
+
+    if (normalizeString(apiCampaign?.campaign_version) === 'intelligence') {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 409, responseTimeMs: Date.now() - startTime });
+      return res.status(409).json({
+        error: {
+          code: 'legacy_launch_not_supported',
+          message: 'Intelligence campaigns use /api/v1/campaigns/:id/activate after strategy approval and creative upload.',
+          activate_endpoint: `/api/v1/campaigns/${campaignId}/activate`,
+        },
+      });
+    }
 
     // Read objective from DB record (set during create), default to traffic
     const objective: ZuckerObjective = isValidObjective(campaign?.objective) ? campaign.objective : 'traffic';
@@ -3287,6 +6449,16 @@ async function handleCapiEvents(req: VercelRequest, res: VercelResponse) {
     client_ip_address: getClientIpAddress(req),
     client_user_agent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : '',
   });
+  const crmAttributes = {
+    ...sanitizeCrmAttributes(body.crm_attributes),
+    ...sanitizeCrmAttributes({
+      country: body.country,
+      industry: body.industry,
+      source_campaign: body.source_campaign,
+      deal_value: body.deal_value,
+      lifecycle_stage: body.lifecycle_stage,
+    }),
+  };
 
   const matchQuality = normalizeString(body.lead_id)
     ? (lead ? 'lead_id' : 'lead_id_missing')
@@ -3302,6 +6474,8 @@ async function handleCapiEvents(req: VercelRequest, res: VercelResponse) {
     metaEventName: mappedStage?.meta_event || null,
     eventTime: body.event_time || body.timestamp || new Date(),
     userData: hashedUserData,
+    hashedUserData,
+    crmAttributes,
     customData: {
       value: normalizeNumber(body.value) ?? mappedStage?.value ?? 0,
       lead_id: lead?.id || normalizeString(body.lead_id),
@@ -3383,6 +6557,8 @@ async function handleCapiConfigTest(req: VercelRequest, res: VercelResponse) {
     metaEventName: mappedStage.meta_event,
     eventTime: new Date(),
     userData: hashedUserData,
+    hashedUserData,
+    crmAttributes: sanitizeCrmAttributes(req.body?.crm_attributes),
     customData: {
       value: normalizeNumber(req.body?.value) ?? mappedStage.value ?? 0,
       test_event: true,
@@ -7792,6 +10968,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'capi/config/test') return handleCapiConfigTest(req, res);
   if (route === 'capi/events') return handleCapiEvents(req, res);
   if (route === 'capi/status') return handleCapiStatus(req, res);
+  if (route === 'audiences/create-seed') return handleAudiencesCreateSeed(req, res);
+  if (route === 'audiences/create-lal') return handleAudiencesCreateLal(req, res);
+  if (route === 'audiences/list') return handleAudiencesList(req, res);
+  if (route === 'audiences/refresh') return handleAudiencesRefresh(req, res);
   if (route === 'portfolios/create') return handlePortfolioCreate(req, res);
   if (route === 'meta/status') return handleMetaStatus(req, res);
   if (route === 'meta/credentials') return handleMetaCredentials(req, res);
@@ -7804,14 +10984,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'notifications/telegram') return handleSetTelegram(req, res);
 
   // ── Dynamic campaign/:id routes ────────────────────────────────────
+  if (segments.length === 2 && segments[0] === 'campaigns') {
+    const id = segments[1];
+    return handleCampaignDetail(req, res, id);
+  }
   if (segments.length === 3 && segments[0] === 'campaigns') {
     const id = segments[1];
     const action = segments[2];
 
+    if (action === 'approve-strategy') return handleCampaignApproveStrategy(req, res, id);
+    if (action === 'request-creative') return handleCampaignRequestCreative(req, res, id);
+    if (action === 'creative-callback') return handleCampaignUploadCreative(req, res, id, 'callback');
+    if (action === 'upload-creative') return handleCampaignUploadCreative(req, res, id, 'upload');
+    if (action === 'activate') return handleCampaignActivate(req, res, id);
     if (action === 'launch') return handleLaunch(req, res, id);
     if (action === 'pause') return handlePause(req, res, id);
     if (action === 'performance') return handlePerformance(req, res, id);
     if (action === 'conversions') return handleConversions(req, res, id);
+  }
+
+  if (segments.length === 2 && segments[0] === 'audiences') {
+    const id = segments[1];
+    return handleAudienceDelete(req, res, id);
+  }
+  if (segments.length === 3 && segments[0] === 'audiences') {
+    const id = segments[1];
+    const action = segments[2];
+    if (action === 'status') return handleAudienceStatus(req, res, id);
   }
 
   // ── Dynamic creative/:id routes ─────────────────────────────────────
@@ -7852,6 +11051,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       available_endpoints: [
         'POST /api/v1/campaigns/preview',
         'POST /api/v1/campaigns/create',
+        'GET  /api/v1/campaigns/:id',
+        'POST /api/v1/campaigns/:id/approve-strategy',
+        'POST /api/v1/campaigns/:id/request-creative',
+        'POST /api/v1/campaigns/:id/creative-callback',
+        'POST /api/v1/campaigns/:id/upload-creative',
+        'POST /api/v1/campaigns/:id/activate',
         'POST /api/v1/campaigns/:id/launch',
         'POST /api/v1/campaigns/:id/pause',
         'GET  /api/v1/campaigns/:id/performance',
@@ -7865,6 +11070,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/capi/config/test',
         'POST /api/v1/capi/events',
         'GET  /api/v1/capi/status',
+        'POST /api/v1/audiences/create-seed',
+        'POST /api/v1/audiences/create-lal',
+        'GET  /api/v1/audiences/list',
+        'POST /api/v1/audiences/refresh',
+        'DELETE /api/v1/audiences/:id',
+        'GET  /api/v1/audiences/:id/status',
         'POST /api/v1/creatives/generate',
         'GET  /api/v1/ad-account/insights',
         'POST /api/v1/creatives/:id/variants',

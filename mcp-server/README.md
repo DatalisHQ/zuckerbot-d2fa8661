@@ -124,11 +124,23 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 | Tool | Description | Required Inputs |
 |------|-------------|-----------------|
 | `zuckerbot_preview_campaign` | Generate ad preview from a URL (no Meta account needed) | `url` |
-| `zuckerbot_create_campaign` | Create full campaign with strategy, targeting, and creatives | `url` |
+| `zuckerbot_create_campaign` | Create a legacy or intelligence campaign draft with strategy, targeting, and creatives | `url` |
+| `zuckerbot_get_campaign` | Get campaign detail, workflow state, stored creatives, and linked tier executions | `campaign_id` |
+| `zuckerbot_approve_campaign_strategy` | Approve the generated tiers and creative angles for an intelligence campaign | `campaign_id` |
+| `zuckerbot_request_creative` | Create or dispatch a creative handoff package for an intelligence campaign | `campaign_id` |
+| `zuckerbot_upload_creative` | Upload finished creative assets and provision paused Meta executions | `campaign_id`, `creatives` |
+| `zuckerbot_activate_campaign` | Activate the ready tiers for an intelligence campaign | `campaign_id` |
+| `zuckerbot_suggest_angles` | Read a campaign draft and return the proposed creative angles and audience tiers | `campaign_id` |
 | `zuckerbot_launch_campaign` | Launch one variant from a draft campaign on Meta (uses stored credentials when available) | `campaign_id` |
 | `zuckerbot_launch_all_variants` | Launch all variants for A/B testing in one call | `campaign_id` |
 | `zuckerbot_pause_campaign` | Pause or resume a live campaign | `campaign_id` |
 | `zuckerbot_get_performance` | Get real-time campaign metrics | `campaign_id` |
+| `zuckerbot_create_seed_audience` | Build a Meta custom audience from hashed CAPI users | `source_stage` |
+| `zuckerbot_create_lookalike_audience` | Create a Meta lookalike from a stored seed audience | `seed_audience_id` |
+| `zuckerbot_list_audiences` | List stored audience registry rows for a business | none |
+| `zuckerbot_refresh_audience` | Refresh a stored audience or sync its latest state | `audience_id` |
+| `zuckerbot_get_audience_status` | Fetch the latest Meta audience status and update the registry row | `audience_id` |
+| `zuckerbot_delete_audience` | Delete a stored audience from Meta and ZuckerBot | `audience_id` |
 | `zuckerbot_sync_conversion` | Send lead conversion feedback to Meta's algorithm | `campaign_id`, `lead_id`, `quality`, `meta_access_token` |
 | `zuckerbot_research_reviews` | Get review intelligence for a business | `business_name` |
 | `zuckerbot_research_competitors` | Analyze competitor ads in a category | `industry`, `location` |
@@ -150,6 +162,8 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 | `zuckerbot_portfolio_performance` | Get tier-by-tier audience portfolio performance | `portfolio_id` |
 | `zuckerbot_rebalance_portfolio` | Dry-run or apply a portfolio rebalance | `portfolio_id` |
 
+For intelligence campaigns, the recommended flow is `create -> approve -> request/upload creative -> activate`.
+
 ## Example Conversation
 
 > **User:** Can you set up Facebook ads for my yoga studio? Website is serenity-yoga.com
@@ -168,20 +182,33 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 >
 > Want me to create a full campaign with targeting and budget recommendations?
 >
-> **User:** Yes! Budget is $15/day.
+> **User:** Yes. Budget is $15/day. Use the smarter flow if you can.
 >
-> *(calls `zuckerbot_create_campaign` → reviews strategy → calls `zuckerbot_launch_campaign` with user's Meta credentials)*
+> *(calls `zuckerbot_create_campaign` with `mode: "auto"` and gets an intelligence draft)*
 >
-> **Agent:** Your campaign is live! I'll check performance in 3 days.
+> **Agent:** The account has enough business context, so I created an intelligence draft. Best plan is:
+> 1. Approve the broad local tier and the customer lookalike tier
+> 2. Send two angles to creative production
+> 3. Activate only the tiers that have finished assets
+>
+> *(calls `zuckerbot_approve_campaign_strategy`, then `zuckerbot_request_creative`)*
+>
+> **User:** Upload these finished assets and launch the ready tier.
+>
+> *(calls `zuckerbot_upload_creative`, then `zuckerbot_activate_campaign`)*
+>
+> **Agent:** The approved tier is live. I can monitor performance and sync lead quality back into Meta as conversions arrive.
 
 ## Typical Agent Flow
 
 1. **Research** → `research_reviews` + `research_competitors` (parallel)
 2. **Preview** → `preview_campaign` (show the user what ads look like)
-3. **Create** → `create_campaign` (full strategy + creatives)
-4. **Launch** → `launch_campaign` (go live on Meta)
-5. **Monitor** → `get_performance` (check metrics periodically)
-6. **Optimize** → `sync_conversion` (feed back lead quality)
+3. **Create** → `create_campaign` (returns intelligence draft when a business can be resolved)
+4. **Approve** → `approve_campaign_strategy`
+5. **Creative** → `request_creative` or `upload_creative`
+6. **Activate** → `activate_campaign`
+7. **Monitor** → `get_performance`
+8. **Optimize** → `sync_conversion` and audience tools as downstream signal volume grows
 
 ## Development
 

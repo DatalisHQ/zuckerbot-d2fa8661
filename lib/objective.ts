@@ -93,6 +93,7 @@ export function buildCreativeLinkData(
     body: string;
     ctaType: string;
     imageUrl: string | null;
+    imageHash?: string | null;
     leadFormId?: string;
     campaignUrl?: string;
   },
@@ -100,7 +101,8 @@ export function buildCreativeLinkData(
   const linkData: Record<string, any> = {
     message: opts.body,
     name: opts.headline,
-    ...(opts.imageUrl ? { picture: opts.imageUrl } : {}),
+    ...(opts.imageHash ? { image_hash: opts.imageHash } : {}),
+    ...(!opts.imageHash && opts.imageUrl ? { picture: opts.imageUrl } : {}),
   };
 
   if (objective === 'leads' && opts.leadFormId) {

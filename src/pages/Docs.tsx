@@ -11,10 +11,21 @@ const sections = [
   { id: "endpoints", label: "Endpoints" },
   { id: "ep-preview", label: "POST /campaigns/preview", indent: true },
   { id: "ep-create", label: "POST /campaigns/create", indent: true },
+  { id: "ep-detail", label: "GET /campaigns/:id", indent: true },
+  { id: "ep-approve-strategy", label: "POST /campaigns/:id/approve-strategy", indent: true },
+  { id: "ep-request-creative", label: "POST /campaigns/:id/request-creative", indent: true },
+  { id: "ep-upload-creative", label: "POST /campaigns/:id/upload-creative", indent: true },
+  { id: "ep-activate", label: "POST /campaigns/:id/activate", indent: true },
   { id: "ep-launch", label: "POST /campaigns/:id/launch", indent: true },
   { id: "ep-pause", label: "POST /campaigns/:id/pause", indent: true },
   { id: "ep-performance", label: "GET /campaigns/:id/performance", indent: true },
   { id: "ep-conversions", label: "POST /campaigns/:id/conversions", indent: true },
+  { id: "ep-audiences-create-seed", label: "POST /audiences/create-seed", indent: true },
+  { id: "ep-audiences-create-lal", label: "POST /audiences/create-lal", indent: true },
+  { id: "ep-audiences-list", label: "GET /audiences/list", indent: true },
+  { id: "ep-audiences-refresh", label: "POST /audiences/refresh", indent: true },
+  { id: "ep-audience-status", label: "GET /audiences/:id/status", indent: true },
+  { id: "ep-audience-delete", label: "DELETE /audiences/:id", indent: true },
   { id: "ep-reviews", label: "POST /research/reviews", indent: true },
   { id: "ep-competitors", label: "POST /research/competitors", indent: true },
   { id: "ep-market", label: "POST /research/market", indent: true },
@@ -420,12 +431,14 @@ const Docs = () => {
             id="ep-create"
             method="POST"
             path="/v1/campaigns/create"
-            description="Create a full campaign strategy with targeting, budget recommendations, and creatives. Returns a draft campaign ready for review and launch. Does not create anything on Meta."
-            notes="Only the url field is required. The objective parameter supports 'leads', 'traffic' (default), 'conversions', and 'awareness'. Each objective configures the correct Meta optimization_goal, destination_type, and promoted_object automatically."
+            description="Create a campaign draft. In intelligence mode, ZuckerBot resolves the linked business, assembles account context, and returns audience tiers, creative angles, warnings, and next steps alongside the legacy compatibility fields."
+            notes="Only the url field is required. mode defaults to auto. auto prefers intelligence when a business can be resolved from the API key or business_id; legacy forces the generic flow; intelligence requires a resolvable business."
             requestBody={`{
   "url": "https://joes-pizza-austin.com",
+  "business_id": "biz_123",
   "business_name": "Joe's Pizza",
   "business_type": "restaurant",
+  "mode": "intelligence",
   "location": {
     "city": "Austin",
     "state": "TX",
@@ -434,7 +447,17 @@ const Docs = () => {
     "lng": -97.7431
   },
   "budget_daily_cents": 2000,
-  "objective": "traffic"
+  "objective": "traffic",
+  "goals": {
+    "target_monthly_leads": 120,
+    "target_cpl": 22,
+    "markets_to_target": ["US"]
+  },
+  "creative_handoff": {
+    "webhook_url": "https://studio.example.com/zuckerbot/intake",
+    "product_focus": "Family dinner bundles",
+    "font_preset": "bold_sans"
+  }
 }
 
 // Supported objectives:
@@ -444,39 +467,106 @@ const Docs = () => {
 // "awareness"   → Reach (OUTCOME_AWARENESS)`}
             responseBody={`{
   "id": "camp_xyz789",
+  "campaign_version": "intelligence",
   "status": "draft",
+  "creative_status": "awaiting_strategy_approval",
   "business_name": "Joe's Pizza",
+  "business_type": "restaurant",
   "strategy": {
     "objective": "traffic",
-    "summary": "Traffic campaign targeting pizza lovers in Austin, TX within 15km radius.",
+    "summary": "Use a broad local prospecting tier to drive scale, support with customer lookalikes, then retarget warm users.",
     "strengths": ["Strong review profile", "Established local brand"],
-    "opportunities": ["Competitors lack social proof in ads"],
+    "opportunities": ["Frequency risk if creative is not refreshed every 10-14 days"],
     "recommended_daily_budget_cents": 2000,
-    "projected_cpl_cents": 800,
-    "projected_monthly_leads": 75
+    "projected_cpl_cents": 2200,
+    "projected_monthly_leads": 120
   },
   "targeting": {
-    "age_min": 21,
+    "age_min": 25,
     "age_max": 55,
-    "radius_km": 15,
-    "interests": ["restaurants", "food and drink", "dining out", "pizza"],
-    "publisher_platforms": ["facebook", "instagram"]
+    "radius_km": 25,
+    "interests": [],
+    "geo_locations": {
+      "countries": ["US"]
+    },
+    "publisher_platforms": ["facebook", "instagram"],
+    "facebook_positions": ["feed"],
+    "instagram_positions": ["stream"]
   },
-  "variants": [
+  "audience_tiers": [
     {
-      "headline": "4.8 Stars, 127 Reviews",
-      "copy": "Austin's favorite pizza since 2019.",
-      "cta": "Learn More",
-      "angle": "social_proof",
-      "image_url": "https://storage.zuckerbot.ai/..."
+      "tier_name": "US Broad ADV+",
+      "tier_type": "prospecting_broad",
+      "geo": ["US"],
+      "targeting_type": "broad",
+      "targeting_details": "Broad local prospecting with Meta signal expansion.",
+      "age_min": 25,
+      "age_max": 55,
+      "daily_budget_cents": 1100,
+      "budget_pct": 55,
+      "expected_cpl": 24,
+      "rationale": "Primary scale tier."
     },
     {
-      "headline": "Tonight's Dinner, Sorted",
-      "copy": "Hot, fresh, authentic NY-style pizza delivered to your door.",
-      "cta": "Order Now",
-      "angle": "urgency",
-      "image_url": "https://storage.zuckerbot.ai/..."
+      "tier_name": "US Customer LAL",
+      "tier_type": "prospecting_lal",
+      "geo": ["US"],
+      "targeting_type": "lal",
+      "targeting_details": "1% customer lookalike seeded from downstream purchase events.",
+      "age_min": 25,
+      "age_max": 55,
+      "daily_budget_cents": 600,
+      "budget_pct": 30,
+      "expected_cpl": 20,
+      "rationale": "Uses the strongest downstream signal."
     }
+  ],
+  "creative_angles": [
+    {
+      "angle_name": "Proof Over Promise",
+      "hook": "Austin families already trust Joe's Pizza for dinner.",
+      "message": "Lead with reviews, consistency, and delivery speed.",
+      "cta": "Order Now",
+      "format": "static_image",
+      "rationale": "Competitors underuse proof.",
+      "variants_recommended": 3
+    }
+  ],
+  "variants": [
+    {
+      "headline": "Proof Over Promise",
+      "copy": "Austin families already trust Joe's Pizza for dinner. Lead with reviews, consistency, and delivery speed.",
+      "cta": "Order Now",
+      "angle": "proof_over_promise",
+      "image_prompt": null
+    }
+  ],
+  "total_daily_budget_cents": 2000,
+  "total_monthly_budget": 60000,
+  "projected_monthly_leads": 120,
+  "projected_cpl": 22,
+  "warnings": ["Retargeting volume may stay light until site traffic grows."],
+  "context_summary": {
+    "has_historical_data": true,
+    "has_crm_data": true,
+    "has_market_data": true,
+    "has_portfolio": false,
+    "months_of_data": 12
+  },
+  "goals": {
+    "target_monthly_leads": 120,
+    "target_cpl": 22,
+    "markets_to_target": ["US"]
+  },
+  "creative_handoff": {
+    "webhook_url": "https://studio.example.com/zuckerbot/intake",
+    "product_focus": "Family dinner bundles",
+    "font_preset": "bold_sans"
+  },
+  "next_steps": [
+    "Approve the strategy and audience tiers.",
+    "Request or upload finished creative assets.",
+    "Activate the ready audience tiers once assets are attached."
   ],
   "created_at": "2026-02-23T00:00:00Z"
 }`}
@@ -485,10 +575,233 @@ const Docs = () => {
   -H "Content-Type: application/json" \\
   -d '{
     "url": "https://joes-pizza-austin.com",
+    "business_id": "biz_123",
+    "mode": "intelligence",
     "objective": "traffic",
     "location": {"city": "Austin", "state": "TX", "country": "US"},
-    "budget_daily_cents": 2000
+    "budget_daily_cents": 2000,
+    "goals": {"target_monthly_leads": 120, "target_cpl": 22}
   }'`}
+          />
+
+          {/* GET /v1/campaigns/:id */}
+          <EndpointSection
+            id="ep-detail"
+            method="GET"
+            path="/v1/campaigns/:id"
+            description="Fetch a campaign draft or live campaign, including intelligence workflow state, stored creative uploads, and linked tier executions."
+            responseBody={`{
+  "campaign": {
+    "id": "camp_xyz789",
+    "campaign_version": "intelligence",
+    "status": "draft",
+    "creative_status": "ready_to_activate",
+    "approved_strategy": {
+      "strategy_summary": "Scale broad first, then support with seeded lookalikes and retargeting."
+    },
+    "workflow_state": {
+      "portfolio_id": "portfolio_123",
+      "tier_campaigns": {
+        "us_broad_adv": {
+          "tier_name": "US Broad ADV+",
+          "status": "paused",
+          "meta_campaign_id": "120211234567890",
+          "meta_adset_id": "120211234567891"
+        }
+      }
+    }
+  },
+  "creatives": [
+    {
+      "id": "apc_123",
+      "tier_name": "US Broad ADV+",
+      "angle_name": "Proof Over Promise",
+      "asset_type": "image",
+      "asset_url": "https://cdn.example.com/proof-1.png",
+      "status": "paused",
+      "meta_ad_id": "120211234567892"
+    }
+  ],
+  "tier_campaigns": [
+    {
+      "id": "atc_123",
+      "tier": "us_broad_adv",
+      "status": "paused",
+      "meta_campaign_id": "120211234567890",
+      "meta_adset_id": "120211234567891"
+    }
+  ],
+  "fetched_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl https://zuckerbot.ai/api/v1/campaigns/camp_xyz789 \\
+  -H "Authorization: Bearer zb_live_abc123"`}
+          />
+
+          {/* POST /v1/campaigns/:id/approve-strategy */}
+          <EndpointSection
+            id="ep-approve-strategy"
+            method="POST"
+            path="/v1/campaigns/:id/approve-strategy"
+            description="Approve the generated intelligence strategy and freeze the specific tiers and creative angles that should move into production."
+            requestBody={`{
+  "tier_names": ["US Broad ADV+", "US Customer LAL"],
+  "angle_names": ["Proof Over Promise", "Pain Interruption"]
+}`}
+            responseBody={`{
+  "id": "camp_xyz789",
+  "campaign_version": "intelligence",
+  "status": "draft",
+  "creative_status": "awaiting_creative",
+  "portfolio_id": "portfolio_123",
+  "approved_strategy": {
+    "strategy_summary": "Scale broad first, then support with customer lookalikes.",
+    "audience_tiers": [
+      { "tier_name": "US Broad ADV+" },
+      { "tier_name": "US Customer LAL" }
+    ],
+    "creative_angles": [
+      { "angle_name": "Proof Over Promise" },
+      { "angle_name": "Pain Interruption" }
+    ]
+  },
+  "approved_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/approve-strategy \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"tier_names":["US Broad ADV+"],"angle_names":["Proof Over Promise"]}'`}
+          />
+
+          {/* POST /v1/campaigns/:id/request-creative */}
+          <EndpointSection
+            id="ep-request-creative"
+            method="POST"
+            path="/v1/campaigns/:id/request-creative"
+            description="Create a creative-production handoff package for an approved intelligence campaign. If a webhook_url is present, ZuckerBot POSTs the package to that endpoint."
+            notes="creative-callback accepts the same creative payload as upload-creative. Use it when an external studio needs to push finished assets back into the campaign."
+            requestBody={`{
+  "creative_handoff": {
+    "webhook_url": "https://studio.example.com/zuckerbot/intake",
+    "callback_url": "https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/creative-callback",
+    "product_focus": "Family dinner bundles",
+    "font_preset": "bold_sans"
+  }
+}`}
+            responseBody={`{
+  "campaign_id": "camp_xyz789",
+  "dispatched": true,
+  "creative_request": {
+    "campaign_id": "camp_xyz789",
+    "callback_url": "https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/creative-callback",
+    "market": "US",
+    "product_focus": "Family dinner bundles",
+    "font_preset": "bold_sans",
+    "angles": [
+      {
+        "angle_name": "Proof Over Promise",
+        "hook": "Austin families already trust Joe's Pizza for dinner."
+      }
+    ]
+  },
+  "updated_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/request-creative \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "creative_handoff": {
+      "webhook_url": "https://studio.example.com/zuckerbot/intake",
+      "product_focus": "Family dinner bundles"
+    }
+  }'`}
+          />
+
+          {/* POST /v1/campaigns/:id/upload-creative */}
+          <EndpointSection
+            id="ep-upload-creative"
+            method="POST"
+            path="/v1/campaigns/:id/upload-creative"
+            description="Attach finished creative assets to an approved intelligence campaign. ZuckerBot creates or reuses paused tier executions, uploads the asset to Meta, creates paused ads, and stores the resulting Meta IDs."
+            requestBody={`{
+  "creatives": [
+    {
+      "tier_name": "US Broad ADV+",
+      "angle_name": "Proof Over Promise",
+      "asset_url": "https://cdn.example.com/proof-1.png",
+      "asset_type": "image",
+      "headline": "4.8 Stars, 127 Reviews",
+      "body": "Austin families already trust Joe's Pizza for dinner.",
+      "cta": "Order Now",
+      "link_url": "https://joes-pizza-austin.com/order",
+      "variant_index": 0
+    }
+  ]
+}`}
+            responseBody={`{
+  "campaign_id": "camp_xyz789",
+  "creative_status": "ready_to_activate",
+  "portfolio_id": "portfolio_123",
+  "creatives": [
+    {
+      "id": "apc_123",
+      "tier_name": "US Broad ADV+",
+      "status": "paused",
+      "meta_campaign_id": "120211234567890",
+      "meta_adset_id": "120211234567891",
+      "meta_ad_id": "120211234567892",
+      "meta_adcreative_id": "120211234567893"
+    }
+  ],
+  "uploaded_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/upload-creative \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "creatives": [{
+      "tier_name": "US Broad ADV+",
+      "asset_url": "https://cdn.example.com/proof-1.png",
+      "asset_type": "image",
+      "headline": "4.8 Stars, 127 Reviews",
+      "body": "Austin families already trust Joe's Pizza for dinner."
+    }]
+  }'`}
+          />
+
+          {/* POST /v1/campaigns/:id/activate */}
+          <EndpointSection
+            id="ep-activate"
+            method="POST"
+            path="/v1/campaigns/:id/activate"
+            description="Activate only the ready audience tiers for an intelligence campaign. Tiers without approved strategy or uploaded creatives are skipped."
+            requestBody={`{
+  "tier_names": ["US Broad ADV+", "US Customer LAL"]
+}`}
+            responseBody={`{
+  "id": "camp_xyz789",
+  "campaign_version": "intelligence",
+  "status": "active",
+  "activated_tiers": [
+    {
+      "tier_name": "US Broad ADV+",
+      "meta_campaign_id": "120211234567890",
+      "meta_adset_id": "120211234567891",
+      "meta_ad_ids": ["120211234567892"],
+      "launched_at": "2026-02-23T00:15:00Z"
+    }
+  ],
+  "skipped_tiers": [
+    {
+      "tier_name": "US Customer LAL",
+      "reason": "Tier has no ready creatives to activate."
+    }
+  ],
+  "activated_at": "2026-02-23T00:15:00Z"
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/activate \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"tier_names":["US Broad ADV+"]}'`}
           />
 
           {/* POST /v1/campaigns/:id/launch */}
@@ -497,7 +810,7 @@ const Docs = () => {
             method="POST"
             path="/v1/campaigns/:id/launch"
             description="Launch a draft campaign on Meta. Creates the ad campaign, ad set, creative, and ad on Meta, then activates everything. This is the endpoint that spends real money."
-            notes="Meta credentials are optional if the user has connected Facebook on the /developer page (stored credentials flow). Set launch_all_variants: true to create multiple ads under one ad set for A/B testing — Meta auto-optimizes for the winner. This endpoint consumes 5 credits and can return HTTP 402 with error.code='insufficient_credits'."
+            notes="Legacy single-campaign launch path. Intelligence campaigns must use /campaigns/:id/activate instead and receive HTTP 409 from this endpoint."
             requestBody={`{
   "variant_index": 0,
   "daily_budget_cents": 2000,
@@ -610,6 +923,169 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
     "quality": "good",
     "meta_access_token": "EAAGm0PX4ZCps..."
   }'`}
+          />
+
+          {/* POST /v1/audiences/create-seed */}
+          <EndpointSection
+            id="ep-audiences-create-seed"
+            method="POST"
+            path="/v1/audiences/create-seed"
+            description="Create a Meta custom audience from stored hashed CAPI user data for a business and CRM stage."
+            notes="Seed creation requires at least min_contacts matched profiles. The default minimum is 100."
+            requestBody={`{
+  "business_id": "biz_123",
+  "source_stage": "customer",
+  "name": "Joe's Pizza Customer Seed",
+  "lookback_days": 180,
+  "min_contacts": 100
+}`}
+            responseBody={`{
+  "audience": {
+    "id": "fa_123",
+    "business_id": "biz_123",
+    "audience_id": "23851234567890001",
+    "audience_name": "Joe's Pizza Customer Seed",
+    "audience_type": "custom",
+    "audience_size": 184,
+    "seed_source_stage": "customer",
+    "lookback_days": 180,
+    "delivery_status": "uploaded"
+  },
+  "uploaded_users": 184,
+  "created_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/audiences/create-seed \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"business_id":"biz_123","source_stage":"customer","lookback_days":180}'`}
+          />
+
+          {/* POST /v1/audiences/create-lal */}
+          <EndpointSection
+            id="ep-audiences-create-lal"
+            method="POST"
+            path="/v1/audiences/create-lal"
+            description="Create a Meta lookalike audience from a previously stored seed audience."
+            requestBody={`{
+  "seed_audience_id": "fa_123",
+  "percentage": 1,
+  "name": "Joe's Pizza 1% Customer LAL",
+  "country": "US"
+}`}
+            responseBody={`{
+  "audience": {
+    "id": "fa_124",
+    "audience_id": "23851234567890002",
+    "audience_name": "Joe's Pizza 1% Customer LAL",
+    "audience_type": "lookalike",
+    "seed_source_stage": "customer",
+    "lookalike_pct": 1,
+    "seed_audience_id": "23851234567890001",
+    "delivery_status": "building"
+  },
+  "created_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/audiences/create-lal \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"seed_audience_id":"fa_123","percentage":1,"country":"US"}'`}
+          />
+
+          {/* GET /v1/audiences/list */}
+          <EndpointSection
+            id="ep-audiences-list"
+            method="GET"
+            path="/v1/audiences/list"
+            description="List the stored audience registry rows for a business, including seed metadata, sizes, and delivery status."
+            responseBody={`{
+  "business_id": "biz_123",
+  "audiences": [
+    {
+      "id": "fa_123",
+      "audience_name": "Joe's Pizza Customer Seed",
+      "audience_type": "custom",
+      "audience_size": 184,
+      "seed_source_stage": "customer",
+      "delivery_status": "uploaded"
+    },
+    {
+      "id": "fa_124",
+      "audience_name": "Joe's Pizza 1% Customer LAL",
+      "audience_type": "lookalike",
+      "lookalike_pct": 1,
+      "delivery_status": "building"
+    }
+  ],
+  "fetched_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl "https://zuckerbot.ai/api/v1/audiences/list?business_id=biz_123" \\
+  -H "Authorization: Bearer zb_live_abc123"`}
+          />
+
+          {/* POST /v1/audiences/refresh */}
+          <EndpointSection
+            id="ep-audiences-refresh"
+            method="POST"
+            path="/v1/audiences/refresh"
+            description="Refresh a stored audience. Seed audiences are rebuilt from hashed CAPI users; lookalikes sync their latest Meta status after the seed refresh runs."
+            requestBody={`{
+  "audience_id": "fa_123"
+}`}
+            responseBody={`{
+  "audience": {
+    "id": "fa_123",
+    "audience_name": "Joe's Pizza Customer Seed",
+    "audience_type": "custom",
+    "audience_size": 196,
+    "delivery_status": "uploaded",
+    "last_refreshed_at": "2026-02-23T00:00:00Z"
+  },
+  "refreshed_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/audiences/refresh \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"audience_id":"fa_123"}'`}
+          />
+
+          {/* GET /v1/audiences/:id/status */}
+          <EndpointSection
+            id="ep-audience-status"
+            method="GET"
+            path="/v1/audiences/:id/status"
+            description="Fetch the latest Meta audience status and update the local registry row."
+            responseBody={`{
+  "audience": {
+    "id": "fa_124",
+    "audience_name": "Joe's Pizza 1% Customer LAL",
+    "audience_type": "lookalike",
+    "audience_size": 24000,
+    "delivery_status": "ready",
+    "last_refreshed_at": "2026-02-23T00:00:00Z"
+  },
+  "meta_status": {
+    "id": "23851234567890002",
+    "name": "Joe's Pizza 1% Customer LAL",
+    "approximate_count_lower_bound": 24000
+  },
+  "fetched_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl https://zuckerbot.ai/api/v1/audiences/fa_124/status \\
+  -H "Authorization: Bearer zb_live_abc123"`}
+          />
+
+          {/* DELETE /v1/audiences/:id */}
+          <EndpointSection
+            id="ep-audience-delete"
+            method="DELETE"
+            path="/v1/audiences/:id"
+            description="Delete a stored Meta audience and remove the matching local registry row."
+            responseBody={`{
+  "success": true,
+  "deleted_at": "2026-02-23T00:00:00Z"
+}`}
+            curlExample={`curl -X DELETE https://zuckerbot.ai/api/v1/audiences/fa_124 \\
+  -H "Authorization: Bearer zb_live_abc123"`}
           />
 
           {/* POST /v1/research/reviews */}
@@ -914,10 +1390,22 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             <div className="space-y-2">
               {[
                 { name: "zuckerbot_preview_campaign", desc: "Generate ad previews from a URL" },
-                { name: "zuckerbot_create_campaign", desc: "Create full campaign with strategy, targeting, and objectives" },
+                { name: "zuckerbot_create_campaign", desc: "Create a legacy or intelligence campaign draft" },
+                { name: "zuckerbot_get_campaign", desc: "Fetch campaign detail, workflow state, creatives, and tier executions" },
+                { name: "zuckerbot_approve_campaign_strategy", desc: "Freeze the approved tiers and creative angles for an intelligence campaign" },
+                { name: "zuckerbot_request_creative", desc: "Create or dispatch a creative production handoff" },
+                { name: "zuckerbot_upload_creative", desc: "Upload finished creative assets and provision paused Meta executions" },
+                { name: "zuckerbot_activate_campaign", desc: "Activate ready intelligence tiers after approval and creative upload" },
+                { name: "zuckerbot_suggest_angles", desc: "Return the current creative angles and audience tiers for a campaign" },
                 { name: "zuckerbot_launch_campaign", desc: "Launch to Meta with A/B testing support" },
                 { name: "zuckerbot_pause_campaign", desc: "Pause or resume a running campaign" },
                 { name: "zuckerbot_get_performance", desc: "Get real-time campaign metrics" },
+                { name: "zuckerbot_create_seed_audience", desc: "Build a Meta seed audience from hashed CAPI users" },
+                { name: "zuckerbot_create_lookalike_audience", desc: "Create a Meta lookalike from a stored seed audience" },
+                { name: "zuckerbot_list_audiences", desc: "List stored audience registry rows for a business" },
+                { name: "zuckerbot_refresh_audience", desc: "Refresh a stored audience or sync its latest state" },
+                { name: "zuckerbot_get_audience_status", desc: "Fetch the latest Meta audience status" },
+                { name: "zuckerbot_delete_audience", desc: "Delete a stored audience from Meta and ZuckerBot" },
                 { name: "zuckerbot_sync_conversion", desc: "Send conversion feedback to Meta CAPI" },
                 { name: "zuckerbot_research_reviews", desc: "Get review intelligence for a business" },
                 { name: "zuckerbot_research_competitors", desc: "Analyze competitor ads" },
