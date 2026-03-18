@@ -1,11 +1,11 @@
 {
   "name": "zuckerbot-mcp",
-  "version": "0.2.13",
+  "version": "0.2.17",
   "description": "CLI + MCP server for ZuckerBot — run Facebook ad campaigns from your terminal or AI agent",
   "type": "module",
   "bin": {
-    "zuckerbot-mcp": "./dist/index.js",
-    "zuckerbot": "./dist/cli.js"
+    "zuckerbot-mcp": "dist/index.js",
+    "zuckerbot": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "files": [
@@ -35,7 +35,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DatalisHQ/zuckerbot.git",
+    "url": "git+https://github.com/DatalisHQ/zuckerbot.git",
     "directory": "mcp-server"
   },
   "homepage": "https://zuckerbot.ai",

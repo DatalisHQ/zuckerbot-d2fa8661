@@ -19,6 +19,8 @@ import Terms from "./pages/Terms";
 import AdAudit from "./pages/AdAudit";
 import Docs from "./pages/Docs";
 import Developer from "./pages/Developer";
+import Onboarding from "./pages/Onboarding";
+import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
@@ -157,11 +159,11 @@ function App() {
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/developer" />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
-              <Route path="/onboarding" element={<Navigate to="/developer" />} />
+              <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
               <Route path="/dashboard" element={<Navigate to="/developer" />} />
               <Route path="/campaign/new" element={<Navigate to="/developer" />} />
               <Route path="/leads" element={<Navigate to="/developer" />} />
-              <Route path="/profile" element={<Navigate to="/developer" />} />
+              <Route path="/profile" element={user ? <Profile /> : <Navigate to="/auth" />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/billing" element={user ? <Billing /> : <Navigate to="/auth" />} />
               <Route path="/privacy" element={<Privacy />} />

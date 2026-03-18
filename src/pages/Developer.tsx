@@ -574,6 +574,9 @@ const Developer = () => {
             <a href="/docs" className="text-sm text-gray-400 hover:text-white transition-colors hidden sm:block">
               Docs
             </a>
+            <a href="/profile" className="text-sm text-gray-400 hover:text-white transition-colors hidden sm:block">
+              Settings
+            </a>
             <a href="/" className="text-sm text-gray-400 hover:text-white transition-colors hidden sm:block">
               Home
             </a>
