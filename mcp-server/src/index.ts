@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   // Create the MCP server
   const server = new McpServer({
     name: "zuckerbot",
-    version: "0.1.0",
+    version: "0.2.19",
   });
 
   // Register all MCP tools

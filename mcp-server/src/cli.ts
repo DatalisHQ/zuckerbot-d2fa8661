@@ -31,7 +31,7 @@ import chalk from "chalk";
 import ora from "ora";
 import { ZuckerBotClient, ZuckerBotApiError } from "./client.js";
 
-const VERSION = "0.2.13";
+const VERSION = "0.2.19";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 

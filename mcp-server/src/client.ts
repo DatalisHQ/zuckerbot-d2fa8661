@@ -1,6 +1,6 @@
 // ── ZuckerBot API Client ─────────────────────────────────────────────
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.19";
 
 export class ZuckerBotApiError extends Error {
   constructor(
