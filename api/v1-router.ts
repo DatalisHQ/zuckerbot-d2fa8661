@@ -51,6 +51,8 @@
  *   GET  /api/v1/meta/credentials           → handleMetaCredentials
  *   GET  /api/v1/meta/ad-accounts           → handleMetaAdAccounts
  *   POST /api/v1/meta/select-ad-account     → handleMetaSelectAdAccount
+ *   GET  /api/v1/lead-forms                 → handleLeadForms
+ *   POST /api/v1/lead-forms/select          → handleSelectLeadForm
  *   GET  /api/v1/pixels                     → handlePixels
  *   POST /api/v1/pixels/select              → handleSelectPixel
  *   GET  /api/v1/meta/pages                 → handleMetaPages
@@ -2055,6 +2057,130 @@ function buildTierKey(tierName: string) {
   return tierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
 }
 
+const GEO_CODE_ALIASES: Record<string, string> = {
+  au: 'AU',
+  australia: 'AU',
+  us: 'US',
+  usa: 'US',
+  united_states: 'US',
+  unitedstates: 'US',
+  gb: 'GB',
+  uk: 'GB',
+  united_kingdom: 'GB',
+  unitedkingdom: 'GB',
+  ca: 'CA',
+  canada: 'CA',
+  nz: 'NZ',
+  new_zealand: 'NZ',
+  newzealand: 'NZ',
+};
+
+function titleCaseToken(value: string) {
+  if (!value) return '';
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function buildDateStamp(date = new Date()) {
+  return date.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+function normalizeGeoCode(value: unknown) {
+  const normalized = normalizeString(value);
+  if (!normalized) return 'US';
+
+  const compactKey = normalized.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  if (GEO_CODE_ALIASES[compactKey]) return GEO_CODE_ALIASES[compactKey];
+  if (/^[a-z]{2,3}$/i.test(normalized)) return normalized.toUpperCase();
+
+  const alnum = normalized.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  return alnum.slice(0, 8) || 'US';
+}
+
+function tierShortName(tierName: string) {
+  const map: Record<string, string> = {
+    broad: 'Broad',
+    prospecting_broad: 'Broad',
+    interest: 'Interest',
+    lal_1pct: 'LAL1pct',
+    lal_3pct: 'LAL3pct',
+    lal_5pct: 'LAL5pct',
+    lookalike: 'LAL',
+    prospecting_lal: 'LAL',
+    retargeting: 'Retarget',
+    reactivation: 'Reactivate',
+  };
+
+  const key = (tierName || '').toLowerCase().replace(/\s+/g, '_');
+  if (map[key]) return map[key];
+
+  for (const [pattern, short] of Object.entries(map)) {
+    if (key.includes(pattern)) return short;
+  }
+
+  return (tierName || 'General')
+    .split(/\s+/)
+    .map((word) => titleCaseToken(word))
+    .join('')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 10) || 'General';
+}
+
+function angleShortName(angleName: string) {
+  const words = (angleName || 'Creative')
+    .split(/\s+/)
+    .map((word) => titleCaseToken(word).replace(/[^a-zA-Z0-9]/g, ''))
+    .filter(Boolean);
+
+  let compact = '';
+  for (const word of words) {
+    if ((compact + word).length > 20) break;
+    compact += word;
+  }
+
+  return compact || words.join('').slice(0, 20) || 'Creative';
+}
+
+function buildMetaObjectNames(args: {
+  objective: ZuckerObjective;
+  geo?: unknown;
+  tierName?: string | null;
+  ageMin?: number | null;
+  ageMax?: number | null;
+  placement?: string | null;
+  angleName?: string | null;
+  variantIndex?: number | null;
+  assetType?: string | null;
+  date?: Date;
+}) {
+  const geo = normalizeGeoCode(args.geo);
+  const tierShort = tierShortName(args.tierName || 'General');
+  const objectiveLabel = titleCaseToken(args.objective || 'traffic');
+  const dateStr = buildDateStamp(args.date);
+  const ageMin = Math.max(13, Math.round(normalizeNumber(args.ageMin) || 25));
+  const ageMax = Math.max(ageMin, Math.round(normalizeNumber(args.ageMax) || 65));
+  const ageRange = `${ageMin}-${ageMax}`;
+  const placement = titleCaseToken(normalizeString(args.placement) || 'Feed');
+  const angleShort = angleShortName(args.angleName || 'Creative');
+  const variant = Math.max(1, Math.round(normalizeNumber(args.variantIndex) || 0) + 1);
+  const assetType = (normalizeString(args.assetType) || 'image').toLowerCase();
+  const format = assetType === 'video' ? 'Video' : assetType === 'image' ? 'Static' : titleCaseToken(assetType);
+
+  return {
+    geo,
+    tier_short: tierShort,
+    objective_label: objectiveLabel,
+    date_str: dateStr,
+    age_range: ageRange,
+    placement,
+    angle_short: angleShort,
+    variant,
+    format,
+    campaign_name: `ZB_${geo}_${tierShort}_${objectiveLabel}_${dateStr}`,
+    adset_name: `ZB_${geo}_${tierShort}_${ageRange}_${placement}`,
+    ad_name: `ZB_${angleShort}_V${variant}_${format}`,
+  };
+}
+
 function mapApprovedStrategyToPortfolioTiers(strategy: IntelligenceStrategyPayload, baseTargetCpaCents: number): PortfolioTierConfig[] {
   return strategy.audience_tiers.map((tier, index) => {
     const expectedCplCents = tier.expected_cpl ? Math.round(tier.expected_cpl * 100) : baseTargetCpaCents;
@@ -2247,18 +2373,124 @@ function buildTargetingFromAudienceTier(tier: IntelligenceAudienceTier, business
     instagram_positions: ['stream'],
   };
 
-  if (tier.targeting_type === 'interest') {
-    const interests = tier.targeting_details.split(',').map((item) => item.trim()).filter(Boolean);
-    if (interests.length > 0) {
-      targeting.interests = interests.map((interest, index) => ({ id: `${index + 1}`, name: interest }));
+  const fallbackAudienceIds = [metaAudienceId, normalizeString((tier as any)?.meta_audience_id)]
+    .filter(Boolean) as string[];
+  const excludedAudienceIds = [
+    ...(sanitizeStringArray((tier as any)?.excluded_audiences) || []),
+    ...(sanitizeStringArray((tier as any)?.excluded_meta_audience_ids) || []),
+    ...(sanitizeStringArray((tier as any)?.excluded_custom_audiences) || []),
+  ].filter(Boolean);
+
+  switch (tier.targeting_type) {
+    case 'broad':
+      return {
+        ...targeting,
+        targeting_automation: { advantage_audience: 1 },
+      };
+
+    case 'lal':
+      return fallbackAudienceIds.length > 0
+        ? {
+            ...targeting,
+            custom_audiences: fallbackAudienceIds.map((id) => ({ id })),
+          }
+        : targeting;
+
+    case 'interest': {
+      const interests = tier.targeting_details.split(',').map((item) => item.trim()).filter(Boolean);
+      if (interests.length === 0) return targeting;
+      return {
+        ...targeting,
+        flexible_spec: interests.map((interest) => ({
+          interests: [{ name: interest }],
+        })),
+      };
     }
+
+    case 'custom':
+      return {
+        ...targeting,
+        ...(fallbackAudienceIds.length > 0 ? { custom_audiences: fallbackAudienceIds.map((id) => ({ id })) } : {}),
+        ...(excludedAudienceIds.length > 0 ? { excluded_custom_audiences: excludedAudienceIds.map((id) => ({ id })) } : {}),
+      };
+
+    default:
+      return targeting;
+  }
+}
+
+function buildMetaAdSetTargetingPayload(targeting: Record<string, any> | null | undefined, fallbackGeo?: string | null) {
+  const geoLocations: Record<string, any> = {};
+  if (Array.isArray(targeting?.geo_locations?.custom_locations) && targeting.geo_locations.custom_locations.length > 0) {
+    geoLocations.custom_locations = targeting.geo_locations.custom_locations;
+  } else if (Array.isArray(targeting?.geo_locations?.countries) && targeting.geo_locations.countries.length > 0) {
+    geoLocations.countries = targeting.geo_locations.countries;
+  } else {
+    geoLocations.countries = [normalizeGeoCode(fallbackGeo || 'US')];
   }
 
-  if (metaAudienceId && (tier.targeting_type === 'lal' || tier.targeting_type === 'custom')) {
-    targeting.custom_audiences = [{ id: metaAudienceId }];
+  const payload: Record<string, any> = {
+    age_min: Math.max(13, Math.round(normalizeNumber(targeting?.age_min) || 25)),
+    age_max: Math.max(
+      Math.max(13, Math.round(normalizeNumber(targeting?.age_min) || 25)),
+      Math.round(normalizeNumber(targeting?.age_max) || 65),
+    ),
+    geo_locations: geoLocations,
+    publisher_platforms: Array.isArray(targeting?.publisher_platforms) && targeting.publisher_platforms.length > 0
+      ? targeting.publisher_platforms
+      : ['facebook', 'instagram'],
+    facebook_positions: Array.isArray(targeting?.facebook_positions) && targeting.facebook_positions.length > 0
+      ? targeting.facebook_positions
+      : ['feed'],
+    instagram_positions: Array.isArray(targeting?.instagram_positions) && targeting.instagram_positions.length > 0
+      ? targeting.instagram_positions
+      : ['stream'],
+  };
+
+  if (Array.isArray(targeting?.genders) && targeting.genders.length > 0) payload.genders = targeting.genders;
+  if (Array.isArray(targeting?.interests) && targeting.interests.length > 0) payload.interests = targeting.interests;
+  if (Array.isArray(targeting?.custom_audiences) && targeting.custom_audiences.length > 0) payload.custom_audiences = targeting.custom_audiences;
+  if (Array.isArray(targeting?.excluded_custom_audiences) && targeting.excluded_custom_audiences.length > 0) {
+    payload.excluded_custom_audiences = targeting.excluded_custom_audiences;
+  }
+  if (Array.isArray(targeting?.flexible_spec) && targeting.flexible_spec.length > 0) payload.flexible_spec = targeting.flexible_spec;
+  if (getJsonObject(targeting?.targeting_automation)) payload.targeting_automation = targeting.targeting_automation;
+
+  return payload;
+}
+
+function buildLeadFormRequiredError() {
+  return {
+    code: 'lead_form_required',
+    message: 'No lead form selected. Use zuckerbot_list_lead_forms and zuckerbot_select_lead_form to choose one before launching.',
+  };
+}
+
+async function resolveLeadFormIdForObjective(objective: ZuckerObjective, businessOrId?: any) {
+  if (!needsLeadForm(objective)) {
+    return { ok: true as const, leadFormId: null };
   }
 
-  return targeting;
+  if (!businessOrId) {
+    return { ok: false as const, error: buildLeadFormRequiredError() };
+  }
+
+  let business = businessOrId;
+  if (typeof businessOrId === 'string') {
+    const { data } = await supabaseAdmin
+      .from('businesses')
+      .select('id, meta_leadgen_form_id')
+      .eq('id', businessOrId)
+      .maybeSingle();
+    business = data;
+  }
+
+  const leadFormId = normalizeString(business?.meta_leadgen_form_id);
+  if (!leadFormId) {
+    return { ok: false as const, error: buildLeadFormRequiredError() };
+  }
+
+  return { ok: true as const, leadFormId };
 }
 
 function buildDraftCampaignFromTier(args: {
@@ -2375,7 +2607,16 @@ async function createPausedCreativeForExistingAdSet(args: {
   assetUrl: string;
   assetType: 'image' | 'video';
   leadFormId?: string | null;
+  creativeName?: string | null;
+  adName?: string | null;
 }) {
+  if (args.objective === 'leads' && !normalizeString(args.leadFormId)) {
+    return {
+      ok: false,
+      error: buildLeadFormRequiredError(),
+    };
+  }
+
   const ctaType = (args.cta || 'Learn More').toUpperCase().replace(/\s+/g, '_');
   const uploaded = await uploadMetaAssetToAdAccount({
     adAccountId: args.adAccountId,
@@ -2424,7 +2665,7 @@ async function createPausedCreativeForExistingAdSet(args: {
   }
 
   const creativeResult = await metaPost(`/act_${args.adAccountId}/adcreatives`, {
-    name: `${args.headline.slice(0, 80)} Creative`,
+    name: normalizeString(args.creativeName) || `${args.headline.slice(0, 80)} Creative`,
     object_story_spec: JSON.stringify(objectStorySpec),
   }, args.accessToken);
 
@@ -2440,7 +2681,7 @@ async function createPausedCreativeForExistingAdSet(args: {
   }
 
   const adResult = await metaPost(`/act_${args.adAccountId}/ads`, {
-    name: `${args.headline.slice(0, 80)} Ad`,
+    name: normalizeString(args.adName) || `${args.headline.slice(0, 80)} Ad`,
     adset_id: args.metaAdSetId,
     creative: JSON.stringify({ creative_id: creativeResult.data.id }),
     status: 'PAUSED',
@@ -2988,6 +3229,21 @@ async function ensureTierExecutionForCreative(args: {
   const tierKey = buildTierKey(args.tier.tier_name);
   const workflowState = getJsonObject(args.apiCampaign.workflow_state) || {};
   const tierState = getJsonObject(getJsonObject(workflowState.tier_campaigns || {})?.[tierKey]) || {};
+  const objective: ZuckerObjective = isValidObjective(args.apiCampaign.objective) ? args.apiCampaign.objective : 'leads';
+  const naming = buildMetaObjectNames({
+    objective,
+    geo: args.tier.geo?.[0] || args.business.markets?.[0] || args.business.country || 'US',
+    tierName: args.tier.tier_name,
+    ageMin: args.tier.age_min,
+    ageMax: args.tier.age_max,
+    placement: 'Feed',
+    angleName: args.creative.angle_name || args.creative.headline,
+    variantIndex: args.creative.variant_index || 0,
+    assetType: args.creative.asset_type,
+  });
+  const leadFormSelection = await resolveLeadFormIdForObjective(objective, args.business);
+  if (!leadFormSelection.ok) return leadFormSelection;
+  const selectedLeadFormId = leadFormSelection.leadFormId || null;
 
   let linkedTierCampaign = normalizeString(tierState.tier_campaign_id)
     ? await supabaseAdmin.from('audience_tier_campaigns').select('*').eq('id', tierState.tier_campaign_id).maybeSingle().then((result) => result.data || null)
@@ -3033,6 +3289,21 @@ async function ensureTierExecutionForCreative(args: {
       radius_km: args.business.target_radius_km || 25,
       campaign: draftCampaign,
       auth: args.auth.keyRecord,
+      business: args.business,
+      businessId: args.business.id,
+      naming: {
+        geo: naming.geo,
+        tierName: args.tier.tier_name,
+        ageMin: args.tier.age_min,
+        ageMax: args.tier.age_max,
+        placement: 'Feed',
+        angleName: args.creative.angle_name || args.creative.headline,
+        assetType: args.creative.asset_type,
+        variantIndex: args.creative.variant_index || 0,
+        campaignName: naming.campaign_name,
+        adSetName: naming.adset_name,
+        adName: naming.ad_name,
+      },
       activate: false,
     });
 
@@ -3042,7 +3313,7 @@ async function ensureTierExecutionForCreative(args: {
 
     const managedCampaignId = await upsertManagedCampaignExecutionRecord({
       businessId: args.business.id,
-      campaignName: draftCampaign.business_name,
+      campaignName: naming.campaign_name,
       status: 'paused',
       dailyBudgetCents: args.tier.daily_budget_cents,
       radiusKm: args.business.target_radius_km || 25,
@@ -3052,7 +3323,7 @@ async function ensureTierExecutionForCreative(args: {
       metaCampaignId: launchResult.data.meta_campaign_id,
       metaAdSetId: launchResult.data.meta_adset_id,
       metaAdId: launchResult.data.meta_ad_id,
-      metaLeadFormId: launchResult.data.lead_form_id || null,
+      metaLeadFormId: launchResult.data.lead_form_id || selectedLeadFormId || null,
       launchedAt: null,
     });
 
@@ -3088,25 +3359,21 @@ async function ensureTierExecutionForCreative(args: {
     };
   }
 
-  const { data: linkedCampaign } = await supabaseAdmin
-    .from('campaigns')
-    .select('*')
-    .eq('id', linkedTierCampaign.campaign_id)
-    .maybeSingle();
-
   const creativeResult = await createPausedCreativeForExistingAdSet({
     adAccountId: args.adAccountId,
     accessToken: args.accessToken,
     metaAdSetId: linkedTierCampaign.meta_adset_id,
     metaPageId: args.metaPageId,
-    objective: isValidObjective(args.apiCampaign.objective) ? args.apiCampaign.objective : 'leads',
+    objective,
     headline: args.creative.headline,
     body: args.creative.body,
     cta: args.creative.cta,
     linkUrl: args.creative.link_url || args.apiCampaign.url || args.business.website_url || args.business.website || null,
     assetUrl: args.creative.asset_url,
     assetType: args.creative.asset_type,
-    leadFormId: linkedCampaign?.meta_leadform_id || null,
+    leadFormId: selectedLeadFormId,
+    creativeName: `${naming.ad_name} Creative`,
+    adName: naming.ad_name,
   });
 
   if (!creativeResult.ok) {
@@ -3121,7 +3388,7 @@ async function ensureTierExecutionForCreative(args: {
     metaAdSetId: linkedTierCampaign.meta_adset_id,
     metaAdId: creativeResult.metaAdId,
     metaAdCreativeId: creativeResult.metaAdCreativeId,
-    metaLeadFormId: linkedCampaign?.meta_leadform_id || null,
+    metaLeadFormId: selectedLeadFormId,
     metaAudienceId,
     metaImageHash: creativeResult.metaImageHash,
     metaVideoId: creativeResult.metaVideoId,
@@ -3526,6 +3793,15 @@ interface MetaAdAccountOption {
   currency: string | null;
   business_name: string | null;
   amount_spent: string | null;
+}
+
+interface MetaLeadFormOption {
+  id: string;
+  name: string;
+  status: string | null;
+  leads_count: number;
+  created_time: string | null;
+  questions: any[] | null;
 }
 
 interface MetaPixelOption {
@@ -4675,6 +4951,56 @@ async function listAdAccountPixels(accessToken: string, adAccountId: string): Pr
   }
 }
 
+async function listMetaLeadForms(accessToken: string, adAccountId: string): Promise<{ ok: boolean; forms: MetaLeadFormOption[]; error?: string }> {
+  const forms: MetaLeadFormOption[] = [];
+  const normalizedAdAccountId = adAccountId.replace(/^act_/, '');
+  let nextUrl =
+    `${GRAPH_BASE}/act_${normalizedAdAccountId}/leadgen_forms` +
+    `?fields=id,name,status,leads_count,created_time,questions&limit=50&access_token=${encodeURIComponent(accessToken)}`;
+
+  try {
+    while (nextUrl && forms.length < 300) {
+      const response = await fetch(nextUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(20000),
+      });
+
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok) {
+        return {
+          ok: false,
+          forms: [],
+          error: data?.error?.message || `Meta lead forms API error: HTTP ${response.status}`,
+        };
+      }
+
+      if (Array.isArray(data?.data)) {
+        for (const form of data.data) {
+          const id = normalizeString(form?.id);
+          const name = normalizeString(form?.name);
+          if (!id || !name) continue;
+
+          forms.push({
+            id,
+            name,
+            status: normalizeString(form?.status),
+            leads_count: Math.max(0, Math.round(normalizeNumber(form?.leads_count) || 0)),
+            created_time: normalizeString(form?.created_time),
+            questions: Array.isArray(form?.questions) ? form.questions : null,
+          });
+        }
+      }
+
+      const pagingNext = normalizeString(data?.paging?.next);
+      nextUrl = pagingNext || '';
+    }
+
+    return { ok: true, forms };
+  } catch (err: any) {
+    return { ok: false, forms: [], error: err?.message || String(err) };
+  }
+}
+
 function resolveSelectedPixelId(pixels: MetaPixelOption[], storedPixelId: string | null): string | null {
   if (storedPixelId && pixels.some((pixel) => pixel.id === storedPixelId)) {
     return storedPixelId;
@@ -4714,6 +5040,24 @@ async function persistBusinessPixelSelection(
 
   if (error) {
     console.warn('[api/meta] Failed to persist meta_pixel_id:', error.message);
+  }
+}
+
+async function persistBusinessLeadFormSelection(
+  userId: string,
+  businessId: string | null,
+  leadFormId: string | null,
+): Promise<void> {
+  if (!businessId) return;
+
+  const { error } = await supabaseAdmin
+    .from('businesses')
+    .update({ meta_leadgen_form_id: leadFormId })
+    .eq('id', businessId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.warn('[api/meta] Failed to persist meta_leadgen_form_id:', error.message);
   }
 }
 
@@ -4874,6 +5218,21 @@ async function launchCampaignInternal(params: {
   radius_km: number;
   campaign: any;
   auth: any;
+  business?: any;
+  businessId?: string | null;
+  naming?: {
+    geo?: string | null;
+    tierName?: string | null;
+    ageMin?: number | null;
+    ageMax?: number | null;
+    placement?: string | null;
+    angleName?: string | null;
+    assetType?: string | null;
+    variantIndex?: number | null;
+    campaignName?: string | null;
+    adSetName?: string | null;
+    adName?: string | null;
+  };
   activate?: boolean;
 }): Promise<{success: boolean, data?: any, error?: any}> {
   
@@ -4900,6 +5259,7 @@ async function launchCampaignInternal(params: {
     }
 
     const businessName = campaign.business_name || 'Campaign';
+    const businessContext = params.business || null;
     const variants = campaign.variants || [];
     const targeting = campaign.targeting || {};
     const selectedVariant = variants[variant_index] || variants[0] || {};
@@ -4909,8 +5269,31 @@ async function launchCampaignInternal(params: {
     const cta = selectedVariant.cta || 'Learn More';
     const ctaType = cta.toUpperCase().replace(/ /g, '_');
     const imageUrl = selectedVariant.image_url || null;
+    const leadFormSelection = await resolveLeadFormIdForObjective(objective, businessContext || params.businessId || null);
+    if (!leadFormSelection.ok) {
+      return { success: false, error: leadFormSelection.error };
+    }
 
-    const campaignName = `${businessName} – API – ${new Date().toISOString().slice(0, 10)}`;
+    const naming = buildMetaObjectNames({
+      objective,
+      geo: params.naming?.geo
+        || targeting?.geo_locations?.countries?.[0]
+        || businessContext?.markets?.[0]
+        || businessContext?.country
+        || 'US',
+      tierName: params.naming?.tierName || null,
+      ageMin: params.naming?.ageMin ?? targeting?.age_min,
+      ageMax: params.naming?.ageMax ?? targeting?.age_max,
+      placement: params.naming?.placement || 'Feed',
+      angleName: params.naming?.angleName || normalizeString(selectedVariant.angle) || headline,
+      variantIndex: params.naming?.variantIndex ?? variant_index,
+      assetType: params.naming?.assetType || 'image',
+    });
+
+    const campaignName = normalizeString(params.naming?.campaignName) || naming.campaign_name;
+    const adSetName = normalizeString(params.naming?.adSetName) || naming.adset_name;
+    const adName = normalizeString(params.naming?.adName) || naming.ad_name;
+    const selectedLeadFormId = leadFormSelection.leadFormId || undefined;
     const adAccountId = meta_ad_account_id.replace(/^act_/, '');
 
     // Step 1: Create Meta Campaign (objective-aware)
@@ -4936,38 +5319,19 @@ async function launchCampaignInternal(params: {
 
     // Step 2: Create Ad Set (objective-aware)
     const adsetParams = getAdsetParams(objective);
-    const geoLocations: Record<string, any> = {};
-    if (targeting?.geo_locations?.custom_locations?.length) {
-      geoLocations.custom_locations = targeting.geo_locations.custom_locations;
-    } else if (Array.isArray(targeting?.geo_locations?.countries) && targeting.geo_locations.countries.length > 0) {
-      geoLocations.countries = targeting.geo_locations.countries;
-    } else {
-      geoLocations.countries = ['US'];
-    }
-
-    const adSetTargeting: Record<string, any> = {
-      age_min: targeting?.age_min || 25,
-      age_max: targeting?.age_max || 65,
-      geo_locations: geoLocations,
-      publisher_platforms: targeting?.publisher_platforms || ['facebook', 'instagram'],
-      facebook_positions: targeting?.facebook_positions || ['feed'],
-      instagram_positions: targeting?.instagram_positions || ['stream'],
-    };
-    if (Array.isArray(targeting?.interests) && targeting.interests.length > 0) {
-      adSetTargeting.interests = targeting.interests;
-    }
-    if (Array.isArray(targeting?.custom_audiences) && targeting.custom_audiences.length > 0) {
-      adSetTargeting.custom_audiences = targeting.custom_audiences;
-    }
+    const adSetTargeting = buildMetaAdSetTargetingPayload(
+      targeting,
+      params.naming?.geo || businessContext?.markets?.[0] || businessContext?.country || 'US',
+    );
 
     const adSetResult = await metaPost(`/act_${adAccountId}/adsets`, {
-      name: `${campaignName} – Ad Set`,
+      name: adSetName,
       campaign_id: metaCampaignId,
       daily_budget: String(daily_budget_cents),
       billing_event: 'IMPRESSIONS',
       optimization_goal: adsetParams.optimization_goal,
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-      targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
+      targeting: JSON.stringify(adSetTargeting),
       promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id, pixelId)),
       ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
       status: 'PAUSED',
@@ -4989,56 +5353,18 @@ async function launchCampaignInternal(params: {
     }
     const metaAdSetId = adSetResult.data.id;
 
-    // Step 3: Create Lead Form (only for leads objective)
-    let leadFormId: string | undefined;
-    if (needsLeadForm(objective)) {
-      const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
-        name: `${businessName} Lead Form – ${Date.now()}`,
-        questions: JSON.stringify([
-          { type: 'FULL_NAME' },
-          { type: 'PHONE' },
-          { type: 'EMAIL' },
-          { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }
-        ]),
-        privacy_policy: JSON.stringify({
-          url: 'https://zuckerbot.ai/privacy',
-          link_text: 'Privacy Policy'
-        }),
-        thank_you_page: JSON.stringify({
-          title: 'Thanks for your enquiry!',
-          body: `${businessName} will be in touch shortly.`,
-          button_type: 'NONE'
-        }),
-      }, meta_access_token);
-
-      if (!leadFormResult.ok || !leadFormResult.data.id) {
-        // Cleanup
-        await fetch(`${GRAPH_BASE}/${metaCampaignId}?access_token=${meta_access_token}`, { method: 'DELETE' }).catch(() => {});
-        return {
-          success: false,
-          error: {
-            code: 'meta_api_error',
-            message: leadFormResult.data.error?.message || 'Failed to create lead form on Meta',
-            meta_error: leadFormResult.data.error,
-            step: 'leadform'
-          }
-        };
-      }
-      leadFormId = leadFormResult.data.id;
-    }
-
-    // Step 4: Create Ad Creative (objective-aware link_data)
+    // Step 3: Create Ad Creative (objective-aware link_data)
     const linkData = buildCreativeLinkData(objective, {
       headline,
       body: adBody,
       ctaType,
       imageUrl,
-      leadFormId,
+      leadFormId: selectedLeadFormId,
       campaignUrl: campaign.url,
     });
 
     const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, {
-      name: `${campaignName} – Creative`,
+      name: `${adName} Creative`,
       object_story_spec: JSON.stringify({
         page_id: meta_page_id,
         link_data: linkData,
@@ -5047,9 +5373,9 @@ async function launchCampaignInternal(params: {
 
     let adCreativeId = creativeResult.ok && creativeResult.data.id ? creativeResult.data.id : null;
 
-    // Step 5: Create Ad
+    // Step 4: Create Ad
     const adParams: Record<string, any> = {
-      name: `${campaignName} – Ad`,
+      name: adName,
       adset_id: metaAdSetId,
       status: 'PAUSED',
     };
@@ -5063,7 +5389,7 @@ async function launchCampaignInternal(params: {
         body: adBody,
         ctaType: 'LEARN_MORE',
         imageUrl: null,
-        leadFormId,
+        leadFormId: selectedLeadFormId,
         campaignUrl: campaign.url,
       });
 
@@ -5120,7 +5446,11 @@ async function launchCampaignInternal(params: {
         meta_campaign_id: metaCampaignId,
         meta_adset_id: metaAdSetId,
         meta_ad_id: metaAdId,
-        ...(leadFormId ? { lead_form_id: leadFormId } : {}),
+        ...(selectedLeadFormId ? { lead_form_id: selectedLeadFormId } : {}),
+        campaign_name: campaignName,
+        adset_name: adSetName,
+        ad_name: adName,
+        naming,
         ad_creative_id: adCreativeId,
         selected_variant: selectedVariant,
         daily_budget_cents: daily_budget_cents,
@@ -5673,6 +6003,7 @@ RULES:
           radius_km: radius_km || response.targeting.radius_km || 25,
           campaign: response,
           auth: auth.keyRecord,
+          businessId: autoLaunchBusinessId || resolvedMeta.business_id || null,
         });
 
         if (!launchResult.success) {
@@ -5708,7 +6039,7 @@ RULES:
 
         await upsertLaunchedCampaignRecord({
           businessId: autoLaunchBusinessId || resolvedMeta.business_id,
-          campaignName: `${response.business_name || 'Campaign'} – API – ${autoLaunchAt.slice(0, 10)}`,
+          campaignName: launchResult.data.campaign_name || `${response.business_name || 'Campaign'} – API – ${autoLaunchAt.slice(0, 10)}`,
           status: 'active',
           dailyBudgetCents: budgetCents,
           radiusKm: radius_km || response.targeting.radius_km || 25,
@@ -5823,6 +6154,7 @@ async function processCampaignCreativeUpload(args: {
 
   const tierPatch: Record<string, any> = {};
   const createdRows: any[] = [];
+  let workingWorkflowState = getJsonObject(args.apiCampaign.workflow_state) || {};
 
   for (const upload of args.uploads) {
     const tier = findStrategyTier(strategy, upload.tier_name);
@@ -5850,7 +6182,10 @@ async function processCampaignCreativeUpload(args: {
 
     const executionResult: any = await ensureTierExecutionForCreative({
       auth: args.auth,
-      apiCampaign: args.apiCampaign,
+      apiCampaign: {
+        ...args.apiCampaign,
+        workflow_state: workingWorkflowState,
+      },
       business: args.business,
       portfolioId: portfolio.id,
       tier,
@@ -5871,6 +6206,18 @@ async function processCampaignCreativeUpload(args: {
         error: executionResult.error,
       };
     }
+
+    const naming = buildMetaObjectNames({
+      objective: isValidObjective(args.apiCampaign.objective) ? args.apiCampaign.objective : 'leads',
+      geo: tier.geo?.[0] || args.business.markets?.[0] || args.business.country || 'US',
+      tierName: tier.tier_name,
+      ageMin: tier.age_min,
+      ageMax: tier.age_max,
+      placement: 'Feed',
+      angleName: upload.angle_name || upload.headline,
+      variantIndex: upload.variant_index || 0,
+      assetType: upload.asset_type,
+    });
 
     const { data: creativeRow } = await supabaseAdmin
       .from('api_campaign_creatives')
@@ -5899,6 +6246,7 @@ async function processCampaignCreativeUpload(args: {
           meta_audience_id: executionResult.metaAudienceId || null,
           linked_tier_campaign_id: executionResult.linkedTierCampaign?.id || null,
           created_execution: !!executionResult.created,
+          naming,
         },
       })
       .select('*')
@@ -5918,6 +6266,13 @@ async function processCampaignCreativeUpload(args: {
       last_asset_type: upload.asset_type,
       status: 'paused',
     };
+
+    workingWorkflowState = mergeWorkflowState(workingWorkflowState, {
+      portfolio_id: portfolio.id,
+      tier_campaigns: {
+        [tierKey]: tierPatch[tierKey],
+      },
+    });
   }
 
   const workflowState = mergeWorkflowState(args.apiCampaign.workflow_state, {
@@ -7045,6 +7400,15 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       });
     }
 
+    const launchBusiness = launchBusinessId
+      ? await supabaseAdmin
+          .from('businesses')
+          .select('*')
+          .eq('id', launchBusinessId)
+          .maybeSingle()
+          .then((result) => result.data || null)
+      : null;
+
     // Read objective from DB record (set during create), default to traffic
     const objective: ZuckerObjective = isValidObjective(campaign?.objective) ? campaign.objective : 'traffic';
     console.log('[api/launch] Launching campaign with objective:', objective);
@@ -7073,8 +7437,26 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     const adBody = selectedVariant.copy || `Check out ${businessName}`;
     const cta = selectedVariant.cta || 'Learn More';
     const imageUrl = selectedVariant.image_url || null;
+    const leadFormSelection = await resolveLeadFormIdForObjective(objective, launchBusiness || launchBusinessId || null);
+    if (!leadFormSelection.ok) {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/campaigns/:id/launch', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+      return res.status(400).json({ error: leadFormSelection.error });
+    }
 
-    const campaignName = `${businessName} – API – ${new Date().toISOString().slice(0, 10)}`;
+    const defaultNaming = buildMetaObjectNames({
+      objective,
+      geo: targeting?.geo_locations?.countries?.[0] || launchBusiness?.markets?.[0] || launchBusiness?.country || 'US',
+      tierName: null,
+      ageMin: targeting?.age_min,
+      ageMax: targeting?.age_max,
+      placement: 'Feed',
+      angleName: normalizeString(selectedVariant.angle) || headline,
+      variantIndex: variant_index,
+      assetType: imageUrl ? 'image' : 'image',
+    });
+
+    const campaignName = defaultNaming.campaign_name;
+    const adSetName = defaultNaming.adset_name;
     const adAccountId = meta_ad_account_id.replace(/^act_/, '');
 
     const creditDebit = await debitCredits({
@@ -7102,21 +7484,16 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
 
     // Step 2: Create Ad Set (objective-aware)
     const adsetParams = getAdsetParams(objective);
-    const geoLocations: Record<string, any> = {};
-    if (targeting?.geo_locations?.custom_locations?.length) geoLocations.custom_locations = targeting.geo_locations.custom_locations;
-    else geoLocations.countries = ['US'];
-
-    const adSetTargeting: Record<string, any> = {
-      age_min: targeting?.age_min || 25, age_max: targeting?.age_max || 65,
-      geo_locations: geoLocations, publisher_platforms: ['facebook', 'instagram'],
-      facebook_positions: ['feed'], instagram_positions: ['stream'],
-    };
+    const adSetTargeting = buildMetaAdSetTargetingPayload(
+      targeting,
+      launchBusiness?.markets?.[0] || launchBusiness?.country || 'US',
+    );
 
     const adSetResult = await metaPost(`/act_${adAccountId}/adsets`, {
-      name: `${campaignName} – Ad Set`, campaign_id: metaCampaignId,
+      name: adSetName, campaign_id: metaCampaignId,
       daily_budget: String(budgetCents), billing_event: 'IMPRESSIONS',
       optimization_goal: adsetParams.optimization_goal, bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-      targeting: JSON.stringify({ ...adSetTargeting, targeting_automation: { advantage_audience: 0 } }),
+      targeting: JSON.stringify(adSetTargeting),
       promoted_object: JSON.stringify(getPromotedObject(objective, meta_page_id, pixelId)),
       ...(adsetParams.destination_type ? { destination_type: adsetParams.destination_type } : {}),
       status: 'PAUSED', start_time: new Date().toISOString(),
@@ -7135,7 +7512,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
     const variantsToLaunch = launch_all_variants ? variants : [selectedVariant];
     const metaAdIds: string[] = [];
     const variantResults: Array<{ variant_index: number; headline: string; meta_ad_id: string; status: string }> = [];
-    let metaLeadFormId = '';
+    const metaLeadFormId = leadFormSelection.leadFormId || '';
 
     for (let vi = 0; vi < variantsToLaunch.length; vi++) {
       const v = variantsToLaunch[vi] || {};
@@ -7144,25 +7521,17 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       const vCta = v.cta || 'Learn More';
       const vImage = v.image_url || null;
       const vCtaType = ctaMap[vCta] || 'LEARN_MORE';
-
-      // Step 3: Create lead form ONLY for leads objective
-      let variantLeadFormId: string | undefined;
-      if (needsLeadForm(objective)) {
-        const leadFormResult = await metaPost(`/${meta_page_id}/leadgen_forms`, {
-          name: `${businessName} Lead Form ${vi + 1} \u2013 ${Date.now()}`,
-          questions: JSON.stringify([{ type: 'FULL_NAME' }, { type: 'PHONE' }, { type: 'EMAIL' }, { type: 'CUSTOM', key: 'location', label: 'What area are you in?' }]),
-          privacy_policy: JSON.stringify({ url: 'https://zuckerbot.ai/privacy', link_text: 'Privacy Policy' }),
-          thank_you_page: JSON.stringify({ title: 'Thanks for your enquiry!', body: `${businessName} will be in touch shortly.`, button_type: 'NONE' }),
-        }, meta_access_token);
-
-        if (!leadFormResult.ok || !leadFormResult.data.id) {
-          console.error(`[api/launch] Lead form creation failed for variant ${vi}:`, leadFormResult.rawBody);
-          variantResults.push({ variant_index: vi, headline: vHeadline, meta_ad_id: '', status: 'failed_leadform' });
-          continue;
-        }
-        variantLeadFormId = leadFormResult.data.id;
-        if (vi === 0) metaLeadFormId = leadFormResult.data.id;
-      }
+      const variantNaming = buildMetaObjectNames({
+        objective,
+        geo: defaultNaming.geo,
+        tierName: null,
+        ageMin: targeting?.age_min,
+        ageMax: targeting?.age_max,
+        placement: 'Feed',
+        angleName: normalizeString(v.angle) || vHeadline,
+        variantIndex: vi,
+        assetType: vImage ? 'image' : 'image',
+      });
 
       // Step 4: Create creative (objective-aware link_data)
       const linkData = buildCreativeLinkData(objective, {
@@ -7170,7 +7539,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
         body: vBody,
         ctaType: vCtaType,
         imageUrl: vImage,
-        leadFormId: variantLeadFormId,
+        leadFormId: metaLeadFormId || undefined,
         campaignUrl: campaign?.url,
       });
 
@@ -7179,7 +7548,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
         link_data: linkData,
       };
 
-      const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, { name: `${campaignName} \u2013 Creative ${vi + 1}`, object_story_spec: JSON.stringify(objectStorySpec) }, meta_access_token);
+      const creativeResult = await metaPost(`/act_${adAccountId}/adcreatives`, { name: `${variantNaming.ad_name} Creative`, object_story_spec: JSON.stringify(objectStorySpec) }, meta_access_token);
       if (!creativeResult.ok || !creativeResult.data.id) {
         console.error(`[api/launch] Creative creation failed for variant ${vi}:`, creativeResult.rawBody);
         variantResults.push({ variant_index: vi, headline: vHeadline, meta_ad_id: '', status: 'failed_creative' });
@@ -7187,7 +7556,7 @@ async function handleLaunch(req: VercelRequest, res: VercelResponse, campaignId:
       }
 
       // Step 5: Create ad
-      const adResult = await metaPost(`/act_${adAccountId}/ads`, { name: `${campaignName} \u2013 Ad ${vi + 1}: ${vHeadline.slice(0, 40)}`, adset_id: metaAdSetId, creative: JSON.stringify({ creative_id: creativeResult.data.id }), status: 'PAUSED' }, meta_access_token);
+      const adResult = await metaPost(`/act_${adAccountId}/ads`, { name: variantNaming.ad_name, adset_id: metaAdSetId, creative: JSON.stringify({ creative_id: creativeResult.data.id }), status: 'PAUSED' }, meta_access_token);
       if (!adResult.ok || !adResult.data.id) {
         console.error(`[api/launch] Ad creation failed for variant ${vi}:`, adResult.rawBody);
         variantResults.push({ variant_index: vi, headline: vHeadline, meta_ad_id: '', status: 'failed_ad' });
@@ -8614,6 +8983,8 @@ async function handlePortfolioLaunch(req: VercelRequest, res: VercelResponse, po
       radius_km: business.target_radius_km || 25,
       campaign: draftCampaign,
       auth: auth.keyRecord,
+      business,
+      businessId: business.id,
     });
 
     if (!launchResult.success || !launchResult.data) {
@@ -9783,6 +10154,261 @@ async function handleMetaSelectPage(req: VercelRequest, res: VercelResponse) {
   return res.status(200).json({
     selected_page_id: selectedPage.id,
     selected_page_name: selectedPage.name,
+    stored: true,
+  });
+}
+
+// ── GET /api/v1/lead-forms ────────────────────────────────────────────────
+
+async function handleLeadForms(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+  });
+
+  if (!resolvedMeta.business_id) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'business_required',
+        message: 'A business must be linked before lead forms can be listed.',
+      },
+    });
+  }
+
+  const accessToken = normalizeString(resolvedMeta.meta_access_token);
+  if (!accessToken) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'missing_meta_credentials',
+        message: 'No stored Meta access token found. Connect Facebook at https://zuckerbot.ai/profile first.',
+        connect_url: 'https://zuckerbot.ai/profile',
+      },
+    });
+  }
+
+  let selectedAdAccountId = normalizeString(resolvedMeta.meta_ad_account_id);
+  if (!selectedAdAccountId) {
+    const adAccountResolution = await resolveAdAccountIdForLaunch({
+      userId: auth.keyRecord.user_id,
+      resolvedMeta,
+    });
+
+    if (adAccountResolution.source === 'meta_error') {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
+      return res.status(502).json({
+        error: {
+          code: 'meta_api_error',
+          message: adAccountResolution.meta_error || 'Failed to fetch Meta ad accounts',
+        },
+      });
+    }
+
+    if (adAccountResolution.source === 'selection_required') {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
+      return res.status(400).json({
+        error: {
+          code: 'meta_ad_account_selection_required',
+          message: 'Multiple Meta ad accounts were found. Select one ad account before listing lead forms.',
+          select_ad_account_endpoint: '/api/v1/meta/select-ad-account',
+        },
+        available_ad_accounts: (adAccountResolution.available_ad_accounts || []).slice(0, 25),
+      });
+    }
+
+    selectedAdAccountId = normalizeString(adAccountResolution.meta_ad_account_id);
+  }
+
+  if (!selectedAdAccountId) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: 'No Meta ad account is selected for this API key/user. Select an ad account at https://zuckerbot.ai/profile first.',
+        connect_url: 'https://zuckerbot.ai/profile',
+      },
+    });
+  }
+
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('id, meta_leadgen_form_id')
+    .eq('id', resolvedMeta.business_id)
+    .maybeSingle();
+
+  const formsResult = await listMetaLeadForms(accessToken, selectedAdAccountId);
+  if (!formsResult.ok) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({
+      error: {
+        code: 'meta_api_error',
+        message: formsResult.error || 'Failed to fetch Meta lead forms',
+      },
+    });
+  }
+
+  let selectedFormId = normalizeString(business?.meta_leadgen_form_id);
+  if (!selectedFormId && formsResult.forms.length === 1) {
+    selectedFormId = formsResult.forms[0].id;
+    await persistBusinessLeadFormSelection(auth.keyRecord.user_id, resolvedMeta.business_id, selectedFormId);
+  }
+
+  const forms = formsResult.forms.map((form) => {
+    const isSelected = form.id === selectedFormId;
+    return {
+      ...form,
+      selected: isSelected,
+      is_selected: isSelected,
+    };
+  });
+
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({
+    selected_ad_account_id: selectedAdAccountId,
+    forms,
+    selected_form_id: selectedFormId,
+    form_count: forms.length,
+  });
+}
+
+// ── POST /api/v1/lead-forms/select ───────────────────────────────────────
+
+async function handleSelectLeadForm(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  const formId = normalizeString(req.body?.form_id);
+  if (!formId) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: '`form_id` is required',
+      },
+    });
+  }
+
+  const resolvedMeta = await resolveMetaCredentials({
+    apiKeyId: auth.keyRecord.id,
+    userId: auth.keyRecord.user_id,
+  });
+
+  if (!resolvedMeta.business_id) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'business_required',
+        message: 'A business must be linked before a lead form can be selected.',
+      },
+    });
+  }
+
+  const accessToken = normalizeString(resolvedMeta.meta_access_token);
+  if (!accessToken) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'missing_meta_credentials',
+        message: 'No stored Meta access token found. Connect Facebook at https://zuckerbot.ai/profile first.',
+        connect_url: 'https://zuckerbot.ai/profile',
+      },
+    });
+  }
+
+  let selectedAdAccountId = normalizeString(resolvedMeta.meta_ad_account_id);
+  if (!selectedAdAccountId) {
+    const adAccountResolution = await resolveAdAccountIdForLaunch({
+      userId: auth.keyRecord.user_id,
+      resolvedMeta,
+    });
+
+    if (adAccountResolution.source === 'meta_error') {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+      return res.status(502).json({
+        error: {
+          code: 'meta_api_error',
+          message: adAccountResolution.meta_error || 'Failed to fetch Meta ad accounts',
+        },
+      });
+    }
+
+    if (adAccountResolution.source === 'selection_required') {
+      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+      return res.status(400).json({
+        error: {
+          code: 'meta_ad_account_selection_required',
+          message: 'Multiple Meta ad accounts were found. Select one ad account before selecting a lead form.',
+          select_ad_account_endpoint: '/api/v1/meta/select-ad-account',
+        },
+        available_ad_accounts: (adAccountResolution.available_ad_accounts || []).slice(0, 25),
+      });
+    }
+
+    selectedAdAccountId = normalizeString(adAccountResolution.meta_ad_account_id);
+  }
+
+  if (!selectedAdAccountId) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: 'No Meta ad account is selected for this API key/user. Select an ad account at https://zuckerbot.ai/profile first.',
+        connect_url: 'https://zuckerbot.ai/profile',
+      },
+    });
+  }
+
+  const formsResult = await listMetaLeadForms(accessToken, selectedAdAccountId);
+  if (!formsResult.ok) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
+    return res.status(502).json({
+      error: {
+        code: 'meta_api_error',
+        message: formsResult.error || 'Failed to fetch Meta lead forms',
+      },
+    });
+  }
+
+  const selectedForm = formsResult.forms.find((form) => form.id === formId);
+  if (!selectedForm) {
+    await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
+    return res.status(400).json({
+      error: {
+        code: 'validation_error',
+        message: 'The provided `form_id` is not available for the selected Meta ad account.',
+      },
+      available_forms: formsResult.forms.slice(0, 25),
+      selected_ad_account_id: selectedAdAccountId,
+    });
+  }
+
+  await persistBusinessLeadFormSelection(auth.keyRecord.user_id, resolvedMeta.business_id, selectedForm.id);
+
+  await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
+  return res.status(200).json({
+    selected_ad_account_id: selectedAdAccountId,
+    selected_form_id: selectedForm.id,
+    selected_form_name: selectedForm.name,
     stored: true,
   });
 }
@@ -12343,6 +12969,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'meta/credentials') return handleMetaCredentials(req, res);
   if (route === 'meta/ad-accounts') return handleMetaAdAccounts(req, res);
   if (route === 'meta/select-ad-account') return handleMetaSelectAdAccount(req, res);
+  if (route === 'lead-forms') return handleLeadForms(req, res);
+  if (route === 'lead-forms/select') return handleSelectLeadForm(req, res);
   if (route === 'pixels') return handlePixels(req, res);
   if (route === 'pixels/select') return handleSelectPixel(req, res);
   if (route === 'meta/pages') return handleMetaPages(req, res);
@@ -12479,6 +13107,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'GET  /api/v1/meta/credentials',
         'GET  /api/v1/meta/ad-accounts',
         'POST /api/v1/meta/select-ad-account',
+        'GET  /api/v1/lead-forms',
+        'POST /api/v1/lead-forms/select',
         'GET  /api/v1/pixels',
         'POST /api/v1/pixels/select',
         'GET  /api/v1/meta/pages',

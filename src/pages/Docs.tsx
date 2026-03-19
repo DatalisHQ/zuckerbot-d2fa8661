@@ -37,6 +37,8 @@ const sections = [
   { id: "ep-keys", label: "POST /keys/create", indent: true },
   { id: "ep-meta-ad-accounts", label: "GET /meta/ad-accounts", indent: true },
   { id: "ep-meta-select-ad-account", label: "POST /meta/select-ad-account", indent: true },
+  { id: "ep-lead-forms", label: "GET /lead-forms", indent: true },
+  { id: "ep-lead-forms-select", label: "POST /lead-forms/select", indent: true },
   { id: "ep-pixels", label: "GET /pixels", indent: true },
   { id: "ep-pixels-select", label: "POST /pixels/select", indent: true },
   { id: "mcp-server", label: "MCP Server" },
@@ -1430,6 +1432,55 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
   -d '{"ad_account_id": "act_2064725353887861"}'`}
           />
 
+          {/* GET /v1/lead-forms */}
+          <EndpointSection
+            id="ep-lead-forms"
+            method="GET"
+            path="/v1/lead-forms"
+            description="List Meta Instant Forms available on the selected ad account and indicate which form is currently selected for future lead generation launches."
+            notes="If exactly one form exists and none is stored yet, ZuckerBot auto-selects and persists it on the business record."
+            responseBody={`{
+  "selected_ad_account_id": "act_2064725353887861",
+  "forms": [
+    {
+      "id": "123456789012345",
+      "name": "Sophiie Demo Request",
+      "status": "ACTIVE",
+      "leads_count": 482,
+      "created_time": "2025-03-01T10:00:00+0000",
+      "questions": [{ "type": "FULL_NAME" }, { "type": "EMAIL" }],
+      "selected": true,
+      "is_selected": true
+    }
+  ],
+  "selected_form_id": "123456789012345",
+  "form_count": 1
+}`}
+            curlExample={`curl https://zuckerbot.ai/api/v1/lead-forms \\
+  -H "Authorization: Bearer zb_live_abc123"`}
+          />
+
+          {/* POST /v1/lead-forms/select */}
+          <EndpointSection
+            id="ep-lead-forms-select"
+            method="POST"
+            path="/v1/lead-forms/select"
+            description="Select the Meta Instant Form to use for all future lead generation launches for the linked business."
+            requestBody={`{
+  "form_id": "123456789012345"
+}`}
+            responseBody={`{
+  "selected_ad_account_id": "act_2064725353887861",
+  "selected_form_id": "123456789012345",
+  "selected_form_name": "Sophiie Demo Request",
+  "stored": true
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/lead-forms/select \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"form_id": "123456789012345"}'`}
+          />
+
           {/* GET /v1/pixels */}
           <EndpointSection
             id="ep-pixels"
@@ -1543,6 +1594,8 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
                 { name: "zuckerbot_meta_status", desc: "Check Facebook connection status" },
                 { name: "zuckerbot_list_ad_accounts", desc: "List Meta ad accounts and current selection" },
                 { name: "zuckerbot_select_ad_account", desc: "Switch the active Meta ad account" },
+                { name: "zuckerbot_list_lead_forms", desc: "List available Meta Instant Forms and the current selection" },
+                { name: "zuckerbot_select_lead_form", desc: "Choose the existing Meta Instant Form used for lead campaigns" },
                 { name: "zuckerbot_list_pixels", desc: "List Meta Pixels for the selected ad account" },
                 { name: "zuckerbot_select_pixel", desc: "Switch the active Meta Pixel" },
                 { name: "zuckerbot_list_meta_pages", desc: "List Facebook pages for the connected Meta user" },

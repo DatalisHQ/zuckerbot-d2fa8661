@@ -12,6 +12,21 @@ const corsHeaders = {
 const GRAPH_VERSION = "v21.0";
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
+const GEO_CODE_ALIASES: Record<string, string> = {
+  AUSTRALIA: "AU",
+  AU: "AU",
+  "UNITED STATES": "US",
+  USA: "US",
+  US: "US",
+  "UNITED KINGDOM": "GB",
+  UK: "GB",
+  GB: "GB",
+  CANADA: "CA",
+  CA: "CA",
+  "NEW ZEALAND": "NZ",
+  NZ: "NZ",
+};
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface LaunchCampaignRequest {
@@ -78,6 +93,87 @@ function errorResponse(
   );
 }
 
+function titleCaseToken(value: string): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : "";
+}
+
+function buildDateStamp(date = new Date()): string {
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+function normalizeGeoCode(value: string | null | undefined): string {
+  const normalized = (value || "").trim();
+  if (!normalized) return "AU";
+  const alias = GEO_CODE_ALIASES[normalized.toUpperCase()];
+  if (alias) return alias;
+  if (/^[A-Za-z]{2,3}$/.test(normalized)) return normalized.toUpperCase();
+  return normalized.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 8) || "AU";
+}
+
+function tierShortName(tierName: string): string {
+  const key = (tierName || "").toLowerCase().replace(/\s+/g, "_");
+  const map: Record<string, string> = {
+    broad: "Broad",
+    prospecting_broad: "Broad",
+    interest: "Interest",
+    lookalike: "LAL",
+    prospecting_lal: "LAL",
+    retargeting: "Retarget",
+    reactivation: "Reactivate",
+    general: "General",
+  };
+  if (map[key]) return map[key];
+  return (tierName || "General")
+    .split(/\s+/)
+    .map((word) => titleCaseToken(word))
+    .join("")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 10) || "General";
+}
+
+function angleShortName(angleName: string): string {
+  const words = (angleName || "Creative")
+    .split(/\s+/)
+    .map((word) => titleCaseToken(word).replace(/[^A-Za-z0-9]/g, ""))
+    .filter(Boolean);
+
+  let compact = "";
+  for (const word of words) {
+    if ((compact + word).length > 20) break;
+    compact += word;
+  }
+
+  return compact || words.join("").slice(0, 20) || "Creative";
+}
+
+function buildMetaObjectNames(args: {
+  geo: string | null | undefined;
+  objective: string;
+  tierName?: string;
+  ageMin?: number;
+  ageMax?: number;
+  angleName?: string;
+  variantIndex?: number;
+  assetType?: "image" | "video";
+}) {
+  const geo = normalizeGeoCode(args.geo);
+  const tierShort = tierShortName(args.tierName || "General");
+  const objectiveLabel = titleCaseToken((args.objective || "leads").toLowerCase());
+  const dateStr = buildDateStamp();
+  const ageMin = Math.max(13, Math.round(args.ageMin || 25));
+  const ageMax = Math.max(ageMin, Math.round(args.ageMax || 65));
+  const ageRange = `${ageMin}-${ageMax}`;
+  const angleShort = angleShortName(args.angleName || "Creative");
+  const variant = Math.max(1, Math.round(args.variantIndex || 0) + 1);
+  const format = args.assetType === "video" ? "Video" : "Static";
+
+  return {
+    campaignName: `ZB_${geo}_${tierShort}_${objectiveLabel}_${dateStr}`,
+    adSetName: `ZB_${geo}_${tierShort}_${ageRange}_Feed`,
+    adName: `ZB_${angleShort}_V${variant}_${format}`,
+  };
+}
+
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
@@ -129,7 +225,7 @@ serve(async (req: Request) => {
       .from("businesses")
       .select(
         "id, user_id, name, trade, suburb, state, country, lat, lng, " +
-        "facebook_access_token, facebook_ad_account_id, facebook_page_id"
+        "facebook_access_token, facebook_ad_account_id, facebook_page_id, meta_leadgen_form_id"
       )
       .eq("id", business_id)
       .single();
@@ -167,7 +263,23 @@ serve(async (req: Request) => {
     const fbToken = business.facebook_access_token;
     const adAccountId = business.facebook_ad_account_id.replace(/^act_/, "");
     const pageId = business.facebook_page_id;
-    const campaignName = `${business.name} – ${business.trade} – ${new Date().toISOString().slice(0, 10)}`;
+    const names = buildMetaObjectNames({
+      geo: business.country,
+      objective: "leads",
+      tierName: "General",
+      ageMin: 25,
+      ageMax: 65,
+      angleName: headline,
+      variantIndex: 0,
+      assetType: image_url ? "image" : "image",
+    });
+    const campaignName = names.campaignName;
+    const adSetName = names.adSetName;
+    const adName = names.adName;
+
+    if (!business.meta_leadgen_form_id) {
+      return errorResponse(400, "No lead form selected. Use /api/v1/lead-forms and /api/v1/lead-forms/select to choose one before launching.");
+    }
 
     console.log("[launch-campaign] Creating Meta campaign for:", business.name, "| Page:", pageId, "| Ad Account:", adAccountId);
 
@@ -237,7 +349,7 @@ serve(async (req: Request) => {
     };
 
     const adSetParams: Record<string, string> = {
-      name: `${campaignName} – Ad Set`,
+      name: adSetName,
       campaign_id: metaCampaignId,
       daily_budget: String(daily_budget_cents || 1500), // Meta expects cents (smallest unit)
       billing_event: "IMPRESSIONS",
@@ -266,54 +378,8 @@ serve(async (req: Request) => {
     const metaAdSetId = adSetResult.data.id;
     console.log("[launch-campaign] Ad set created:", metaAdSetId);
 
-    // ── Step 3: Create Lead Form ────────────────────────────────────────────
-    // Lead forms are created on the PAGE, not the ad account.
-    // Required fields: name, questions, privacy_policy (as legal_content or privacy_policy object)
-    // The privacy_policy field needs: { url: "...", link_text: "..." }
-
-    let metaLeadFormId: string | null = null;
-
-    const leadFormResult = await metaPost(
-      `/${pageId}/leadgen_forms`,
-      {
-        name: `${business.name} Lead Form – ${Date.now()}`,
-        questions: JSON.stringify([
-          { type: "FULL_NAME" },
-          { type: "PHONE" },
-          { type: "EMAIL" },
-          {
-            type: "CUSTOM",
-            key: "location",
-            label: "What area are you in?",
-          },
-        ]),
-        // privacy_policy is passed as a JSON object with url + link_text
-        privacy_policy: JSON.stringify({
-          url: "https://zuckerbot.ai/privacy",
-          link_text: "Privacy Policy",
-        }),
-        // Thank you page — valid button_types: VIEW_WEBSITE, CALL_BUSINESS, NONE, etc.
-        thank_you_page: JSON.stringify({
-          title: "Thanks for your enquiry!",
-          body: `${business.name} will be in touch shortly.`,
-          button_type: "NONE",
-        }),
-      },
-      fbToken
-    );
-
-    if (leadFormResult.ok && leadFormResult.data.id) {
-      metaLeadFormId = leadFormResult.data.id;
-      console.log("[launch-campaign] Lead form created:", metaLeadFormId);
-    } else {
-      console.error(
-        "[launch-campaign] Lead form creation failed:",
-        leadFormResult.rawBody
-      );
-      // Lead form is critical for lead gen ads — fail if we can't create it
-      const errMsg = leadFormResult.data.error?.message || "Failed to create lead form";
-      return errorResponse(502, errMsg, { meta_error: leadFormResult.data.error, step: "leadform" });
-    }
+    // ── Step 3: Use the selected existing lead form ────────────────────────
+    const metaLeadFormId: string = business.meta_leadgen_form_id;
 
     // ── Step 4: Create Ad Creative ──────────────────────────────────────────
     // For lead gen ads, object_story_spec.link_data MUST include:
@@ -361,7 +427,7 @@ serve(async (req: Request) => {
     const creativeResult = await metaPost(
       `/act_${adAccountId}/adcreatives`,
       {
-        name: `${campaignName} – Creative`,
+        name: `${adName} Creative`,
         object_story_spec: JSON.stringify(objectStorySpec),
       },
       fbToken
@@ -381,7 +447,7 @@ serve(async (req: Request) => {
     const adResult = await metaPost(
       `/act_${adAccountId}/ads`,
       {
-        name: `${campaignName} – Ad`,
+        name: adName,
         adset_id: metaAdSetId,
         creative: JSON.stringify({ creative_id: metaCreativeId }),
         status: "PAUSED", // Create paused — activate after all steps succeed

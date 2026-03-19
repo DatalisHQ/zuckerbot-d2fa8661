@@ -224,6 +224,31 @@ export interface CampaignDetailResponse {
   fetched_at: string;
 }
 
+export interface LeadFormSummary {
+  id: string;
+  name: string;
+  status?: string | null;
+  leads_count: number;
+  created_time?: string | null;
+  questions?: unknown[] | null;
+  selected?: boolean;
+  is_selected?: boolean;
+}
+
+export interface LeadFormsListResponse {
+  selected_ad_account_id?: string | null;
+  forms: LeadFormSummary[];
+  selected_form_id?: string | null;
+  form_count: number;
+}
+
+export interface SelectLeadFormResponse {
+  selected_ad_account_id?: string | null;
+  selected_form_id: string;
+  selected_form_name?: string;
+  stored: boolean;
+}
+
 export interface ApproveCampaignStrategyRequest {
   campaign_id: string;
   tier_names?: string[];

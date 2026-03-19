@@ -852,6 +852,7 @@ export type Database = {
           lat: number | null
           lng: number | null
           markets: string[]
+          meta_leadgen_form_id: string | null
           name: string
           meta_pixel_id: string | null
           notifications_enabled: boolean
@@ -885,6 +886,7 @@ export type Database = {
           lat?: number | null
           lng?: number | null
           markets?: string[]
+          meta_leadgen_form_id?: string | null
           name: string
           meta_pixel_id?: string | null
           notifications_enabled?: boolean
@@ -918,6 +920,7 @@ export type Database = {
           lat?: number | null
           lng?: number | null
           markets?: string[]
+          meta_leadgen_form_id?: string | null
           name?: string
           meta_pixel_id?: string | null
           notifications_enabled?: boolean

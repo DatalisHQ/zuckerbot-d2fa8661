@@ -866,7 +866,41 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 17. Resolve Launch Credentials ─────────────────────────────
+  // ── 19. List Lead Forms ────────────────────────────────────────
+  server.tool(
+    "zuckerbot_list_lead_forms",
+    "List available Meta lead forms (Instant Forms) for the selected ad account. Use this before launching lead generation campaigns so ZuckerBot reuses the business's existing CRM-connected form instead of generating a new one.",
+    {},
+    async () => {
+      try {
+        const result = await client.get("/lead-forms");
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 20. Select Lead Form ───────────────────────────────────────
+  server.tool(
+    "zuckerbot_select_lead_form",
+    "Select and store the Meta lead form (Instant Form) to use for future lead generation campaigns for the linked business.",
+    {
+      form_id: z.string().describe("Meta lead form ID to use for future lead generation launches"),
+    },
+    async ({ form_id }) => {
+      try {
+        const result = await client.post("/lead-forms/select", {
+          form_id,
+        });
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  // ── 21. Resolve Launch Credentials ─────────────────────────────
   server.tool(
     "zuckerbot_get_launch_credentials",
     "Resolve stored Meta launch credentials for the authenticated API key/user and report whether autonomous launch is possible.",
@@ -881,7 +915,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
     },
   );
 
-  // ── 18. Generate Creatives ─────────────────────────────────────
+  // ── 22. Generate Creatives ─────────────────────────────────────
   server.tool(
     "zuckerbot_generate_creatives",
     "Generate ad creatives independently from campaign creation. Supports image creatives (Seedream/Imagen) and video creatives (Kling). If the prompt text asks for a video ad, the tool auto-routes to Kling/video unless explicitly overridden.",
