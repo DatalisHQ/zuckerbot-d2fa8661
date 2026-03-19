@@ -61,8 +61,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'crypto';
+import { createRequire } from 'module';
 import { load as loadHtml } from 'cheerio';
-import { PDFParse } from 'pdf-parse';
 import {
   type ZuckerObjective,
   VALID_OBJECTIVES,
@@ -162,6 +162,11 @@ interface AuthFailure {
 
 type AuthResult = AuthSuccess | AuthFailure;
 type BusinessRouteAuthResult = BusinessRouteAuthSuccess | AuthFailure;
+type PdfParseResult = { text?: string | null };
+type PdfParseFn = (dataBuffer: Buffer, options?: { max?: number }) => Promise<PdfParseResult>;
+
+let pdfParseLoader: Promise<PdfParseFn> | null = null;
+const nodeRequire = createRequire(import.meta.url);
 
 /** Narrow auth result after error check */
 function assertAuth(auth: AuthResult): asserts auth is AuthSuccess {
@@ -4196,6 +4201,32 @@ async function removeBusinessUploadFile(filePath: string | null | undefined): Pr
   await supabaseAdmin.storage.from(BUSINESS_UPLOAD_STORAGE_BUCKET).remove([normalized]);
 }
 
+async function getPdfParse(): Promise<PdfParseFn> {
+  if (!pdfParseLoader) {
+    pdfParseLoader = Promise.resolve()
+      .then(() => {
+        const module = nodeRequire('pdf-parse');
+        const parser = typeof module === 'function'
+          ? module
+          : typeof module?.default === 'function'
+            ? module.default
+            : null;
+
+        if (!parser) {
+          throw new Error('Unable to initialize PDF parser.');
+        }
+
+        return parser as PdfParseFn;
+      })
+      .catch((error) => {
+        pdfParseLoader = null;
+        throw error;
+      });
+  }
+
+  return pdfParseLoader;
+}
+
 async function extractBusinessUploadText(args: {
   filename: string;
   fileType: string;
@@ -4206,9 +4237,19 @@ async function extractBusinessUploadText(args: {
   }
 
   if (args.fileType === 'application/pdf' || getFileExtension(args.filename) === 'pdf') {
-    const parser = new PDFParse({ data: args.buffer });
-    const result = await parser.getText();
-    await parser.destroy();
+    let result: PdfParseResult;
+
+    try {
+      const pdfParse = await getPdfParse();
+      result = await pdfParse(args.buffer);
+    } catch (error) {
+      console.warn('[business-context] PDF parsing unavailable', {
+        filename: args.filename,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new Error('PDF parsing is temporarily unavailable. Upload TXT, CSV, or Markdown instead.');
+    }
+
     return truncateText(trimWhitespace(result.text || ''), BUSINESS_CONTEXT_TEXT_LIMIT);
   }
 
