@@ -1437,10 +1437,10 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             id="ep-lead-forms"
             method="GET"
             path="/v1/lead-forms"
-            description="List Meta Instant Forms available on the selected ad account and indicate which form is currently selected for future lead generation launches."
-            notes="If exactly one form exists and none is stored yet, ZuckerBot auto-selects and persists it on the business record."
+            description="List Meta Instant Forms available on the selected Facebook Page and indicate which form is currently selected for future lead generation launches."
+            notes="Lead forms are fetched from the stored business page selection. If no page is selected, the endpoint returns `Select a Facebook page first.` If exactly one form exists and none is stored yet, ZuckerBot auto-selects and persists it on the business record."
             responseBody={`{
-  "selected_ad_account_id": "act_2064725353887861",
+  "selected_page_id": "102938475610293",
   "forms": [
     {
       "id": "123456789012345",
@@ -1448,7 +1448,6 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
       "status": "ACTIVE",
       "leads_count": 482,
       "created_time": "2025-03-01T10:00:00+0000",
-      "questions": [{ "type": "FULL_NAME" }, { "type": "EMAIL" }],
       "selected": true,
       "is_selected": true
     }
@@ -1465,12 +1464,12 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
             id="ep-lead-forms-select"
             method="POST"
             path="/v1/lead-forms/select"
-            description="Select the Meta Instant Form to use for all future lead generation launches for the linked business."
+            description="Select the Meta Instant Form from the selected Facebook Page to use for all future lead generation launches for the linked business."
             requestBody={`{
   "form_id": "123456789012345"
 }`}
             responseBody={`{
-  "selected_ad_account_id": "act_2064725353887861",
+  "selected_page_id": "102938475610293",
   "selected_form_id": "123456789012345",
   "selected_form_name": "Sophiie Demo Request",
   "stored": true

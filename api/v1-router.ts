@@ -3801,7 +3801,6 @@ interface MetaLeadFormOption {
   status: string | null;
   leads_count: number;
   created_time: string | null;
-  questions: any[] | null;
 }
 
 interface MetaPixelOption {
@@ -4951,12 +4950,11 @@ async function listAdAccountPixels(accessToken: string, adAccountId: string): Pr
   }
 }
 
-async function listMetaLeadForms(accessToken: string, adAccountId: string): Promise<{ ok: boolean; forms: MetaLeadFormOption[]; error?: string }> {
+async function listMetaLeadForms(accessToken: string, pageId: string): Promise<{ ok: boolean; forms: MetaLeadFormOption[]; error?: string }> {
   const forms: MetaLeadFormOption[] = [];
-  const normalizedAdAccountId = adAccountId.replace(/^act_/, '');
   let nextUrl =
-    `${GRAPH_BASE}/act_${normalizedAdAccountId}/leadgen_forms` +
-    `?fields=id,name,status,leads_count,created_time,questions&limit=50&access_token=${encodeURIComponent(accessToken)}`;
+    `${GRAPH_BASE}/${encodeURIComponent(pageId)}/leadgen_forms` +
+    `?fields=id,name,status,leads_count,created_time&limit=50&access_token=${encodeURIComponent(accessToken)}`;
 
   try {
     while (nextUrl && forms.length < 300) {
@@ -4986,7 +4984,6 @@ async function listMetaLeadForms(accessToken: string, adAccountId: string): Prom
             status: normalizeString(form?.status),
             leads_count: Math.max(0, Math.round(normalizeNumber(form?.leads_count) || 0)),
             created_time: normalizeString(form?.created_time),
-            questions: Array.isArray(form?.questions) ? form.questions : null,
           });
         }
       }
@@ -10199,56 +10196,25 @@ async function handleLeadForms(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  let selectedAdAccountId = normalizeString(resolvedMeta.meta_ad_account_id);
-  if (!selectedAdAccountId) {
-    const adAccountResolution = await resolveAdAccountIdForLaunch({
-      userId: auth.keyRecord.user_id,
-      resolvedMeta,
-    });
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('id, facebook_page_id, meta_leadgen_form_id')
+    .eq('id', resolvedMeta.business_id)
+    .maybeSingle();
 
-    if (adAccountResolution.source === 'meta_error') {
-      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
-      return res.status(502).json({
-        error: {
-          code: 'meta_api_error',
-          message: adAccountResolution.meta_error || 'Failed to fetch Meta ad accounts',
-        },
-      });
-    }
-
-    if (adAccountResolution.source === 'selection_required') {
-      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
-      return res.status(400).json({
-        error: {
-          code: 'meta_ad_account_selection_required',
-          message: 'Multiple Meta ad accounts were found. Select one ad account before listing lead forms.',
-          select_ad_account_endpoint: '/api/v1/meta/select-ad-account',
-        },
-        available_ad_accounts: (adAccountResolution.available_ad_accounts || []).slice(0, 25),
-      });
-    }
-
-    selectedAdAccountId = normalizeString(adAccountResolution.meta_ad_account_id);
-  }
-
-  if (!selectedAdAccountId) {
+  const selectedPageId = normalizeString(business?.facebook_page_id);
+  if (!selectedPageId) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 400, responseTimeMs: Date.now() - startTime });
     return res.status(400).json({
       error: {
         code: 'validation_error',
-        message: 'No Meta ad account is selected for this API key/user. Select an ad account at https://zuckerbot.ai/profile first.',
-        connect_url: 'https://zuckerbot.ai/profile',
+        message: 'Select a Facebook page first.',
+        select_page_endpoint: '/api/v1/meta/select-page',
       },
     });
   }
 
-  const { data: business } = await supabaseAdmin
-    .from('businesses')
-    .select('id, meta_leadgen_form_id')
-    .eq('id', resolvedMeta.business_id)
-    .maybeSingle();
-
-  const formsResult = await listMetaLeadForms(accessToken, selectedAdAccountId);
+  const formsResult = await listMetaLeadForms(accessToken, selectedPageId);
   if (!formsResult.ok) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 502, responseTimeMs: Date.now() - startTime });
     return res.status(502).json({
@@ -10276,7 +10242,7 @@ async function handleLeadForms(req: VercelRequest, res: VercelResponse) {
 
   await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms', method: 'GET', statusCode: 200, responseTimeMs: Date.now() - startTime });
   return res.status(200).json({
-    selected_ad_account_id: selectedAdAccountId,
+    selected_page_id: selectedPageId,
     forms,
     selected_form_id: selectedFormId,
     form_count: forms.length,
@@ -10335,50 +10301,25 @@ async function handleSelectLeadForm(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  let selectedAdAccountId = normalizeString(resolvedMeta.meta_ad_account_id);
-  if (!selectedAdAccountId) {
-    const adAccountResolution = await resolveAdAccountIdForLaunch({
-      userId: auth.keyRecord.user_id,
-      resolvedMeta,
-    });
+  const { data: business } = await supabaseAdmin
+    .from('businesses')
+    .select('id, facebook_page_id')
+    .eq('id', resolvedMeta.business_id)
+    .maybeSingle();
 
-    if (adAccountResolution.source === 'meta_error') {
-      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
-      return res.status(502).json({
-        error: {
-          code: 'meta_api_error',
-          message: adAccountResolution.meta_error || 'Failed to fetch Meta ad accounts',
-        },
-      });
-    }
-
-    if (adAccountResolution.source === 'selection_required') {
-      await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
-      return res.status(400).json({
-        error: {
-          code: 'meta_ad_account_selection_required',
-          message: 'Multiple Meta ad accounts were found. Select one ad account before selecting a lead form.',
-          select_ad_account_endpoint: '/api/v1/meta/select-ad-account',
-        },
-        available_ad_accounts: (adAccountResolution.available_ad_accounts || []).slice(0, 25),
-      });
-    }
-
-    selectedAdAccountId = normalizeString(adAccountResolution.meta_ad_account_id);
-  }
-
-  if (!selectedAdAccountId) {
+  const selectedPageId = normalizeString(business?.facebook_page_id);
+  if (!selectedPageId) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 400, responseTimeMs: Date.now() - startTime });
     return res.status(400).json({
       error: {
         code: 'validation_error',
-        message: 'No Meta ad account is selected for this API key/user. Select an ad account at https://zuckerbot.ai/profile first.',
-        connect_url: 'https://zuckerbot.ai/profile',
+        message: 'Select a Facebook page first.',
+        select_page_endpoint: '/api/v1/meta/select-page',
       },
     });
   }
 
-  const formsResult = await listMetaLeadForms(accessToken, selectedAdAccountId);
+  const formsResult = await listMetaLeadForms(accessToken, selectedPageId);
   if (!formsResult.ok) {
     await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - startTime });
     return res.status(502).json({
@@ -10395,10 +10336,10 @@ async function handleSelectLeadForm(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({
       error: {
         code: 'validation_error',
-        message: 'The provided `form_id` is not available for the selected Meta ad account.',
+        message: 'The provided `form_id` is not available for the selected Facebook page.',
       },
       available_forms: formsResult.forms.slice(0, 25),
-      selected_ad_account_id: selectedAdAccountId,
+      selected_page_id: selectedPageId,
     });
   }
 
@@ -10406,7 +10347,7 @@ async function handleSelectLeadForm(req: VercelRequest, res: VercelResponse) {
 
   await logUsage({ apiKeyId: auth.keyRecord.id, endpoint: '/v1/lead-forms/select', method: 'POST', statusCode: 200, responseTimeMs: Date.now() - startTime });
   return res.status(200).json({
-    selected_ad_account_id: selectedAdAccountId,
+    selected_page_id: selectedPageId,
     selected_form_id: selectedForm.id,
     selected_form_name: selectedForm.name,
     stored: true,

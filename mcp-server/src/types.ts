@@ -236,14 +236,14 @@ export interface LeadFormSummary {
 }
 
 export interface LeadFormsListResponse {
-  selected_ad_account_id?: string | null;
+  selected_page_id?: string | null;
   forms: LeadFormSummary[];
   selected_form_id?: string | null;
   form_count: number;
 }
 
 export interface SelectLeadFormResponse {
-  selected_ad_account_id?: string | null;
+  selected_page_id?: string | null;
   selected_form_id: string;
   selected_form_name?: string;
   stored: boolean;

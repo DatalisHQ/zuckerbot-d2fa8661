@@ -869,7 +869,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 19. List Lead Forms ────────────────────────────────────────
   server.tool(
     "zuckerbot_list_lead_forms",
-    "List available Meta lead forms (Instant Forms) for the selected ad account. Use this before launching lead generation campaigns so ZuckerBot reuses the business's existing CRM-connected form instead of generating a new one.",
+    "List available Meta lead forms (Instant Forms) for the selected Facebook page. Use this before launching lead generation campaigns so ZuckerBot reuses the business's existing CRM-connected form instead of generating a new one.",
     {},
     async () => {
       try {
@@ -884,7 +884,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
   // ── 20. Select Lead Form ───────────────────────────────────────
   server.tool(
     "zuckerbot_select_lead_form",
-    "Select and store the Meta lead form (Instant Form) to use for future lead generation campaigns for the linked business.",
+    "Select and store the Meta lead form (Instant Form) from the selected Facebook page for future lead generation campaigns for the linked business.",
     {
       form_id: z.string().describe("Meta lead form ID to use for future lead generation launches"),
     },
