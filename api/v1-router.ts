@@ -4950,11 +4950,52 @@ async function listAdAccountPixels(accessToken: string, adAccountId: string): Pr
   }
 }
 
-async function listMetaLeadForms(accessToken: string, pageId: string): Promise<{ ok: boolean; forms: MetaLeadFormOption[]; error?: string }> {
+async function resolveMetaPageAccessToken(userAccessToken: string, pageId: string): Promise<{ ok: boolean; accessToken?: string; error?: string }> {
+  try {
+    const response = await fetch(
+      `${GRAPH_BASE}/${encodeURIComponent(pageId)}?fields=access_token&access_token=${encodeURIComponent(userAccessToken)}`,
+      {
+        method: 'GET',
+        signal: AbortSignal.timeout(20000),
+      },
+    );
+
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: data?.error?.message || `Meta page access token API error: HTTP ${response.status}`,
+      };
+    }
+
+    const pageAccessToken = normalizeString(data?.access_token);
+    if (!pageAccessToken) {
+      return {
+        ok: false,
+        error: 'Meta did not return a Page access token for the selected Facebook page.',
+      };
+    }
+
+    return { ok: true, accessToken: pageAccessToken };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+async function listMetaLeadForms(userAccessToken: string, pageId: string): Promise<{ ok: boolean; forms: MetaLeadFormOption[]; error?: string }> {
   const forms: MetaLeadFormOption[] = [];
+  const pageTokenResult = await resolveMetaPageAccessToken(userAccessToken, pageId);
+  if (!pageTokenResult.ok || !pageTokenResult.accessToken) {
+    return {
+      ok: false,
+      forms: [],
+      error: pageTokenResult.error || 'Failed to resolve a Page access token for the selected Facebook page.',
+    };
+  }
+
   let nextUrl =
     `${GRAPH_BASE}/${encodeURIComponent(pageId)}/leadgen_forms` +
-    `?fields=id,name,status,leads_count,created_time&limit=50&access_token=${encodeURIComponent(accessToken)}`;
+    `?fields=id,name,status,leads_count,created_time&limit=50&access_token=${encodeURIComponent(pageTokenResult.accessToken)}`;
 
   try {
     while (nextUrl && forms.length < 300) {
