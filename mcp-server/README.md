@@ -125,6 +125,9 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 |------|-------------|-----------------|
 | `zuckerbot_preview_campaign` | Generate ad preview from a URL (no Meta account needed) | `url` |
 | `zuckerbot_create_campaign` | Create a legacy or intelligence campaign draft with strategy, targeting, and creatives | `url` |
+| `zuckerbot_enrich_business` | Crawl a business website and cache structured context for intelligence planning | `business_id` |
+| `zuckerbot_upload_business_context` | Upload text business context and extract structured insights | `business_id`, `filename`, `content` |
+| `zuckerbot_list_business_context` | List uploaded business-context files and extracted summaries | `business_id` |
 | `zuckerbot_get_campaign` | Get campaign detail, workflow state, stored creatives, and linked tier executions | `campaign_id` |
 | `zuckerbot_approve_campaign_strategy` | Approve the generated tiers and creative angles for an intelligence campaign | `campaign_id` |
 | `zuckerbot_request_creative` | Create or dispatch a creative handoff package for an intelligence campaign | `campaign_id` |
@@ -163,6 +166,8 @@ ZUCKERBOT_API_KEY=zb_live_your_key_here zuckerbot serve
 | `zuckerbot_rebalance_portfolio` | Dry-run or apply a portfolio rebalance | `portfolio_id` |
 
 For intelligence campaigns, the recommended flow is `create -> approve -> request/upload creative -> activate`.
+
+Business context can also be refreshed independently through `zuckerbot_enrich_business`, `zuckerbot_upload_business_context`, and `zuckerbot_list_business_context`.
 
 ## Example Conversation
 

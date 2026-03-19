@@ -39,6 +39,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Navbar } from "@/components/Navbar";
 import MediaManager from "@/components/MediaManager";
+import BusinessContextManager from "@/components/BusinessContextManager";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -67,6 +68,9 @@ interface Business {
   meta_pixel_id: string | null;
   currency: string;
   markets: string[];
+  website_url?: string | null;
+  web_context?: Record<string, any> | null;
+  web_context_updated_at?: string | null;
 }
 
 interface PortfolioTier {
@@ -409,6 +413,7 @@ export default function Profile() {
         if (formData.postcode.trim()) bizUpdate.postcode = formData.postcode.trim();
         if (formData.state.trim()) bizUpdate.state = formData.state.trim();
         bizUpdate.website = formData.website.trim() || null;
+        bizUpdate.website_url = formData.website.trim() || null;
         bizUpdate.meta_pixel_id = formData.meta_pixel_id.trim() || null;
 
         const { error: bizError } = await supabase
@@ -494,6 +499,7 @@ export default function Profile() {
                 postcode: formData.postcode.trim() || prev.postcode,
                 state: formData.state.trim() || prev.state,
                 website: formData.website.trim() || null,
+                website_url: formData.website.trim() || null,
                 meta_pixel_id: formData.meta_pixel_id.trim() || null,
                 currency: formData.currency.trim().toUpperCase() || prev.currency,
                 markets,
@@ -1537,6 +1543,24 @@ export default function Profile() {
                     </div>
                   </CardContent>
                 </Card>
+              )}
+
+              {business && currentUser?.id && (
+                <BusinessContextManager
+                  business={business}
+                  userId={currentUser.id}
+                  onBusinessContextUpdated={(next) =>
+                    setBusiness((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            web_context: next.web_context,
+                            web_context_updated_at: next.web_context_updated_at,
+                          }
+                        : prev
+                    )
+                  }
+                />
               )}
 
               {business && (

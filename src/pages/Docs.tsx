@@ -11,6 +11,10 @@ const sections = [
   { id: "endpoints", label: "Endpoints" },
   { id: "ep-preview", label: "POST /campaigns/preview", indent: true },
   { id: "ep-create", label: "POST /campaigns/create", indent: true },
+  { id: "ep-business-enrich", label: "POST /businesses/:id/enrich", indent: true },
+  { id: "ep-business-uploads-list", label: "GET /businesses/:id/uploads", indent: true },
+  { id: "ep-business-uploads-create", label: "POST /businesses/:id/uploads", indent: true },
+  { id: "ep-business-uploads-reextract", label: "POST /businesses/:id/uploads/:fileId/re-extract", indent: true },
   { id: "ep-detail", label: "GET /campaigns/:id", indent: true },
   { id: "ep-approve-strategy", label: "POST /campaigns/:id/approve-strategy", indent: true },
   { id: "ep-request-creative", label: "POST /campaigns/:id/request-creative", indent: true },
@@ -551,6 +555,10 @@ const Docs = () => {
     "has_crm_data": true,
     "has_market_data": true,
     "has_portfolio": false,
+    "has_web_context": true,
+    "has_uploaded_context": true,
+    "uploaded_context_count": 2,
+    "web_context_age_days": 0,
     "months_of_data": 12
   },
   "goals": {
@@ -582,6 +590,124 @@ const Docs = () => {
     "budget_daily_cents": 2000,
     "goals": {"target_monthly_leads": 120, "target_cpl": 22}
   }'`}
+          />
+
+          <EndpointSection
+            id="ep-business-enrich"
+            method="POST"
+            path="/v1/businesses/:id/enrich"
+            description="Crawl the stored business website and cache structured web context used by intelligence planning."
+            notes="Accepts either an API key or a signed-in user session. force_refresh bypasses the 30-day cache."
+            requestBody={`{
+  "url": "https://joes-pizza-austin.com",
+  "force_refresh": true
+}`}
+            responseBody={`{
+  "business_id": "biz_123",
+  "cached": false,
+  "web_context": {
+    "business_name": "Joe's Pizza",
+    "description": "New York-style pizza shop serving Austin families and late-night delivery customers.",
+    "business_type": "local_services",
+    "target_audience": ["Austin families", "late-night delivery customers"],
+    "value_props": ["Fast delivery", "Authentic NY-style slices"],
+    "pain_points_addressed": ["last-minute dinner decisions"],
+    "primary_cta": "Order Now",
+    "pages_crawled": 5,
+    "scraped_at": "2026-03-19T00:00:00Z",
+    "source_urls": ["https://joes-pizza-austin.com/"]
+  }
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/businesses/biz_123/enrich \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{"force_refresh": true}'`}
+          />
+
+          <EndpointSection
+            id="ep-business-uploads-list"
+            method="GET"
+            path="/v1/businesses/:id/uploads"
+            description="List uploaded business-context files and their extracted summaries."
+            responseBody={`{
+  "business_id": "biz_123",
+  "uploads": [
+    {
+      "id": "upload_123",
+      "filename": "brand-guidelines.md",
+      "file_type": "text/markdown",
+      "uploaded_at": "2026-03-19T00:00:00Z",
+      "summary": "Brand voice and positioning notes for Joe's Pizza.",
+      "context_type": "brand_guidelines",
+      "extracted_data": {
+        "tone_of_voice": "Warm, local, high-energy",
+        "key_insights": ["Lead with family dinner convenience"]
+      }
+    }
+  ]
+}`}
+            curlExample={`curl https://zuckerbot.ai/api/v1/businesses/biz_123/uploads \\
+  -H "Authorization: Bearer zb_live_abc123"`}
+          />
+
+          <EndpointSection
+            id="ep-business-uploads-create"
+            method="POST"
+            path="/v1/businesses/:id/uploads"
+            description="Register a direct-uploaded file or send inline text content, then extract structured planning insights."
+            notes="Use file_path for the web app's direct-to-storage flow. Use content for MCP or other text-only clients. DELETE /v1/businesses/:id/uploads/:fileId removes the row and storage object."
+            requestBody={`{
+  "filename": "brand-guidelines.md",
+  "file_path": "user_123/business-context/biz_123/1710800000-brand-guidelines.md",
+  "file_type": "text/markdown",
+  "file_size_bytes": 4200
+}`}
+            responseBody={`{
+  "business_id": "biz_123",
+  "upload": {
+    "id": "upload_123",
+    "filename": "brand-guidelines.md",
+    "file_type": "text/markdown",
+    "uploaded_at": "2026-03-19T00:00:00Z",
+    "summary": "Brand voice and positioning notes for Joe's Pizza.",
+    "context_type": "brand_guidelines",
+    "extracted_data": {
+      "tone_of_voice": "Warm, local, high-energy",
+      "key_insights": ["Lead with family dinner convenience"]
+    }
+  }
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/businesses/biz_123/uploads \\
+  -H "Authorization: Bearer zb_live_abc123" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "filename": "brand-guidelines.md",
+    "content": "# Joe's Pizza\\nLead with family bundles and delivery speed."
+  }'`}
+          />
+
+          <EndpointSection
+            id="ep-business-uploads-reextract"
+            method="POST"
+            path="/v1/businesses/:id/uploads/:fileId/re-extract"
+            description="Re-run extraction for an existing uploaded business-context file without re-uploading it."
+            responseBody={`{
+  "business_id": "biz_123",
+  "upload": {
+    "id": "upload_123",
+    "filename": "brand-guidelines.md",
+    "file_type": "text/markdown",
+    "uploaded_at": "2026-03-19T00:00:00Z",
+    "summary": "Updated brand voice and positioning notes for Joe's Pizza.",
+    "context_type": "brand_guidelines",
+    "extracted_data": {
+      "tone_of_voice": "Warm, local, high-energy",
+      "key_insights": ["Lead with family dinner convenience", "Avoid generic discount language"]
+    }
+  }
+}`}
+            curlExample={`curl -X POST https://zuckerbot.ai/api/v1/businesses/biz_123/uploads/upload_123/re-extract \\
+  -H "Authorization: Bearer zb_live_abc123"`}
           />
 
           {/* GET /v1/campaigns/:id */}
@@ -1391,6 +1517,9 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
               {[
                 { name: "zuckerbot_preview_campaign", desc: "Generate ad previews from a URL" },
                 { name: "zuckerbot_create_campaign", desc: "Create a legacy or intelligence campaign draft" },
+                { name: "zuckerbot_enrich_business", desc: "Refresh cached website context for a business" },
+                { name: "zuckerbot_upload_business_context", desc: "Upload text business context and extract planning insights" },
+                { name: "zuckerbot_list_business_context", desc: "List uploaded business-context summaries" },
                 { name: "zuckerbot_get_campaign", desc: "Fetch campaign detail, workflow state, creatives, and tier executions" },
                 { name: "zuckerbot_approve_campaign_strategy", desc: "Freeze the approved tiers and creative angles for an intelligence campaign" },
                 { name: "zuckerbot_request_creative", desc: "Create or dispatch a creative production handoff" },

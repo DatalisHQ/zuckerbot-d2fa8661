@@ -100,6 +100,17 @@ const creativeUploadSchema = z.object({
   variant_index: z.number().int().optional().describe("Optional variant index for tracking"),
 });
 
+const businessContextTypeSchema = z
+  .enum([
+    "ad_performance",
+    "customer_data",
+    "brand_guidelines",
+    "competitor_analysis",
+    "sales_data",
+    "other",
+  ])
+  .optional();
+
 // ── Register all tools ───────────────────────────────────────────────
 
 export function registerTools(server: McpServer, client: ZuckerBotClient): void {
@@ -173,6 +184,67 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
         if (creative_handoff) body.creative_handoff = creative_handoff;
 
         const result = await client.post("/campaigns/create", body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_enrich_business",
+    "Crawl a business website and extract structured context used by intelligence campaign planning.",
+    {
+      business_id: z.string().describe("Business ID to enrich"),
+      url: z.string().optional().describe("Optional website URL override. Uses the stored business website when omitted."),
+      force_refresh: z.boolean().optional().describe("Re-scrape even when cached context exists"),
+    },
+    async ({ business_id, url, force_refresh }) => {
+      try {
+        const body: Record<string, unknown> = {};
+        if (url) body.url = url;
+        if (force_refresh !== undefined) body.force_refresh = force_refresh;
+        const result = await client.post(`/businesses/${business_id}/enrich`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_upload_business_context",
+    "Upload text business context for a business and have ZuckerBot extract structured planning insights.",
+    {
+      business_id: z.string().describe("Business ID"),
+      filename: z.string().describe("Name of the file or document"),
+      content: z.string().describe("File content as text"),
+      context_type: businessContextTypeSchema.describe("Optional hint about the type of uploaded context"),
+    },
+    async ({ business_id, filename, content, context_type }) => {
+      try {
+        const body: Record<string, unknown> = {
+          filename,
+          content,
+        };
+        if (context_type) body.context_type = context_type;
+        const result = await client.post(`/businesses/${business_id}/uploads`, body);
+        return formatResult(result);
+      } catch (err) {
+        return formatError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "zuckerbot_list_business_context",
+    "List uploaded business-context files and their extracted summaries for a business.",
+    {
+      business_id: z.string().describe("Business ID"),
+    },
+    async ({ business_id }) => {
+      try {
+        const result = await client.get(`/businesses/${business_id}/uploads`);
         return formatResult(result);
       } catch (err) {
         return formatError(err);

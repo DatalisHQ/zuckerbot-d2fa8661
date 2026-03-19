@@ -8,6 +8,9 @@ const __dirname = path.dirname(__filename);
 
 const requiredToolNames = [
   "zuckerbot_create_campaign",
+  "zuckerbot_enrich_business",
+  "zuckerbot_upload_business_context",
+  "zuckerbot_list_business_context",
   "zuckerbot_get_campaign",
   "zuckerbot_approve_campaign_strategy",
   "zuckerbot_request_creative",
@@ -23,6 +26,9 @@ const requiredToolNames = [
 ];
 
 const requiredDocsSnippets = [
+  "/v1/businesses/:id/enrich",
+  "/v1/businesses/:id/uploads",
+  "/v1/businesses/:id/uploads/:fileId/re-extract",
   "/v1/campaigns/:id/approve-strategy",
   "/v1/campaigns/:id/request-creative",
   "/v1/campaigns/:id/upload-creative",
@@ -34,6 +40,8 @@ const requiredDocsSnippets = [
 
 const requiredReadmeSnippets = [
   "create -> approve -> request/upload creative -> activate",
+  "zuckerbot_enrich_business",
+  "zuckerbot_upload_business_context",
   "zuckerbot_activate_campaign",
   "zuckerbot_create_seed_audience",
   "zuckerbot_get_campaign",

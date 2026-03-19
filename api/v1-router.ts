@@ -22,6 +22,11 @@
  *   POST /api/v1/capi/config/test           → handleCapiConfigTest
  *   POST /api/v1/capi/events                → handleCapiEvents
  *   GET  /api/v1/capi/status                → handleCapiStatus
+ *   POST /api/v1/businesses/:id/enrich      → handleBusinessEnrich
+ *   GET  /api/v1/businesses/:id/uploads     → handleBusinessUploads
+ *   POST /api/v1/businesses/:id/uploads     → handleBusinessUploads
+ *   DELETE /api/v1/businesses/:id/uploads/:fileId → handleBusinessUploadDelete
+ *   POST /api/v1/businesses/:id/uploads/:fileId/re-extract → handleBusinessUploadReExtract
  *   POST /api/v1/audiences/create-seed      → handleAudiencesCreateSeed
  *   POST /api/v1/audiences/create-lal       → handleAudiencesCreateLal
  *   GET  /api/v1/audiences/list             → handleAudiencesList
@@ -56,6 +61,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'crypto';
+import { load as loadHtml } from 'cheerio';
+import { PDFParse } from 'pdf-parse';
 import {
   type ZuckerObjective,
   VALID_OBJECTIVES,
@@ -93,6 +100,8 @@ const AIML_API_KEY = process.env.AIML_API_KEY || '';
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 const WAVESPEED_API_KEY = process.env.WAVESPEED_API_KEY || '';
 const CREATIVE_STORAGE_BUCKET = 'creatives';
+const BUSINESS_UPLOAD_STORAGE_BUCKET = 'user-files';
+const BUSINESS_CONTEXT_STORAGE_PREFIX = 'business-context';
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -136,6 +145,14 @@ interface AuthSuccess {
   rateLimitHeaders: Record<string, string>;
 }
 
+interface BusinessRouteAuthSuccess {
+  error: false;
+  actor: 'api_key' | 'user';
+  user_id: string;
+  apiKeyId?: string;
+  rateLimitHeaders: Record<string, string>;
+}
+
 interface AuthFailure {
   error: true;
   status: number;
@@ -144,10 +161,15 @@ interface AuthFailure {
 }
 
 type AuthResult = AuthSuccess | AuthFailure;
+type BusinessRouteAuthResult = BusinessRouteAuthSuccess | AuthFailure;
 
 /** Narrow auth result after error check */
 function assertAuth(auth: AuthResult): asserts auth is AuthSuccess {
   if (auth.error) throw new Error('Auth not narrowed');
+}
+
+function assertBusinessRouteAuth(auth: BusinessRouteAuthResult): asserts auth is BusinessRouteAuthSuccess {
+  if (auth.error) throw new Error('Business auth not narrowed');
 }
 
 function hashKey(raw: string): string {
@@ -257,6 +279,64 @@ async function authenticateRequest(
       name: keyRecord.name,
     },
     rateLimitHeaders,
+  };
+}
+
+async function authenticateBusinessRequest(
+  req: { headers: Record<string, string | string[] | undefined> },
+): Promise<BusinessRouteAuthResult> {
+  const authHeader =
+    (req.headers['authorization'] as string) ||
+    (req.headers['Authorization'] as string) ||
+    '';
+
+  if (!authHeader.startsWith('Bearer ')) {
+    return {
+      error: true,
+      status: 401,
+      body: { error: { code: 'missing_auth_token', message: 'Authorization header must be: Bearer <api_key_or_session_token>' } },
+    };
+  }
+
+  const rawToken = authHeader.slice(7).trim();
+  if (!rawToken) {
+    return {
+      error: true,
+      status: 401,
+      body: { error: { code: 'missing_auth_token', message: 'Authorization token is empty' } },
+    };
+  }
+
+  const apiKeyAuth = await authenticateRequest(req);
+  if (!apiKeyAuth.error) {
+    assertAuth(apiKeyAuth);
+    return {
+      error: false,
+      actor: 'api_key',
+      user_id: apiKeyAuth.keyRecord.user_id,
+      apiKeyId: apiKeyAuth.keyRecord.id,
+      rateLimitHeaders: apiKeyAuth.rateLimitHeaders,
+    };
+  }
+
+  if (apiKeyAuth.status === 429 || apiKeyAuth.body.error.code === 'revoked_api_key') {
+    return apiKeyAuth;
+  }
+
+  const { data, error } = await supabaseAnon.auth.getUser(rawToken);
+  if (error || !data?.user) {
+    return {
+      error: true,
+      status: 401,
+      body: { error: { code: 'invalid_auth_token', message: 'The provided token is not a valid API key or signed-in user session.' } },
+    };
+  }
+
+  return {
+    error: false,
+    actor: 'user',
+    user_id: data.user.id,
+    rateLimitHeaders: {},
   };
 }
 
@@ -583,46 +663,72 @@ function normalizeMetaActionSource(value: unknown): string | null {
   return normalized;
 }
 
-async function resolveOwnedBusiness(
-  auth: AuthSuccess,
-  explicitBusinessId?: string | null,
-): Promise<any | null> {
+async function resolveBusinessForUser(args: {
+  userId: string;
+  explicitBusinessId?: string | null;
+  apiKeyId?: string | null;
+}): Promise<any | null> {
+  const explicitBusinessId = normalizeString(args.explicitBusinessId);
   if (explicitBusinessId) {
     const { data: business } = await supabaseAdmin
       .from('businesses')
       .select('*')
       .eq('id', explicitBusinessId)
-      .eq('user_id', auth.keyRecord.user_id)
+      .eq('user_id', args.userId)
       .maybeSingle();
     return business || null;
   }
 
-  const { data: linkedKey } = await supabaseAdmin
-    .from('api_keys')
-    .select('business_id')
-    .eq('id', auth.keyRecord.id)
-    .maybeSingle();
-
-  const linkedBusinessId = normalizeString(linkedKey?.business_id);
-  if (linkedBusinessId) {
-    const { data: business } = await supabaseAdmin
-      .from('businesses')
-      .select('*')
-      .eq('id', linkedBusinessId)
-      .eq('user_id', auth.keyRecord.user_id)
+  if (args.apiKeyId) {
+    const { data: linkedKey } = await supabaseAdmin
+      .from('api_keys')
+      .select('business_id')
+      .eq('id', args.apiKeyId)
       .maybeSingle();
-    if (business) return business;
+
+    const linkedBusinessId = normalizeString(linkedKey?.business_id);
+    if (linkedBusinessId) {
+      const { data: business } = await supabaseAdmin
+        .from('businesses')
+        .select('*')
+        .eq('id', linkedBusinessId)
+        .eq('user_id', args.userId)
+        .maybeSingle();
+      if (business) return business;
+    }
   }
 
   const { data: business } = await supabaseAdmin
     .from('businesses')
     .select('*')
-    .eq('user_id', auth.keyRecord.user_id)
+    .eq('user_id', args.userId)
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();
 
   return business || null;
+}
+
+async function resolveOwnedBusiness(
+  auth: AuthSuccess,
+  explicitBusinessId?: string | null,
+): Promise<any | null> {
+  return resolveBusinessForUser({
+    userId: auth.keyRecord.user_id,
+    explicitBusinessId,
+    apiKeyId: auth.keyRecord.id,
+  });
+}
+
+async function resolveOwnedBusinessForRoute(
+  auth: BusinessRouteAuthSuccess,
+  explicitBusinessId?: string | null,
+): Promise<any | null> {
+  return resolveBusinessForUser({
+    userId: auth.user_id,
+    explicitBusinessId,
+    apiKeyId: auth.actor === 'api_key' ? auth.apiKeyId || null : null,
+  });
 }
 
 async function resolveCapiConfigForBusiness(business: { id: string; user_id: string; currency?: string | null }) {
@@ -1147,6 +1253,24 @@ interface IntelligenceStrategyPayload {
   phase_3_actions: string[];
 }
 
+type BusinessUploadContextType =
+  | 'ad_performance'
+  | 'customer_data'
+  | 'brand_guidelines'
+  | 'competitor_analysis'
+  | 'sales_data'
+  | 'other';
+
+interface CampaignUploadedContext {
+  id: string;
+  filename: string;
+  file_type: string;
+  uploaded_at: string;
+  summary: string | null;
+  context_type: BusinessUploadContextType | null;
+  extracted_data: Record<string, any> | null;
+}
+
 interface CampaignContextPayload {
   business: {
     id: string;
@@ -1161,7 +1285,22 @@ interface CampaignContextPayload {
   pipeline?: Record<string, any> | null;
   market?: Record<string, any> | null;
   portfolio?: Record<string, any> | null;
+  web_context?: Record<string, any> | null;
+  user_uploaded?: CampaignUploadedContext[] | null;
   goals: CampaignGoalsInput;
+}
+
+interface CrawledWebsitePage {
+  url: string;
+  title: string | null;
+  description: string | null;
+  text: string;
+  links: string[];
+  hero_images: string[];
+  video_urls: string[];
+  primary_ctas: string[];
+  logo_url: string | null;
+  languages_detected: string[];
 }
 
 function getJsonObject(value: unknown): Record<string, any> | null {
@@ -1169,12 +1308,13 @@ function getJsonObject(value: unknown): Record<string, any> | null {
   return value as Record<string, any>;
 }
 
-function sanitizeStringArray(value: unknown): string[] | undefined {
+function sanitizeStringArray(value: unknown, limit?: number): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const items = value
     .map((entry) => normalizeString(entry))
     .filter(Boolean) as string[];
-  return items.length > 0 ? items : undefined;
+  if (items.length === 0) return undefined;
+  return typeof limit === 'number' ? items.slice(0, limit) : items;
 }
 
 function normalizeCampaignMode(value: unknown): CampaignMode {
@@ -1633,13 +1773,14 @@ function sanitizeIntelligenceCreativeAngle(value: any, index: number): Intellige
 function buildDefaultAudienceTiers(ctx: CampaignContextPayload, budgetCents: number): IntelligenceAudienceTier[] {
   const markets = ctx.goals.markets_to_target || ctx.business.markets;
   const hasCustomerVolume = safeNumber(ctx.pipeline?.total_customers) >= 100;
+  const targetAudienceHint = sanitizeStringArray(ctx.web_context?.target_audience)?.[0] || getFirstUploadedInsight(ctx) || 'available business context';
   const tiers: IntelligenceAudienceTier[] = [
     {
       tier_name: `${markets[0] || 'Primary'} Broad ADV+`,
       tier_type: 'prospecting_broad',
       geo: markets,
       targeting_type: 'broad',
-      targeting_details: 'Broad/ADV+ targeting informed by available performance and market data.',
+      targeting_details: `Broad/ADV+ targeting informed by ${targetAudienceHint}.`,
       age_min: 25,
       age_max: 55,
       daily_budget_cents: Math.max(500, Math.round(budgetCents * (hasCustomerVolume ? 0.45 : 0.7))),
@@ -1684,20 +1825,24 @@ function buildDefaultAudienceTiers(ctx: CampaignContextPayload, budgetCents: num
 
 function buildDefaultCreativeAngles(ctx: CampaignContextPayload): IntelligenceCreativeAngle[] {
   const marketHint = normalizeString(ctx.market?.recommended_positioning) || 'Emphasise the strongest market differentiator.';
+  const topValueProp = getFirstWebValueProp(ctx) || marketHint;
+  const topPainPoint = getFirstWebPainPoint(ctx) || 'the operational cost of delay';
+  const primaryOffer = getPrimaryOfferLabel(ctx) || ctx.business.name;
+  const uploadedInsight = getFirstUploadedInsight(ctx);
   return [
     {
       angle_name: 'Proof Over Promise',
-      hook: 'Show the real-world outcome in the first 3 seconds.',
-      message: `${ctx.business.name} turns attention into qualified action with credible proof points.`,
+      hook: topValueProp ? `Lead with ${topValueProp} in the first 3 seconds.` : 'Show the real-world outcome in the first 3 seconds.',
+      message: `${ctx.business.name} turns attention into qualified action with proof around ${primaryOffer}.`,
       cta: 'Learn More',
       format: 'video_ugc',
-      rationale: marketHint,
+      rationale: uploadedInsight ? `${marketHint} Use uploaded proof and context to support the claim.` : marketHint,
       variants_recommended: 3,
     },
     {
       angle_name: 'Pain Interruption',
       hook: 'Call out the cost of doing nothing.',
-      message: `Frame the core problem ${ctx.business.name} solves and the operational cost of delay.`,
+      message: `Frame how ${ctx.business.name} solves ${topPainPoint} and the operational cost of delay.`,
       cta: 'Get Quote',
       format: 'static_image',
       rationale: 'Useful when market competition is noisy and attention is scarce.',
@@ -1706,10 +1851,10 @@ function buildDefaultCreativeAngles(ctx: CampaignContextPayload): IntelligenceCr
     {
       angle_name: 'Operator Clarity',
       hook: 'Show how the offer actually works.',
-      message: 'Explain the mechanism, process, or promise in plain language.',
-      cta: 'Sign Up',
+      message: `Explain how ${primaryOffer} works in plain language and why it is credible.`,
+      cta: normalizeString(ctx.web_context?.primary_cta) || 'Sign Up',
       format: 'video_reel',
-      rationale: 'Supports higher-intent users who need confidence before converting.',
+      rationale: uploadedInsight ? `Supports higher-intent users who need confidence before converting. Reinforce ${uploadedInsight}.` : 'Supports higher-intent users who need confidence before converting.',
       variants_recommended: 2,
     },
   ];
@@ -1744,8 +1889,18 @@ function sanitizeIntelligenceStrategy(
 }
 
 function buildCampaignPlanningPrompt(ctx: CampaignContextPayload, objective: ZuckerObjective, budgetCents: number) {
+  const uploadedContext = (ctx.user_uploaded || []).map((upload) => ({
+    filename: upload.filename,
+    context_type: upload.context_type,
+    summary: upload.summary,
+    extracted_data: upload.extracted_data,
+  }));
+
   const lines = [
     'You are a senior performance marketing strategist creating a Meta Ads campaign plan.',
+    '',
+    '## Available Context',
+    ...buildContextAvailabilityLines(ctx),
     '',
     '## Business Context',
     `- Name: ${ctx.business.name}`,
@@ -1768,6 +1923,10 @@ function buildCampaignPlanningPrompt(ctx: CampaignContextPayload, objective: Zuc
     `## Historical Performance\n${JSON.stringify(ctx.historical || { note: 'No historical ad account insights available.' }, null, 2)}`,
     '',
     `## CRM Pipeline Signals\n${JSON.stringify(ctx.pipeline || { note: 'No downstream CRM data available.' }, null, 2)}`,
+    '',
+    `## Web-Scraped Business Context\n${JSON.stringify(ctx.web_context || { note: 'No cached web context available.' }, null, 2)}`,
+    '',
+    `## User-Uploaded Business Context\n${JSON.stringify(uploadedContext.length > 0 ? uploadedContext : { note: 'No user-uploaded context available.' }, null, 2)}`,
     '',
     `## Market Research\n${JSON.stringify(ctx.market || { note: 'No market research available.' }, null, 2)}`,
     '',
@@ -1818,6 +1977,8 @@ function buildCampaignPlanningPrompt(ctx: CampaignContextPayload, objective: Zuc
     '- If a market has leads but zero customers, warn about it and avoid giving it significant budget.',
     '- If frequency is above 3, recommend audience expansion or new geos.',
     '- If no historical data is available, keep the plan conservative.',
+    '- Use web-scraped products, value props, pain points, social proof, CTAs, and uploaded key insights when proposing creative angles and targeting details.',
+    '- Be explicit when recommendations are limited by missing data.',
   ].filter(Boolean);
 
   return lines.join('\n');
@@ -1877,6 +2038,10 @@ function summariseContextAvailability(ctx: CampaignContextPayload) {
     has_crm_data: !!ctx.pipeline,
     has_market_data: !!ctx.market,
     has_portfolio: !!ctx.portfolio,
+    has_web_context: !!ctx.web_context,
+    has_uploaded_context: !!ctx.user_uploaded?.length,
+    uploaded_context_count: (ctx.user_uploaded || []).length,
+    web_context_age_days: getWebContextAgeDays(ctx.web_context?.scraped_at || null),
     months_of_data: safeNumber(ctx.historical?.months_of_data),
   };
 }
@@ -3380,6 +3545,840 @@ function normalizeNumber(value: unknown): number | null {
   return null;
 }
 
+const WEB_CONTEXT_MAX_AGE_DAYS = 30;
+const WEB_CONTEXT_PAGE_LIMIT = 8;
+const WEB_CONTEXT_PAGE_TIMEOUT_MS = 5_000;
+const WEB_CONTEXT_REQUEST_TIMEOUT_MS = 15_000;
+const WEB_CONTEXT_PAGE_TEXT_LIMIT = 6_000;
+const BUSINESS_CONTEXT_TEXT_LIMIT = 50_000;
+const BUSINESS_CONTEXT_FILE_SIZE_LIMIT = 10 * 1024 * 1024;
+const BUSINESS_CONTEXT_ALLOWED_HINT_TYPES = new Set<BusinessUploadContextType>([
+  'ad_performance',
+  'customer_data',
+  'brand_guidelines',
+  'competitor_analysis',
+  'sales_data',
+  'other',
+]);
+const BUSINESS_CONTEXT_PRIORITY_SEGMENTS = [
+  'pricing',
+  'plans',
+  'about',
+  'company',
+  'features',
+  'product',
+  'products',
+  'services',
+  'solutions',
+  'testimonials',
+  'reviews',
+  'case-studies',
+  'demo',
+  'book-demo',
+  'contact',
+];
+const BUSINESS_CONTEXT_SKIP_SEGMENTS = [
+  'blog',
+  'news',
+  'press',
+  'career',
+  'jobs',
+  'privacy',
+  'terms',
+  'legal',
+  'cookie',
+  'sitemap',
+  'login',
+  'signin',
+  'sign-in',
+  'signup',
+  'sign-up',
+];
+
+function firstNonEmptyString(values: unknown[]): string | null {
+  for (const value of values) {
+    const normalized = normalizeString(value);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function sanitizeNullableStringArray(value: unknown, limit = 8): string[] | null {
+  const items = sanitizeStringArray(value);
+  return items && items.length > 0 ? items.slice(0, limit) : null;
+}
+
+function sanitizeJsonValue(value: unknown, depth = 0): any {
+  if (depth > 4) return null;
+  if (value === null) return null;
+  if (typeof value === 'string') return normalizeString(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    const items = value
+      .map((entry) => sanitizeJsonValue(entry, depth + 1))
+      .filter((entry) => entry !== null);
+    return items.length > 0 ? items : null;
+  }
+  if (value && typeof value === 'object') {
+    const next: Record<string, any> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
+      const normalizedKey = normalizeString(key);
+      const sanitized = sanitizeJsonValue(entry, depth + 1);
+      if (normalizedKey && sanitized !== null) next[normalizedKey] = sanitized;
+    }
+    return Object.keys(next).length > 0 ? next : null;
+  }
+  return null;
+}
+
+function trimWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
+}
+
+function normalizeUrlCandidate(value: string | null, baseUrl?: string | null): string | null {
+  const normalized = normalizeString(value);
+  if (!normalized) return null;
+
+  try {
+    const url = baseUrl ? new URL(normalized, baseUrl) : new URL(normalized);
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    url.hash = '';
+    return url.toString();
+  } catch {
+    if (baseUrl) {
+      try {
+        const url = new URL(normalized, baseUrl);
+        if (!['http:', 'https:'].includes(url.protocol)) return null;
+        url.hash = '';
+        return url.toString();
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function normalizeBusinessWebsiteUrl(value: string | null): string | null {
+  const normalized = normalizeString(value);
+  if (!normalized) return null;
+  if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+    return normalizeUrlCandidate(normalized);
+  }
+  return normalizeUrlCandidate(`https://${normalized}`);
+}
+
+function sanitizeFilename(filename: string): string {
+  const normalized = normalizeString(filename) || 'context.txt';
+  return normalized.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').slice(0, 120) || 'context.txt';
+}
+
+function inferBusinessContextFileType(filename: string, explicitType?: string | null): string | null {
+  const normalizedType = normalizeString(explicitType)?.toLowerCase() || null;
+  if (normalizedType) {
+    if (normalizedType === 'application/pdf') return normalizedType;
+    if (normalizedType === 'text/csv' || normalizedType === 'application/csv' || normalizedType === 'application/vnd.ms-excel') {
+      return 'text/csv';
+    }
+    if (normalizedType === 'text/plain') return normalizedType;
+    if (normalizedType === 'text/markdown') return normalizedType;
+  }
+
+  const extension = filename.toLowerCase().split('.').pop() || '';
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'csv') return 'text/csv';
+  if (extension === 'md' || extension === 'markdown') return 'text/markdown';
+  if (extension === 'txt' || extension === 'text') return 'text/plain';
+  return null;
+}
+
+function buildBusinessContextStoragePath(userId: string, businessId: string, filename: string): string {
+  return `${userId}/${BUSINESS_CONTEXT_STORAGE_PREFIX}/${businessId}/${Date.now()}-${sanitizeFilename(filename)}`;
+}
+
+function isOwnedBusinessContextPath(filePath: string, userId: string, businessId: string): boolean {
+  const normalized = normalizeString(filePath);
+  if (!normalized) return false;
+  return normalized.startsWith(`${userId}/${BUSINESS_CONTEXT_STORAGE_PREFIX}/${businessId}/`);
+}
+
+function getFileExtension(filename: string): string {
+  return filename.includes('.') ? filename.split('.').pop()!.toLowerCase() : '';
+}
+
+function isWebContextStale(updatedAt: unknown): boolean {
+  const normalized = normalizeString(updatedAt);
+  if (!normalized) return true;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return true;
+  return (Date.now() - parsed.getTime()) > WEB_CONTEXT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+}
+
+function getWebContextAgeDays(updatedAt: unknown): number | null {
+  const normalized = normalizeString(updatedAt);
+  if (!normalized) return null;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - parsed.getTime()) / (24 * 60 * 60 * 1000)));
+}
+
+function sanitizeBusinessUploadContextType(value: unknown): BusinessUploadContextType | null {
+  const normalized = normalizeString(value)?.toLowerCase() as BusinessUploadContextType | undefined;
+  if (!normalized || !BUSINESS_CONTEXT_ALLOWED_HINT_TYPES.has(normalized)) return null;
+  return normalized;
+}
+
+function hasMeaningfulWebContext(context: Record<string, any> | null): boolean {
+  if (!context) return false;
+  return Boolean(
+    normalizeString(context.business_name)
+    || normalizeString(context.description)
+    || sanitizeStringArray(context.target_audience)?.length
+    || sanitizeStringArray(context.value_props)?.length,
+  );
+}
+
+function sanitizeWebScrapedContext(value: unknown, metadata: {
+  sourceUrls: string[];
+  pagesCrawled: number;
+  fallbackAssets: {
+    logoUrl: string | null;
+    heroImages: string[];
+    videoUrls: string[];
+    languages: string[];
+  };
+}): Record<string, any> | null {
+  const raw = getJsonObject(value);
+  if (!raw) return null;
+
+  const products = Array.isArray(raw.products_services)
+    ? raw.products_services
+        .map((entry) => {
+          const item = getJsonObject(entry);
+          if (!item) return null;
+          const name = normalizeString(item.name);
+          const description = normalizeString(item.description);
+          if (!name && !description) return null;
+          return {
+            ...(name ? { name } : {}),
+            ...(description ? { description } : {}),
+            ...(normalizeString(item.price) ? { price: normalizeString(item.price) } : {}),
+            ...(sanitizeStringArray(item.key_features)?.length ? { key_features: sanitizeStringArray(item.key_features, 8) } : {}),
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+
+  const socialProof = Array.isArray(raw.social_proof)
+    ? raw.social_proof
+        .map((entry) => {
+          const item = getJsonObject(entry);
+          if (!item) return null;
+          const type = normalizeString(item.type)?.toLowerCase();
+          const content = normalizeString(item.content);
+          if (!type || !content) return null;
+          if (!['testimonial', 'stat', 'logo', 'award', 'review_count'].includes(type)) return null;
+          return { type, content };
+        })
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+
+  const normalized: Record<string, any> = {
+    scraped_at: new Date().toISOString(),
+    pages_crawled: metadata.pagesCrawled,
+    source_urls: metadata.sourceUrls,
+  };
+
+  const businessName = normalizeString(raw.business_name);
+  const tagline = normalizeString(raw.tagline);
+  const description = normalizeString(raw.description);
+  const businessType = normalizeString(raw.business_type)?.toLowerCase() || null;
+  const primaryProductFocus = normalizeString(raw.primary_product_focus);
+  const primaryCta = normalizeString(raw.primary_cta);
+  const logoUrl = normalizeUrlCandidate(raw.logo_url as string | null) || metadata.fallbackAssets.logoUrl;
+  const heroImages = sanitizeNullableStringArray(raw.hero_images, 6)?.map((entry) => normalizeUrlCandidate(entry) || null).filter(Boolean) as string[] | undefined;
+  const videoUrls = sanitizeNullableStringArray(raw.video_urls, 6)?.map((entry) => normalizeUrlCandidate(entry) || null).filter(Boolean) as string[] | undefined;
+
+  if (businessName) normalized.business_name = businessName;
+  if (tagline) normalized.tagline = tagline;
+  if (description) normalized.description = description;
+  normalized.business_type = businessType || 'other';
+  if (products.length > 0) normalized.products_services = products;
+  if (primaryProductFocus) normalized.primary_product_focus = primaryProductFocus;
+  if (sanitizeStringArray(raw.target_audience)?.length) normalized.target_audience = sanitizeStringArray(raw.target_audience, 8);
+  if (sanitizeStringArray(raw.industries_served)?.length) normalized.industries_served = sanitizeStringArray(raw.industries_served, 8);
+  if (sanitizeStringArray(raw.geographic_focus)?.length) normalized.geographic_focus = sanitizeStringArray(raw.geographic_focus, 8);
+  if (sanitizeStringArray(raw.value_props)?.length) normalized.value_props = sanitizeStringArray(raw.value_props, 8);
+  if (sanitizeStringArray(raw.pain_points_addressed)?.length) normalized.pain_points_addressed = sanitizeStringArray(raw.pain_points_addressed, 8);
+  if (socialProof.length > 0) normalized.social_proof = socialProof;
+  if (sanitizeStringArray(raw.differentiators)?.length) normalized.differentiators = sanitizeStringArray(raw.differentiators, 8);
+  if (sanitizeStringArray(raw.competitors_mentioned)?.length) normalized.competitors_mentioned = sanitizeStringArray(raw.competitors_mentioned, 8);
+  normalized.has_pricing_page = raw.has_pricing_page === true;
+  normalized.has_free_trial = raw.has_free_trial === true;
+  normalized.has_demo_booking = raw.has_demo_booking === true;
+  if (primaryCta) normalized.primary_cta = primaryCta;
+  normalized.languages_detected = sanitizeStringArray(raw.languages_detected, 8) || metadata.fallbackAssets.languages;
+  if (logoUrl) normalized.logo_url = logoUrl;
+  normalized.hero_images = heroImages?.length ? heroImages : metadata.fallbackAssets.heroImages;
+  normalized.video_urls = videoUrls?.length ? videoUrls : metadata.fallbackAssets.videoUrls;
+
+  return hasMeaningfulWebContext(normalized) ? normalized : null;
+}
+
+function sanitizeBusinessUploadExtraction(args: {
+  value: unknown;
+  contextTypeHint?: BusinessUploadContextType | null;
+}): { summary: string; context_type: BusinessUploadContextType; extracted_data: Record<string, any> } | null {
+  const raw = getJsonObject(args.value);
+  if (!raw) return null;
+
+  const summary = normalizeString(raw.summary);
+  const hintedType = sanitizeBusinessUploadContextType(args.contextTypeHint);
+  const detectedType = sanitizeBusinessUploadContextType(raw.context_type);
+  const contextType = hintedType || detectedType || 'other';
+  const extracted = sanitizeJsonValue(raw.extracted_data);
+
+  if (!summary || !extracted || typeof extracted !== 'object' || Array.isArray(extracted)) {
+    return null;
+  }
+
+  return {
+    summary,
+    context_type: contextType,
+    extracted_data: extracted as Record<string, any>,
+  };
+}
+
+function buildContextAvailabilityLines(ctx: CampaignContextPayload): string[] {
+  const lines = [
+    `${ctx.historical ? '[available]' : '[missing]'} Historical Meta ad data`,
+    `${ctx.pipeline ? '[available]' : '[missing]'} CRM pipeline data`,
+    `${ctx.web_context ? `[available] Web-scraped business profile (${safeNumber(ctx.web_context.pages_crawled)} pages crawled)` : '[missing] Web-scraped business profile'}`,
+    `${ctx.user_uploaded?.length ? `[available] User-uploaded context (${ctx.user_uploaded.map((item) => item.filename).join(', ')})` : '[missing] User-uploaded context'}`,
+    `${ctx.market ? '[available]' : '[missing]'} Market research`,
+    `${ctx.portfolio ? '[available]' : '[missing]'} Existing portfolio`,
+  ];
+  return lines;
+}
+
+function getFirstUploadedInsight(ctx: CampaignContextPayload): string | null {
+  for (const upload of ctx.user_uploaded || []) {
+    const insights = sanitizeStringArray(upload.extracted_data?.key_insights);
+    if (insights?.length) return insights[0];
+  }
+  return null;
+}
+
+function getFirstWebValueProp(ctx: CampaignContextPayload): string | null {
+  return sanitizeStringArray(ctx.web_context?.value_props)?.[0] || null;
+}
+
+function getFirstWebPainPoint(ctx: CampaignContextPayload): string | null {
+  return sanitizeStringArray(ctx.web_context?.pain_points_addressed)?.[0] || null;
+}
+
+function getPrimaryOfferLabel(ctx: CampaignContextPayload): string | null {
+  return firstNonEmptyString([
+    ctx.web_context?.primary_product_focus,
+    Array.isArray(ctx.web_context?.products_services) ? ctx.web_context?.products_services?.[0]?.name : null,
+    ctx.business.type,
+  ]);
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function toPlainTextFromHtml(html: string): string {
+  const $ = loadHtml(html);
+  $('script, style, noscript, svg').remove();
+  return truncateText(trimWhitespace($('body').text()), WEB_CONTEXT_PAGE_TEXT_LIMIT);
+}
+
+function extractSameOriginLinks(html: string, baseUrl: string): string[] {
+  const base = new URL(baseUrl);
+  const $ = loadHtml(html);
+  const urls = new Set<string>();
+
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href');
+    const resolved = normalizeUrlCandidate(href || null, base.toString());
+    if (!resolved) return;
+    try {
+      const candidate = new URL(resolved);
+      if (candidate.origin !== base.origin) return;
+      if (BUSINESS_CONTEXT_SKIP_SEGMENTS.some((segment) => candidate.pathname.toLowerCase().includes(segment))) return;
+      urls.add(candidate.toString());
+    } catch {
+      // Ignore malformed URLs.
+    }
+  });
+
+  return Array.from(urls);
+}
+
+function extractAssetUrls(html: string, baseUrl: string): {
+  logoUrl: string | null;
+  heroImages: string[];
+  videoUrls: string[];
+  primaryCtas: string[];
+  languages: string[];
+  title: string | null;
+  description: string | null;
+} {
+  const $ = loadHtml(html);
+  const images: string[] = [];
+  const videos: string[] = [];
+  const ctas: string[] = [];
+  let logoUrl: string | null = null;
+
+  $('img[src]').each((_, el) => {
+    const src = normalizeUrlCandidate($(el).attr('src') || null, baseUrl);
+    if (!src) return;
+    const alt = `${$(el).attr('alt') || ''} ${$(el).attr('class') || ''}`.toLowerCase();
+    if (!logoUrl && alt.includes('logo')) logoUrl = src;
+    if (images.length < 6) images.push(src);
+  });
+
+  $('video[src], iframe[src]').each((_, el) => {
+    const src = normalizeUrlCandidate($(el).attr('src') || null, baseUrl);
+    if (src && videos.length < 6) videos.push(src);
+  });
+
+  $('a, button').each((_, el) => {
+    const text = trimWhitespace($(el).text());
+    if (!text) return;
+    const lowered = text.toLowerCase();
+    if (
+      lowered.includes('book')
+      || lowered.includes('demo')
+      || lowered.includes('trial')
+      || lowered.includes('quote')
+      || lowered.includes('start')
+      || lowered.includes('contact')
+    ) {
+      if (ctas.length < 6) ctas.push(text);
+    }
+  });
+
+  const htmlLang = normalizeString($('html').attr('lang')) || null;
+  const ogLocale = normalizeString($('meta[property="og:locale"]').attr('content')) || null;
+  const title = firstNonEmptyString([
+    $('title').text(),
+    $('meta[property="og:title"]').attr('content'),
+  ]);
+  const description = firstNonEmptyString([
+    $('meta[name="description"]').attr('content'),
+    $('meta[property="og:description"]').attr('content'),
+  ]);
+
+  return {
+    logoUrl,
+    heroImages: images,
+    videoUrls: videos,
+    primaryCtas: ctas,
+    languages: [htmlLang, ogLocale].filter(Boolean) as string[],
+    title,
+    description,
+  };
+}
+
+function scoreBusinessContextLink(url: string): number {
+  const lower = url.toLowerCase();
+  let score = 0;
+  for (const segment of BUSINESS_CONTEXT_PRIORITY_SEGMENTS) {
+    if (lower.includes(segment)) score += 10;
+  }
+  if (lower === '/' || lower.endsWith('/')) score += 2;
+  return score;
+}
+
+async function fetchWebsitePage(url: string): Promise<CrawledWebsitePage | null> {
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ZuckerBot/1.0; +https://zuckerbot.ai)' },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(WEB_CONTEXT_PAGE_TIMEOUT_MS),
+  });
+
+  if (!response.ok) return null;
+  const html = await response.text();
+  const assets = extractAssetUrls(html, response.url || url);
+
+  return {
+    url: response.url || url,
+    title: assets.title,
+    description: assets.description,
+    text: toPlainTextFromHtml(html),
+    links: extractSameOriginLinks(html, response.url || url),
+    hero_images: assets.heroImages,
+    video_urls: assets.videoUrls,
+    primary_ctas: assets.primaryCtas,
+    logo_url: assets.logoUrl,
+    languages_detected: assets.languages,
+  };
+}
+
+function identifyBusinessContextPages(homepage: CrawledWebsitePage): string[] {
+  const uniqueCandidates = Array.from(new Set(homepage.links));
+  const ranked = uniqueCandidates
+    .map((url) => ({ url, score: scoreBusinessContextLink(url) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, WEB_CONTEXT_PAGE_LIMIT - 1)
+    .map((entry) => entry.url);
+  return [homepage.url, ...ranked].slice(0, WEB_CONTEXT_PAGE_LIMIT);
+}
+
+function buildWebContextPrompt(pages: CrawledWebsitePage[]): string {
+  const pageContents = pages
+    .map((page) => {
+      const sections = [
+        `URL: ${page.url}`,
+        page.title ? `Title: ${page.title}` : null,
+        page.description ? `Description: ${page.description}` : null,
+        page.primary_ctas.length ? `CTAs: ${page.primary_ctas.join(', ')}` : null,
+        page.languages_detected.length ? `Languages: ${page.languages_detected.join(', ')}` : null,
+        `Content: ${truncateText(page.text, WEB_CONTEXT_PAGE_TEXT_LIMIT)}`,
+      ].filter(Boolean);
+      return sections.join('\n');
+    })
+    .join('\n\n---\n\n');
+
+  return `You are extracting structured business intelligence from website pages to improve Meta campaign planning.
+Return valid JSON only. Omit fields you cannot infer confidently.
+
+${pageContents}
+
+Return this JSON shape:
+{
+  "business_name": "string",
+  "tagline": "string",
+  "description": "2-3 sentence summary",
+  "business_type": "saas|local_services|ecommerce|agency|marketplace|education|healthcare|finance|other",
+  "products_services": [{"name": "string", "description": "string", "price": "string", "key_features": ["string"]}],
+  "primary_product_focus": "string",
+  "target_audience": ["string"],
+  "industries_served": ["string"],
+  "geographic_focus": ["string"],
+  "value_props": ["string"],
+  "pain_points_addressed": ["string"],
+  "social_proof": [{"type": "testimonial|stat|logo|award|review_count", "content": "string"}],
+  "differentiators": ["string"],
+  "competitors_mentioned": ["string"],
+  "has_pricing_page": true,
+  "has_free_trial": true,
+  "has_demo_booking": true,
+  "primary_cta": "string",
+  "languages_detected": ["string"],
+  "logo_url": "string",
+  "hero_images": ["string"],
+  "video_urls": ["string"]
+}`;
+}
+
+async function crawlBusinessWebsiteContext(url: string): Promise<{ pages: CrawledWebsitePage[]; fallbackAssets: {
+  logoUrl: string | null;
+  heroImages: string[];
+  videoUrls: string[];
+  languages: string[];
+} }> {
+  const normalizedUrl = normalizeBusinessWebsiteUrl(url);
+  if (!normalizedUrl) throw new Error('A valid website URL is required for enrichment.');
+
+  const homepage = await fetchWebsitePage(normalizedUrl);
+  if (!homepage) throw new Error('Failed to fetch the business website.');
+
+  const pagesToFetch = identifyBusinessContextPages(homepage);
+  const pages: CrawledWebsitePage[] = [];
+  for (const pageUrl of pagesToFetch) {
+    try {
+      const page = pageUrl === homepage.url ? homepage : await fetchWebsitePage(pageUrl);
+      if (page) pages.push(page);
+    } catch (error) {
+      console.warn('[context-enrichment] Skipping page fetch failure:', pageUrl, error);
+    }
+  }
+
+  const fallbackAssets = {
+    logoUrl: firstNonEmptyString(pages.map((page) => page.logo_url)),
+    heroImages: Array.from(new Set(pages.flatMap((page) => page.hero_images))).slice(0, 6),
+    videoUrls: Array.from(new Set(pages.flatMap((page) => page.video_urls))).slice(0, 6),
+    languages: Array.from(new Set(pages.flatMap((page) => page.languages_detected))).slice(0, 6),
+  };
+
+  return { pages, fallbackAssets };
+}
+
+async function enrichBusinessWebContext(args: {
+  business: any;
+  url: string;
+  forceRefresh?: boolean;
+  persist?: boolean;
+}): Promise<{ context: Record<string, any> | null; cached: boolean }> {
+  const existing = getJsonObject(args.business?.web_context);
+  if (!args.forceRefresh && hasMeaningfulWebContext(existing) && !isWebContextStale(args.business?.web_context_updated_at)) {
+    return { context: existing, cached: true };
+  }
+
+  const crawl = await crawlBusinessWebsiteContext(args.url);
+  const prompt = buildWebContextPrompt(crawl.pages);
+  const claudeText = await callClaude(
+    'You extract structured business intelligence from websites. Return valid JSON only.',
+    prompt,
+    2200,
+  );
+  const parsed = parseClaudeJson(claudeText);
+  const context = sanitizeWebScrapedContext(parsed, {
+    sourceUrls: crawl.pages.map((page) => page.url),
+    pagesCrawled: crawl.pages.length,
+    fallbackAssets: crawl.fallbackAssets,
+  });
+
+  if (context && args.persist !== false) {
+    await supabaseAdmin
+      .from('businesses')
+      .update({
+        web_context: context,
+        web_context_updated_at: new Date().toISOString(),
+      })
+      .eq('id', args.business.id);
+  }
+
+  return { context, cached: false };
+}
+
+async function downloadBusinessUploadFile(filePath: string): Promise<Buffer> {
+  const { data, error } = await supabaseAdmin.storage.from(BUSINESS_UPLOAD_STORAGE_BUCKET).download(filePath);
+  if (error || !data) {
+    throw new Error(error?.message || 'Unable to download uploaded file.');
+  }
+  const arrayBuffer = await data.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+async function uploadInlineBusinessContextContent(args: {
+  userId: string;
+  businessId: string;
+  filename: string;
+  content: string;
+}): Promise<{ filePath: string; fileType: string; fileSizeBytes: number }> {
+  const filePath = buildBusinessContextStoragePath(args.userId, args.businessId, args.filename);
+  const fileType = inferBusinessContextFileType(args.filename, null) || 'text/plain';
+  const buffer = Buffer.from(args.content, 'utf8');
+  const { error } = await supabaseAdmin.storage.from(BUSINESS_UPLOAD_STORAGE_BUCKET).upload(filePath, buffer, {
+    contentType: fileType,
+    upsert: false,
+  });
+  if (error) throw new Error(error.message || 'Unable to store uploaded context.');
+  return { filePath, fileType, fileSizeBytes: buffer.byteLength };
+}
+
+async function removeBusinessUploadFile(filePath: string | null | undefined): Promise<void> {
+  const normalized = normalizeString(filePath);
+  if (!normalized) return;
+  await supabaseAdmin.storage.from(BUSINESS_UPLOAD_STORAGE_BUCKET).remove([normalized]);
+}
+
+async function extractBusinessUploadText(args: {
+  filename: string;
+  fileType: string;
+  buffer: Buffer;
+}): Promise<string> {
+  if (args.buffer.byteLength > BUSINESS_CONTEXT_FILE_SIZE_LIMIT) {
+    throw new Error('Uploaded file exceeds the 10MB limit.');
+  }
+
+  if (args.fileType === 'application/pdf' || getFileExtension(args.filename) === 'pdf') {
+    const parser = new PDFParse({ data: args.buffer });
+    const result = await parser.getText();
+    await parser.destroy();
+    return truncateText(trimWhitespace(result.text || ''), BUSINESS_CONTEXT_TEXT_LIMIT);
+  }
+
+  const text = args.buffer.toString('utf8');
+  return truncateText(trimWhitespace(text), BUSINESS_CONTEXT_TEXT_LIMIT);
+}
+
+function buildBusinessUploadPrompt(args: {
+  filename: string;
+  fileType: string;
+  textContent: string;
+  contextTypeHint?: BusinessUploadContextType | null;
+}): string {
+  return `You are extracting business intelligence from a user-provided file to improve Meta campaign strategy.
+Return valid JSON only.
+
+File name: ${args.filename}
+File type: ${args.fileType}
+User hint: ${args.contextTypeHint || 'none'}
+Content:
+${args.textContent}
+
+Return this JSON shape:
+{
+  "summary": "1-2 paragraph summary",
+  "context_type": "ad_performance|customer_data|brand_guidelines|competitor_analysis|sales_data|other",
+  "extracted_data": {
+    "historical_cpl": 0,
+    "historical_ctr": 0,
+    "best_performing_audiences": ["string"],
+    "best_performing_creatives": ["string"],
+    "customer_segments": [{"name": "string", "size": 0, "characteristics": "string"}],
+    "top_converting_demographics": ["string"],
+    "geographic_distribution": {"region": 0},
+    "tone_of_voice": "string",
+    "brand_values": ["string"],
+    "messaging_dos": ["string"],
+    "messaging_donts": ["string"],
+    "color_palette": ["string"],
+    "competitors": [{"name": "string", "positioning": "string", "weaknesses": ["string"]}],
+    "market_gaps": ["string"],
+    "average_deal_value": 0,
+    "sales_cycle_length": "string",
+    "conversion_rates_by_stage": {"stage": 0},
+    "key_insights": ["string"]
+  }
+}`;
+}
+
+async function extractBusinessUploadContext(args: {
+  filename: string;
+  fileType: string;
+  textContent: string;
+  contextTypeHint?: BusinessUploadContextType | null;
+}): Promise<{ summary: string; context_type: BusinessUploadContextType; extracted_data: Record<string, any> }> {
+  const claudeText = await callClaude(
+    'You extract structured business intelligence from uploaded files. Return valid JSON only.',
+    buildBusinessUploadPrompt(args),
+    2200,
+  );
+  const parsed = parseClaudeJson(claudeText);
+  const extraction = sanitizeBusinessUploadExtraction({
+    value: parsed,
+    contextTypeHint: args.contextTypeHint,
+  });
+  if (!extraction) {
+    throw new Error('Failed to extract structured business context from the uploaded file.');
+  }
+  return extraction;
+}
+
+async function createBusinessUploadRecord(args: {
+  business: any;
+  filename: string;
+  fileType: string;
+  filePath: string;
+  fileSizeBytes?: number | null;
+  contextTypeHint?: BusinessUploadContextType | null;
+  cleanupOnFailure?: boolean;
+}): Promise<CampaignUploadedContext> {
+  try {
+    const buffer = await downloadBusinessUploadFile(args.filePath);
+    const textContent = await extractBusinessUploadText({
+      filename: args.filename,
+      fileType: args.fileType,
+      buffer,
+    });
+    const extraction = await extractBusinessUploadContext({
+      filename: args.filename,
+      fileType: args.fileType,
+      textContent,
+      contextTypeHint: args.contextTypeHint,
+    });
+
+    const { data, error } = await supabaseAdmin
+      .from('business_uploads')
+      .insert({
+        business_id: args.business.id,
+        user_id: args.business.user_id,
+        filename: args.filename,
+        file_type: args.fileType,
+        file_path: args.filePath,
+        file_size_bytes: args.fileSizeBytes ?? buffer.byteLength,
+        summary: extraction.summary,
+        context_type: extraction.context_type,
+        extracted_data: extraction.extracted_data,
+      })
+      .select('id, filename, file_type, uploaded_at, summary, context_type, extracted_data')
+      .single();
+
+    if (error || !data) {
+      throw new Error(error?.message || 'Unable to save uploaded business context.');
+    }
+
+    return data as CampaignUploadedContext;
+  } catch (error) {
+    if (args.cleanupOnFailure) {
+      await removeBusinessUploadFile(args.filePath);
+    }
+    throw error;
+  }
+}
+
+async function reextractBusinessUploadRecord(uploadRow: Record<string, any>): Promise<CampaignUploadedContext> {
+  const filename = normalizeString(uploadRow.filename) || 'context.txt';
+  const fileType = inferBusinessContextFileType(filename, normalizeString(uploadRow.file_type)) || normalizeString(uploadRow.file_type) || 'text/plain';
+  const buffer = await downloadBusinessUploadFile(normalizeString(uploadRow.file_path) || '');
+  const textContent = await extractBusinessUploadText({ filename, fileType, buffer });
+  const extraction = await extractBusinessUploadContext({
+    filename,
+    fileType,
+    textContent,
+    contextTypeHint: sanitizeBusinessUploadContextType(uploadRow.context_type),
+  });
+
+  const { data, error } = await supabaseAdmin
+    .from('business_uploads')
+    .update({
+      summary: extraction.summary,
+      context_type: extraction.context_type,
+      extracted_data: extraction.extracted_data,
+    })
+    .eq('id', uploadRow.id)
+    .select('id, filename, file_type, uploaded_at, summary, context_type, extracted_data')
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Unable to update uploaded business context.');
+  }
+
+  return data as CampaignUploadedContext;
+}
+
+async function maybeLogBusinessRouteUsage(args: {
+  auth: BusinessRouteAuthSuccess;
+  endpoint: string;
+  method: string;
+  statusCode: number;
+  startTime: number;
+}): Promise<void> {
+  if (args.auth.actor !== 'api_key' || !args.auth.apiKeyId) return;
+  await logUsage({
+    apiKeyId: args.auth.apiKeyId,
+    endpoint: args.endpoint,
+    method: args.method,
+    statusCode: args.statusCode,
+    responseTimeMs: Date.now() - args.startTime,
+  });
+}
+
 async function resolveMetaCredentials(params: {
   apiKeyId: string;
   userId: string;
@@ -4118,11 +5117,16 @@ async function handleCreateIntelligence(args: {
 }) {
   const resolvedName = normalizeString(args.businessNameOverride) || normalizeString(args.business?.name) || args.url;
   const resolvedType = normalizeString(args.businessTypeOverride) || suggestPortfolioBusinessType(args.business?.trade);
+  const businessWebsite = normalizeBusinessWebsiteUrl(
+    normalizeString(args.business?.website_url)
+    || normalizeString(args.business?.website)
+    || args.url,
+  );
   const markets = Array.isArray(args.business?.markets) && args.business.markets.length > 0
     ? args.business.markets
     : [normalizeString(args.business?.country) || 'US'];
 
-  const [historical, portfolio, dealValue, market, pipelineRows] = await Promise.all([
+  const [historical, portfolio, dealValue, market, pipelineRows, uploadRows] = await Promise.all([
     fetchHistoricalSummaryForBusiness(args.business),
     getActivePortfolioForBusiness(args.business.id),
     getAverageDealValueFromCapi(args.business.id),
@@ -4138,7 +5142,33 @@ async function handleCreateIntelligence(args: {
       .eq('status', 'sent')
       .eq('is_test', false)
       .gte('created_at', daysAgoIso(180)),
+    supabaseAdmin
+      .from('business_uploads')
+      .select('id, filename, file_type, uploaded_at, summary, context_type, extracted_data')
+      .eq('business_id', args.business.id)
+      .order('uploaded_at', { ascending: false }),
   ]);
+
+  let webContext = getJsonObject(args.business?.web_context);
+  if (businessWebsite && (!hasMeaningfulWebContext(webContext) || isWebContextStale(args.business?.web_context_updated_at))) {
+    try {
+      const enrichment = await withTimeout(
+        enrichBusinessWebContext({
+          business: args.business,
+          url: businessWebsite,
+          forceRefresh: false,
+          persist: true,
+        }),
+        WEB_CONTEXT_REQUEST_TIMEOUT_MS,
+        'business context enrichment',
+      );
+      if (enrichment.context) {
+        webContext = enrichment.context;
+      }
+    } catch (error) {
+      console.warn('[campaign-intelligence] Failed to enrich business context during campaign creation:', error);
+    }
+  }
 
   const context: CampaignContextPayload = {
     business: {
@@ -4162,6 +5192,8 @@ async function handleCreateIntelligence(args: {
           is_active: portfolio.is_active,
         }
       : null,
+    web_context: webContext,
+    user_uploaded: (uploadRows.data || []) as CampaignUploadedContext[],
     goals: args.goals,
   };
 
@@ -4775,7 +5807,7 @@ async function processCampaignCreativeUpload(args: {
       };
     }
 
-    const executionResult = await ensureTierExecutionForCreative({
+    const executionResult: any = await ensureTierExecutionForCreative({
       auth: args.auth,
       apiCampaign: args.apiCampaign,
       business: args.business,
@@ -4875,6 +5907,264 @@ async function processCampaignCreativeUpload(args: {
     creativeRows: createdRows,
     workflowState,
   };
+}
+
+async function handleBusinessEnrich(req: VercelRequest, res: VercelResponse, businessId: string) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateBusinessRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertBusinessRouteAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  try {
+    const business = await resolveOwnedBusinessForRoute(auth, businessId);
+    if (!business) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/enrich', method: 'POST', statusCode: 404, startTime });
+      return res.status(404).json({ error: { code: 'business_not_found', message: 'Business not found for the current user.' } });
+    }
+
+    const requestedUrl = normalizeBusinessWebsiteUrl(
+      normalizeString(req.body?.url)
+      || normalizeString(business.website_url)
+      || normalizeString(business.website),
+    );
+    if (!requestedUrl) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/enrich', method: 'POST', statusCode: 400, startTime });
+      return res.status(400).json({ error: { code: 'validation_error', message: 'A valid website URL is required to enrich this business.' } });
+    }
+
+    const forceRefresh = req.body?.force_refresh === true;
+    const result = await withTimeout(
+      enrichBusinessWebContext({
+        business,
+        url: requestedUrl,
+        forceRefresh,
+        persist: true,
+      }),
+      WEB_CONTEXT_REQUEST_TIMEOUT_MS,
+      'business context enrichment',
+    );
+
+    if (!result.context) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/enrich', method: 'POST', statusCode: 502, startTime });
+      return res.status(502).json({ error: { code: 'context_extraction_failed', message: 'Unable to extract structured business context from the website.' } });
+    }
+
+    await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/enrich', method: 'POST', statusCode: 200, startTime });
+    return res.status(200).json({
+      business_id: business.id,
+      cached: result.cached,
+      web_context: result.context,
+    });
+  } catch (error: any) {
+    console.error('[api/businesses/enrich] Error:', error);
+    await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/enrich', method: 'POST', statusCode: 500, startTime });
+    return res.status(500).json({ error: { code: 'internal_error', message: error?.message || 'Failed to enrich business context.' } });
+  }
+}
+
+async function handleBusinessUploads(req: VercelRequest, res: VercelResponse, businessId: string) {
+  const startTime = Date.now();
+  const auth = await authenticateBusinessRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertBusinessRouteAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  try {
+    const business = await resolveOwnedBusinessForRoute(auth, businessId);
+    if (!business) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads', method: req.method || 'GET', statusCode: 404, startTime });
+      return res.status(404).json({ error: { code: 'business_not_found', message: 'Business not found for the current user.' } });
+    }
+
+    if (req.method === 'GET') {
+      const { data, error } = await supabaseAdmin
+        .from('business_uploads')
+        .select('id, filename, file_type, uploaded_at, summary, context_type, extracted_data')
+        .eq('business_id', business.id)
+        .order('uploaded_at', { ascending: false });
+
+      if (error) throw error;
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads', method: 'GET', statusCode: 200, startTime });
+      return res.status(200).json({
+        business_id: business.id,
+        uploads: (data || []) as CampaignUploadedContext[],
+      });
+    }
+
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: { code: 'method_not_allowed', message: 'GET or POST required' } });
+    }
+
+    const filename = normalizeString(req.body?.filename);
+    const filePath = normalizeString(req.body?.file_path);
+    const content = typeof req.body?.content === 'string' ? req.body.content : null;
+    const fileTypeHint = normalizeString(req.body?.file_type);
+    const contextTypeHint = sanitizeBusinessUploadContextType(req.body?.context_type);
+    const fileSizeBytes = normalizeNumber(req.body?.file_size_bytes);
+
+    if (!filename) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads', method: 'POST', statusCode: 400, startTime });
+      return res.status(400).json({ error: { code: 'validation_error', message: '`filename` is required.' } });
+    }
+
+    if ((filePath && content) || (!filePath && !content)) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads', method: 'POST', statusCode: 400, startTime });
+      return res.status(400).json({ error: { code: 'validation_error', message: 'Provide either `file_path` or inline `content`, but not both.' } });
+    }
+
+    let storedFilePath = filePath;
+    let storedFileType = inferBusinessContextFileType(filename, fileTypeHint);
+    let cleanupOnFailure = false;
+    let storedFileSizeBytes = fileSizeBytes !== null ? Math.round(fileSizeBytes) : null;
+
+    if (content) {
+      const stored = await uploadInlineBusinessContextContent({
+        userId: business.user_id,
+        businessId: business.id,
+        filename,
+        content,
+      });
+      storedFilePath = stored.filePath;
+      storedFileType = stored.fileType;
+      storedFileSizeBytes = stored.fileSizeBytes;
+      cleanupOnFailure = true;
+    } else if (!isOwnedBusinessContextPath(storedFilePath || '', business.user_id, business.id)) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads', method: 'POST', statusCode: 400, startTime });
+      return res.status(400).json({ error: { code: 'validation_error', message: 'The provided file path is not owned by this business.' } });
+    } else {
+      cleanupOnFailure = true;
+    }
+
+    if (!storedFilePath || !storedFileType) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads', method: 'POST', statusCode: 400, startTime });
+      return res.status(400).json({ error: { code: 'unsupported_file_type', message: 'Supported file types are CSV, PDF, TXT, and Markdown.' } });
+    }
+
+    const upload = await createBusinessUploadRecord({
+      business,
+      filename,
+      fileType: storedFileType,
+      filePath: storedFilePath,
+      fileSizeBytes: storedFileSizeBytes,
+      contextTypeHint,
+      cleanupOnFailure,
+    });
+
+    await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads', method: 'POST', statusCode: 200, startTime });
+    return res.status(200).json({
+      business_id: business.id,
+      upload,
+    });
+  } catch (error: any) {
+    console.error('[api/businesses/uploads] Error:', error);
+    await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads', method: req.method || 'POST', statusCode: 500, startTime });
+    return res.status(500).json({ error: { code: 'internal_error', message: error?.message || 'Failed to process uploaded business context.' } });
+  }
+}
+
+async function handleBusinessUploadDelete(req: VercelRequest, res: VercelResponse, businessId: string, fileId: string) {
+  if (req.method !== 'DELETE') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'DELETE required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateBusinessRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertBusinessRouteAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  try {
+    const business = await resolveOwnedBusinessForRoute(auth, businessId);
+    if (!business) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads/:fileId', method: 'DELETE', statusCode: 404, startTime });
+      return res.status(404).json({ error: { code: 'business_not_found', message: 'Business not found for the current user.' } });
+    }
+
+    const { data: upload, error } = await supabaseAdmin
+      .from('business_uploads')
+      .select('id, file_path')
+      .eq('business_id', business.id)
+      .eq('id', fileId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!upload) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads/:fileId', method: 'DELETE', statusCode: 404, startTime });
+      return res.status(404).json({ error: { code: 'upload_not_found', message: 'Uploaded context file not found.' } });
+    }
+
+    await removeBusinessUploadFile(upload.file_path);
+    const { error: deleteError } = await supabaseAdmin
+      .from('business_uploads')
+      .delete()
+      .eq('id', upload.id)
+      .eq('business_id', business.id);
+    if (deleteError) throw deleteError;
+
+    await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads/:fileId', method: 'DELETE', statusCode: 200, startTime });
+    return res.status(200).json({
+      business_id: business.id,
+      deleted: true,
+      file_id: upload.id,
+    });
+  } catch (error: any) {
+    console.error('[api/businesses/uploads/delete] Error:', error);
+    await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads/:fileId', method: 'DELETE', statusCode: 500, startTime });
+    return res.status(500).json({ error: { code: 'internal_error', message: error?.message || 'Failed to delete uploaded business context.' } });
+  }
+}
+
+async function handleBusinessUploadReExtract(req: VercelRequest, res: VercelResponse, businessId: string, fileId: string) {
+  if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  const startTime = Date.now();
+  const auth = await authenticateBusinessRequest(req);
+  if (auth.error) {
+    if (auth.rateLimitHeaders) applyRateLimitHeaders(res, auth.rateLimitHeaders);
+    return res.status(auth.status).json(auth.body);
+  }
+  assertBusinessRouteAuth(auth);
+  applyRateLimitHeaders(res, auth.rateLimitHeaders);
+
+  try {
+    const business = await resolveOwnedBusinessForRoute(auth, businessId);
+    if (!business) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads/:fileId/re-extract', method: 'POST', statusCode: 404, startTime });
+      return res.status(404).json({ error: { code: 'business_not_found', message: 'Business not found for the current user.' } });
+    }
+
+    const { data: uploadRow, error } = await supabaseAdmin
+      .from('business_uploads')
+      .select('*')
+      .eq('business_id', business.id)
+      .eq('id', fileId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!uploadRow) {
+      await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads/:fileId/re-extract', method: 'POST', statusCode: 404, startTime });
+      return res.status(404).json({ error: { code: 'upload_not_found', message: 'Uploaded context file not found.' } });
+    }
+
+    const upload = await reextractBusinessUploadRecord(uploadRow as Record<string, any>);
+    await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads/:fileId/re-extract', method: 'POST', statusCode: 200, startTime });
+    return res.status(200).json({
+      business_id: business.id,
+      upload,
+    });
+  } catch (error: any) {
+    console.error('[api/businesses/uploads/re-extract] Error:', error);
+    await maybeLogBusinessRouteUsage({ auth, endpoint: '/v1/businesses/:id/uploads/:fileId/re-extract', method: 'POST', statusCode: 500, startTime });
+    return res.status(500).json({ error: { code: 'internal_error', message: error?.message || 'Failed to re-extract uploaded business context.' } });
+  }
 }
 
 async function handleCampaignDetail(req: VercelRequest, res: VercelResponse, campaignId: string) {
@@ -6430,6 +7720,7 @@ async function handleCapiEvents(req: VercelRequest, res: VercelResponse) {
       if (authResult.rateLimitHeaders) applyRateLimitHeaders(res, authResult.rateLimitHeaders);
       return res.status(authResult.status).json(authResult.body);
     }
+    assertAuth(authResult);
     auth = authResult;
     applyRateLimitHeaders(res, auth.rateLimitHeaders);
   }
@@ -11017,6 +12308,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'meta/select-page') return handleMetaSelectPage(req, res);
   if (route === 'notifications/telegram') return handleSetTelegram(req, res);
 
+  if (segments.length === 3 && segments[0] === 'businesses') {
+    const id = segments[1];
+    const action = segments[2];
+    if (action === 'enrich') return handleBusinessEnrich(req, res, id);
+    if (action === 'uploads') return handleBusinessUploads(req, res, id);
+  }
+  if (segments.length === 4 && segments[0] === 'businesses' && segments[2] === 'uploads') {
+    return handleBusinessUploadDelete(req, res, segments[1], segments[3]);
+  }
+  if (segments.length === 5 && segments[0] === 'businesses' && segments[2] === 'uploads' && segments[4] === 're-extract') {
+    return handleBusinessUploadReExtract(req, res, segments[1], segments[3]);
+  }
+
   // ── Dynamic campaign/:id routes ────────────────────────────────────
   if (segments.length === 2 && segments[0] === 'campaigns') {
     const id = segments[1];
@@ -11104,6 +12408,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/v1/capi/config/test',
         'POST /api/v1/capi/events',
         'GET  /api/v1/capi/status',
+        'POST /api/v1/businesses/:id/enrich',
+        'GET  /api/v1/businesses/:id/uploads',
+        'POST /api/v1/businesses/:id/uploads',
+        'DELETE /api/v1/businesses/:id/uploads/:fileId',
+        'POST /api/v1/businesses/:id/uploads/:fileId/re-extract',
         'POST /api/v1/audiences/create-seed',
         'POST /api/v1/audiences/create-lal',
         'GET  /api/v1/audiences/list',

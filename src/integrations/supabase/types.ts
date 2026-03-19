@@ -866,6 +866,8 @@ export type Database = {
           trade: string
           updated_at: string
           user_id: string
+          web_context: Json | null
+          web_context_updated_at: string | null
           website: string | null
           website_url: string | null
         }
@@ -897,6 +899,8 @@ export type Database = {
           trade: string
           updated_at?: string
           user_id: string
+          web_context?: Json | null
+          web_context_updated_at?: string | null
           website?: string | null
           website_url?: string | null
         }
@@ -928,10 +932,62 @@ export type Database = {
           trade?: string
           updated_at?: string
           user_id?: string
+          web_context?: Json | null
+          web_context_updated_at?: string | null
           website?: string | null
           website_url?: string | null
         }
         Relationships: []
+      }
+      business_uploads: {
+        Row: {
+          business_id: string
+          context_type: string | null
+          extracted_data: Json | null
+          file_path: string
+          file_size_bytes: number | null
+          file_type: string
+          filename: string
+          id: string
+          summary: string | null
+          uploaded_at: string
+          user_id: string
+        }
+        Insert: {
+          business_id: string
+          context_type?: string | null
+          extracted_data?: Json | null
+          file_path: string
+          file_size_bytes?: number | null
+          file_type: string
+          filename: string
+          id?: string
+          summary?: string | null
+          uploaded_at?: string
+          user_id: string
+        }
+        Update: {
+          business_id?: string
+          context_type?: string | null
+          extracted_data?: Json | null
+          file_path?: string
+          file_size_bytes?: number | null
+          file_type?: string
+          filename?: string
+          id?: string
+          summary?: string | null
+          uploaded_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_uploads_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       campaigns: {
         Row: {

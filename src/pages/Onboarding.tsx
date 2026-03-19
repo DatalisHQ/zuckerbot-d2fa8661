@@ -685,6 +685,41 @@ const Onboarding = () => {
         // Non-critical — don't block user flow
       }
 
+      // Best-effort website enrichment — do not block onboarding completion.
+      try {
+        const websiteForEnrichment =
+          insertedBusiness?.website_url ||
+          insertedBusiness?.website ||
+          form.websiteUrl.trim() ||
+          tryItNowRaw?.url ||
+          null;
+
+        if (websiteForEnrichment) {
+          supabase.auth.getSession().then(({ data }) => {
+            const accessToken = data.session?.access_token;
+            if (!accessToken) return;
+
+            const apiBase =
+              (import.meta.env.VITE_API_V1_BASE_URL as string | undefined)?.replace(/\/$/, "") ||
+              `${window.location.origin}/api/v1`;
+
+            fetch(`${apiBase}/businesses/${businessId}/enrich`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                url: websiteForEnrichment,
+                force_refresh: false,
+              }),
+            }).catch(() => {});
+          });
+        }
+      } catch {
+        // Non-critical — don't block user flow
+      }
+
       // Clear Try It Now data from localStorage
       try { localStorage.removeItem("tryItNowData"); } catch {}
 

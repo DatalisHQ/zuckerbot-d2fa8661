@@ -141,6 +141,10 @@ export interface CampaignContextSummary {
   has_crm_data: boolean;
   has_market_data: boolean;
   has_portfolio: boolean;
+  has_web_context: boolean;
+  has_uploaded_context: boolean;
+  uploaded_context_count: number;
+  web_context_age_days: number | null;
   months_of_data: number;
 }
 
