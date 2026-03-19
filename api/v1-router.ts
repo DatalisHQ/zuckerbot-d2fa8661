@@ -62,7 +62,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { createRequire } from 'module';
 import { load as loadHtml } from 'cheerio';
 import {
@@ -78,7 +78,12 @@ import {
   buildCreativeLinkData,
 } from '../lib/objective.js';
 import { queueCreativeRefresh } from '../lib/creative-queue.js';
-import { sendSlackApprovalRequest, sendSlackCampaignAssetsReady } from '../lib/slack.js';
+import {
+  sendSlackAdFactoryComplete,
+  sendSlackAdFactoryDispatched,
+  sendSlackApprovalRequest,
+  sendSlackCampaignAssetsReady,
+} from '../lib/slack.js';
 
 export const config = { maxDuration: 120 };
 
@@ -1260,6 +1265,40 @@ interface IntelligenceStrategyPayload {
   phase_3_actions: string[];
 }
 
+interface AdFactoryGeneratedAd {
+  name: string;
+  hook_script: string;
+  voiceover_script: string;
+  cta_script: string;
+  full_script: string;
+  sora_prompt: string;
+}
+
+interface AdFactoryPayload {
+  runId: string;
+  callbackUrl: string;
+  fontPreset: string;
+  ads: AdFactoryGeneratedAd[];
+}
+
+interface AdFactoryCallbackResult {
+  variantIndex: number;
+  name: string;
+  cloudinaryUrl: string;
+  thumbnailUrl: string | null;
+  driveFolderUrl: string | null;
+}
+
+interface ResolvedAdFactoryConfig {
+  webhookUrl: string;
+  callbackBaseUrl: string;
+  fontPreset: string;
+  market: string;
+  productFocus: string;
+  notes: string | null;
+  referenceUrls: string[];
+}
+
 type BusinessUploadContextType =
   | 'ad_performance'
   | 'customer_data'
@@ -1373,6 +1412,378 @@ function sanitizeCreativeHandoff(value: unknown): Record<string, any> | null {
   }
 
   return Object.keys(handoff).length > 0 ? handoff : null;
+}
+
+function normalizeMarketCode(value: unknown): string | null {
+  const normalized = normalizeString(value)?.trim().toUpperCase();
+  if (!normalized) return null;
+  if (normalized === 'AU' || normalized === 'AUS' || normalized === 'AUSTRALIA') return 'AU';
+  if (normalized === 'UK' || normalized === 'GB' || normalized === 'GBR' || normalized === 'UNITED KINGDOM') return 'UK';
+  if (normalized === 'US' || normalized === 'USA' || normalized === 'UNITED STATES') return 'US';
+  if (normalized === 'NZ' || normalized === 'NZL' || normalized === 'NEW ZEALAND') return 'NZ';
+  return normalized.slice(0, 2);
+}
+
+function adFactoryMarketAudienceLabel(market: string): string {
+  switch (normalizeMarketCode(market)) {
+    case 'AU':
+      return 'Australian';
+    case 'UK':
+      return 'British';
+    case 'NZ':
+      return 'New Zealand';
+    default:
+      return 'American';
+  }
+}
+
+function adFactoryMarketLanguageGuidance(market: string): string {
+  switch (normalizeMarketCode(market)) {
+    case 'AU':
+      return 'Australian slang and casual tone';
+    case 'UK':
+      return 'British English and relatable tone';
+    case 'NZ':
+      return 'New Zealand English and grounded tone';
+    default:
+      return 'American English';
+  }
+}
+
+function adFactoryMarketWorkerLabel(market: string): string {
+  switch (normalizeMarketCode(market)) {
+    case 'AU':
+      return 'Australian tradesman in high-vis or work clothes';
+    case 'UK':
+      return 'British tradesperson in work gear';
+    case 'NZ':
+      return 'New Zealand tradie in work gear';
+    default:
+      return 'American contractor in workwear';
+  }
+}
+
+function isLikelyAdFactoryWebhookUrl(url: string | null): boolean {
+  if (!url) return false;
+
+  try {
+    const parsed = new URL(url);
+    const fingerprint = `${parsed.hostname}${parsed.pathname}`.toLowerCase();
+    return (
+      fingerprint.includes('sophiie')
+      || fingerprint.includes('adfactory')
+      || fingerprint.includes('ad-factory')
+    );
+  } catch {
+    const fallback = url.toLowerCase();
+    return fallback.includes('sophiie') || fallback.includes('adfactory') || fallback.includes('ad-factory');
+  }
+}
+
+function buildAdFactoryCallbackUrl(callbackBaseUrl: string, runId: string): string {
+  return `${callbackBaseUrl.replace(/\/+$/, '')}/api/jobs/${runId}/callback`;
+}
+
+function buildAdFactoryCtaScript(cta: string | null, market: string): string {
+  const normalized = (normalizeString(cta) || 'Book a demo').toLowerCase();
+  if (normalized.includes('demo')) return 'Book a free demo at sophiie.ai.';
+  if (normalized.includes('quote')) return 'Get your free quote at sophiie.ai.';
+  if (normalized.includes('call')) return 'See how Sophiie handles every call at sophiie.ai.';
+  const locale = normalizeMarketCode(market) === 'US' ? 'today' : 'now';
+  return `Head to sophiie.ai to ${normalized} ${locale}.`;
+}
+
+function buildAdFactoryFullScript(hookScript: string, voiceoverScript: string, ctaScript: string): string {
+  return `HOOK: ${hookScript}\nVO: ${voiceoverScript}\nCTA: ${ctaScript}`;
+}
+
+function buildAdFactoryFallbackSoraPrompt(args: {
+  angle: IntelligenceCreativeAngle;
+  businessName: string;
+  market: string;
+  productFocus: string;
+  variantNumber: number;
+}) {
+  return [
+    `A realistic ${adFactoryMarketWorkerLabel(args.market)}`,
+    'at a residential job site',
+    args.variantNumber > 1 ? `performing a distinct tradie scenario for variant ${args.variantNumber}` : 'working flat out while a phone rings nearby',
+    `showing the benefit of ${args.productFocus} for ${args.businessName}`,
+    'warm natural lighting',
+    'handheld UGC camera feel',
+    'single continuous 12 second shot',
+    'no text overlays',
+  ].join(', ');
+}
+
+function buildAdFactoryScriptGenerationPrompt(args: {
+  angle: IntelligenceCreativeAngle;
+  business: any;
+  webContext: Record<string, any>;
+  market: string;
+  productFocus: string;
+  fontPreset: string;
+  notes: string | null;
+  referenceUrls: string[];
+  previousAds: AdFactoryGeneratedAd[];
+  variantNumber: number;
+}) {
+  const businessName =
+    normalizeString(args.webContext.business_name)
+    || normalizeString(args.business?.name)
+    || 'Sophiie';
+  const primaryProductFocus =
+    normalizeString(args.webContext.primary_product_focus)
+    || normalizeString(args.productFocus)
+    || normalizeString(args.business?.trade)
+    || 'AI receptionist';
+  const targetAudience = sanitizeStringArray(args.webContext.target_audience, 6)?.join(', ') || 'plumbers, electricians, HVAC, builders';
+  const previousVariants = args.previousAds.length > 0
+    ? `\nPREVIOUS VARIANTS TO AVOID REPEATING:\n${args.previousAds.map((ad, index) => `- V${index + 1}: ${ad.hook_script} | Scene: ${ad.sora_prompt}`).join('\n')}\n`
+    : '';
+  const notesSection = args.notes ? `\nPRODUCTION NOTES:\n- ${args.notes}\n` : '';
+  const referenceSection = args.referenceUrls.length > 0
+    ? `\nREFERENCE URLS:\n${args.referenceUrls.map((url) => `- ${url}`).join('\n')}\n`
+    : '';
+  const variationInstruction = args.variantNumber === 1
+    ? 'Create the strongest first version for this angle.'
+    : `This is VARIANT ${args.variantNumber}. Keep the same angle but change the opening line, scene, wording, and Sora setup so it does not overlap with earlier versions.`;
+
+  return `You are a direct-response ad scriptwriter for video ads targeting ${adFactoryMarketAudienceLabel(args.market)} trades businesses (plumbers, electricians, HVAC, builders).
+
+BUSINESS: ${businessName}
+PRODUCT: ${primaryProductFocus}
+PRODUCT FOCUS FOR THIS AD: ${args.productFocus}
+TARGET AUDIENCE: ${targetAudience}
+FONT PRESET: ${args.fontPreset}
+
+CREATIVE ANGLE:
+- Name: ${args.angle.angle_name}
+- Hook concept: ${args.angle.hook}
+- Message direction: ${args.angle.message}
+- CTA: ${args.angle.cta}
+- Format: ${args.angle.format}
+
+${variationInstruction}${previousVariants}${notesSection}${referenceSection}
+Generate a complete ad script as JSON:
+{
+  "name": "Hook - ${args.angle.angle_name}",
+  "hook_script": "Opening 1-2 sentences. Punchy, relatable, stops the scroll. Use ${adFactoryMarketLanguageGuidance(args.market)}. Must hook within 3 seconds.",
+  "voiceover_script": "Main sell, 3-5 sentences. Explain the benefit, paint the picture of life with the product. Be specific about what it does. Reference the specific product focus: ${args.productFocus}.",
+  "cta_script": "Clear call to action, 1 sentence. Direct the viewer to ${args.angle.cta.toLowerCase()} at sophiie.ai.",
+  "full_script": "HOOK: [hook_script]\\nVO: [voiceover_script]\\nCTA: [cta_script]",
+  "sora_prompt": "Detailed scene description for Sora 2 Pro video generation. Include: specific character (${adFactoryMarketWorkerLabel(args.market)}), specific setting, action, warm natural lighting, handheld UGC camera style, realistic mood. 12 seconds of footage. No text overlays."
+}
+
+RULES:
+- Scripts should feel like they were written by a tradie, not a marketer
+- Keep it conversational and authentic
+- Reference specific trade scenarios like under a sink, on a roof, or in the van between jobs
+- The hook must work in the first 3 seconds of a video
+- The Sora prompt must describe a single continuous scene, not multiple cuts
+- No emojis in scripts
+- Product name is "Sophiie" (pronounced "Sophie")
+- Return ONLY the JSON object, no markdown fences`;
+}
+
+function sanitizeAdFactoryGeneratedAd(args: {
+  value: any;
+  angle: IntelligenceCreativeAngle;
+  market: string;
+  businessName: string;
+  productFocus: string;
+  variantNumber: number;
+}): AdFactoryGeneratedAd {
+  const hookScript = normalizeString(args.value?.hook_script) || normalizeString(args.angle.hook) || 'You are on the tools. Your phone should not be running the day.';
+  const voiceoverScript = normalizeString(args.value?.voiceover_script) || normalizeString(args.angle.message) || 'Sophiie answers every call, books jobs, and keeps the schedule moving while you keep working.';
+  const ctaScript = normalizeString(args.value?.cta_script) || buildAdFactoryCtaScript(args.angle.cta, args.market);
+  const fullScript = normalizeString(args.value?.full_script) || buildAdFactoryFullScript(hookScript, voiceoverScript, ctaScript);
+  const fallbackName = `Hook - ${args.angle.angle_name}`;
+  let name = normalizeString(args.value?.name) || fallbackName;
+  if (args.variantNumber > 1 && !new RegExp(`\\s-\\sV${args.variantNumber}$`, 'i').test(name)) {
+    name = `${name} - V${args.variantNumber}`;
+  }
+
+  return {
+    name,
+    hook_script: hookScript,
+    voiceover_script: voiceoverScript,
+    cta_script: ctaScript,
+    full_script: fullScript,
+    sora_prompt:
+      normalizeString(args.value?.sora_prompt)
+      || buildAdFactoryFallbackSoraPrompt({
+        angle: args.angle,
+        businessName: args.businessName,
+        market: args.market,
+        productFocus: args.productFocus,
+        variantNumber: args.variantNumber,
+      }),
+  };
+}
+
+async function buildAdFactoryAngleAds(args: {
+  angle: IntelligenceCreativeAngle;
+  business: any;
+  webContext: Record<string, any>;
+  config: ResolvedAdFactoryConfig;
+}): Promise<AdFactoryGeneratedAd[]> {
+  const businessName =
+    normalizeString(args.webContext.business_name)
+    || normalizeString(args.business?.name)
+    || 'Sophiie';
+  const ads: AdFactoryGeneratedAd[] = [];
+  const variantCount = Math.max(1, Math.round(normalizeNumber(args.angle.variants_recommended) || 1));
+
+  for (let variantNumber = 1; variantNumber <= variantCount; variantNumber += 1) {
+    const prompt = buildAdFactoryScriptGenerationPrompt({
+      angle: args.angle,
+      business: args.business,
+      webContext: args.webContext,
+      market: args.config.market,
+      productFocus: args.config.productFocus,
+      fontPreset: args.config.fontPreset,
+      notes: args.config.notes,
+      referenceUrls: args.config.referenceUrls,
+      previousAds: ads,
+      variantNumber,
+    });
+
+    const text = await callClaude(
+      'You write direct-response video ads for local service businesses. Return valid JSON only. No prose and no markdown fences.',
+      prompt,
+      1800,
+    );
+    if (!text) {
+      throw new Error(`ad_factory_script_generation_failed:${args.angle.angle_name}:V${variantNumber}`);
+    }
+    const parsed = parseClaudeJson(text);
+    ads.push(sanitizeAdFactoryGeneratedAd({
+      value: parsed,
+      angle: args.angle,
+      market: args.config.market,
+      businessName,
+      productFocus: args.config.productFocus,
+      variantNumber,
+    }));
+  }
+
+  return ads;
+}
+
+async function buildAdFactoryPayload(args: {
+  business: any;
+  strategy: IntelligenceStrategyPayload;
+  config: ResolvedAdFactoryConfig;
+}): Promise<AdFactoryPayload> {
+  const runId = randomUUID();
+  const webContext = getJsonObject(args.business?.web_context) || {};
+  const ads: AdFactoryGeneratedAd[] = [];
+
+  for (const angle of args.strategy.creative_angles) {
+    const generated = await buildAdFactoryAngleAds({
+      angle,
+      business: args.business,
+      webContext,
+      config: args.config,
+    });
+    ads.push(...generated);
+  }
+
+  return {
+    runId,
+    callbackUrl: buildAdFactoryCallbackUrl(args.config.callbackBaseUrl, runId),
+    fontPreset: args.config.fontPreset,
+    ads,
+  };
+}
+
+function resolveAdFactoryConfig(args: {
+  campaign: any;
+  business: any;
+  strategy: IntelligenceStrategyPayload;
+  creativeHandoff: Record<string, any>;
+}): ResolvedAdFactoryConfig | null {
+  const requestWebhook = normalizeString(args.creativeHandoff.webhook_url);
+  const storedWebhook = normalizeString(args.business?.ad_factory_webhook_url);
+  const webhookUrl = requestWebhook || storedWebhook;
+  if (!webhookUrl) return null;
+  if (!storedWebhook && !isLikelyAdFactoryWebhookUrl(webhookUrl)) return null;
+
+  const market =
+    normalizeMarketCode(args.creativeHandoff.market)
+    || normalizeMarketCode(args.business?.ad_factory_default_market)
+    || normalizeMarketCode(args.strategy.audience_tiers[0]?.geo?.[0])
+    || normalizeMarketCode(args.business?.markets?.[0])
+    || normalizeMarketCode(args.business?.country)
+    || 'AU';
+  const webContext = getJsonObject(args.business?.web_context) || {};
+
+  return {
+    webhookUrl,
+    callbackBaseUrl:
+      normalizeString(args.creativeHandoff.callback_url)
+      || normalizeString(args.business?.ad_factory_callback_base_url)
+      || '',
+    fontPreset:
+      normalizeString(args.creativeHandoff.font_preset)
+      || normalizeString(args.business?.ad_factory_font_preset)
+      || 'impact_blue',
+    market,
+    productFocus:
+      normalizeString(args.creativeHandoff.product_focus)
+      || normalizeString(webContext.primary_product_focus)
+      || normalizeString(args.business?.trade)
+      || normalizeString(args.campaign?.business_type)
+      || normalizeString(args.business?.name)
+      || 'AI receptionist',
+    notes: normalizeString(args.creativeHandoff.notes),
+    referenceUrls: sanitizeStringArray(args.creativeHandoff.reference_urls, 8) || [],
+  };
+}
+
+function looksLikeAdFactoryCallbackPayload(value: unknown): boolean {
+  const body = getJsonObject(value) || {};
+  return Boolean(
+    normalizeString(body.runId)
+    && (Array.isArray(body.results) || normalizeString(body.step)),
+  );
+}
+
+function normalizeAdFactoryCallbackResults(value: unknown): AdFactoryCallbackResult[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((entry) => {
+      const item = getJsonObject(entry);
+      if (!item) return null;
+      const cloudinaryUrl = normalizeString(item.cloudinaryUrl);
+      const name = normalizeString(item.name);
+      if (!cloudinaryUrl || !name) return null;
+      const variantIndex = Math.max(0, Math.round(normalizeNumber(item.variantIndex) || 1) - 1);
+      return {
+        variantIndex,
+        name,
+        cloudinaryUrl,
+        thumbnailUrl: normalizeString(item.thumbnailUrl),
+        driveFolderUrl: normalizeString(item.driveFolderUrl),
+      } satisfies AdFactoryCallbackResult;
+    })
+    .filter(Boolean) as AdFactoryCallbackResult[];
+}
+
+function findStrategyAngleForAdFactoryName(strategy: IntelligenceStrategyPayload, rawName: string | null) {
+  const normalized = normalizeString(rawName);
+  if (!normalized) return null;
+
+  const stripped = normalized
+    .replace(/^hook\s*-\s*/i, '')
+    .replace(/\s*-\s*v\d+$/i, '')
+    .trim();
+  const candidates = [normalized, stripped];
+  const candidateKeys = candidates.map((value) => buildTierKey(value));
+
+  return strategy.creative_angles.find((angle) => candidateKeys.includes(buildTierKey(angle.angle_name))) || null;
 }
 
 function sanitizeCrmAttributes(value: unknown): Record<string, any> {
@@ -6735,6 +7146,177 @@ async function handleCampaignApproveStrategy(req: VercelRequest, res: VercelResp
   });
 }
 
+async function handleAdFactoryCreativeCallback(req: VercelRequest, res: VercelResponse, campaignId: string) {
+  const { data: campaign } = await supabaseAdmin
+    .from('api_campaigns')
+    .select('*')
+    .eq('id', campaignId)
+    .maybeSingle();
+
+  if (!campaign) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Campaign not found' } });
+  }
+  if (normalizeString(campaign.campaign_version) !== 'intelligence') {
+    return res.status(409).json({ error: { code: 'legacy_campaign', message: 'Creative callback is only supported for intelligence campaigns.' } });
+  }
+
+  const strategy = getIntelligenceStrategySource(campaign);
+  if (!strategy || !getJsonObject(campaign.approved_strategy)) {
+    return res.status(409).json({ error: { code: 'strategy_not_approved', message: 'Approve the strategy before accepting Ad Factory callbacks.' } });
+  }
+
+  const body = getJsonObject(req.body) || {};
+  const runId = normalizeString(body.runId);
+  const step = normalizeString(body.step) || 'complete';
+  if (!runId) {
+    return res.status(400).json({ error: { code: 'validation_error', message: '`runId` is required for Ad Factory callbacks.' } });
+  }
+
+  const workflowState = getJsonObject(campaign.workflow_state) || {};
+  const storedRunId =
+    normalizeString(workflowState.ad_factory_run_id)
+    || normalizeString(getJsonObject(workflowState.latest_creative_request)?.run_id);
+  if (!storedRunId) {
+    return res.status(409).json({ error: { code: 'ad_factory_run_missing', message: 'This campaign does not have an Ad Factory run in progress.' } });
+  }
+  if (storedRunId !== runId) {
+    return res.status(409).json({ error: { code: 'ad_factory_run_mismatch', message: 'The callback runId does not match the campaign workflow state.' } });
+  }
+
+  const callbackAt = new Date().toISOString();
+  if (step.toLowerCase() !== 'complete') {
+    const nextWorkflowState = mergeWorkflowState(campaign.workflow_state, {
+      ad_factory_status: step,
+      ad_factory_last_callback_at: callbackAt,
+      ad_factory_last_step: step,
+    });
+
+    await supabaseAdmin
+      .from('api_campaigns')
+      .update({
+        creative_status: 'requested',
+        workflow_state: nextWorkflowState,
+      })
+      .eq('id', campaign.id)
+      .then(() => {});
+
+    return res.status(202).json({
+      campaign_id: campaign.id,
+      run_id: runId,
+      step,
+      acknowledged_at: callbackAt,
+    });
+  }
+
+  const results = normalizeAdFactoryCallbackResults(body.results);
+  const business = campaign.business_id
+    ? await supabaseAdmin.from('businesses').select('*').eq('id', campaign.business_id).maybeSingle().then((result) => result.data || null)
+    : null;
+  const { data: existingRows } = await supabaseAdmin
+    .from('api_campaign_creatives')
+    .select('id, asset_url, angle_name, variant_index, metadata')
+    .eq('api_campaign_id', campaign.id);
+
+  const pendingInserts = results
+    .filter((result) => {
+      const matchedAngle = findStrategyAngleForAdFactoryName(strategy, result.name);
+      const existing = (existingRows || []).find((row: any) => {
+        if (normalizeString(row.asset_url) === result.cloudinaryUrl) return true;
+        const metadata = getJsonObject(row.metadata) || {};
+        const sameRun = normalizeString(metadata.ad_factory_run_id) === runId;
+        const sameVariant = Math.round(normalizeNumber(row.variant_index) || 0) === result.variantIndex;
+        const sameAngle = buildTierKey(normalizeString(row.angle_name) || '') === buildTierKey(matchedAngle?.angle_name || '');
+        return sameRun && sameVariant && sameAngle;
+      });
+      return !existing;
+    })
+    .map((result) => {
+      const matchedAngle = findStrategyAngleForAdFactoryName(strategy, result.name);
+      return {
+        api_campaign_id: campaign.id,
+        business_id: campaign.business_id || business?.id || null,
+        user_id: campaign.user_id,
+        tier_name: null,
+        angle_name: matchedAngle?.angle_name || result.name,
+        variant_index: result.variantIndex,
+        asset_url: result.cloudinaryUrl,
+        asset_type: 'video',
+        headline: result.name,
+        body: matchedAngle?.message || null,
+        cta: matchedAngle?.cta || null,
+        link_url: normalizeString(campaign.url) || normalizeString(business?.website_url) || normalizeString(business?.website),
+        status: 'pending_review',
+        metadata: {
+          upload_source: 'ad_factory_callback',
+          ad_factory_run_id: runId,
+          ad_factory_step: step,
+          ad_factory_variant_number: result.variantIndex + 1,
+          thumbnail_url: result.thumbnailUrl,
+          drive_folder_url: result.driveFolderUrl,
+          review_required: true,
+        },
+      };
+    });
+
+  let insertedRows: any[] = [];
+  if (pendingInserts.length > 0) {
+    const { data, error } = await supabaseAdmin
+      .from('api_campaign_creatives')
+      .insert(pendingInserts)
+      .select('*');
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: 'creative_store_failed',
+          message: error.message || 'Failed to store Ad Factory callback creatives.',
+        },
+      });
+    }
+    insertedRows = data || [];
+  }
+
+  const { count: pendingCreativeCount } = await supabaseAdmin
+    .from('api_campaign_creatives')
+    .select('id', { count: 'exact', head: true })
+    .eq('api_campaign_id', campaign.id)
+    .eq('status', 'pending_review');
+
+  const wasComplete = normalizeString(workflowState.ad_factory_status) === 'complete';
+  const nextWorkflowState = mergeWorkflowState(campaign.workflow_state, {
+    ad_factory_status: 'complete',
+    ad_factory_completed_at: callbackAt,
+    ad_factory_last_callback_at: callbackAt,
+    ad_factory_last_step: step,
+    pending_creatives: pendingCreativeCount ?? pendingInserts.length,
+  });
+
+  await supabaseAdmin
+    .from('api_campaigns')
+    .update({
+      creative_status: 'pending_review',
+      workflow_state: nextWorkflowState,
+    })
+    .eq('id', campaign.id)
+    .then(() => {});
+
+  if (!wasComplete || insertedRows.length > 0) {
+    sendSlackAdFactoryComplete({
+      campaignName: campaign.business_name || business?.name || 'Campaign',
+      runId,
+      creativeCount: pendingCreativeCount ?? pendingInserts.length,
+    }).catch(() => {});
+  }
+
+  return res.status(200).json({
+    campaign_id: campaign.id,
+    run_id: runId,
+    creative_status: 'pending_review',
+    pending_creatives: pendingCreativeCount ?? pendingInserts.length,
+    creatives: insertedRows,
+    completed_at: callbackAt,
+  });
+}
+
 async function handleCampaignRequestCreative(req: VercelRequest, res: VercelResponse, campaignId: string) {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
 
@@ -6768,14 +7350,136 @@ async function handleCampaignRequestCreative(req: VercelRequest, res: VercelResp
 
   const existingHandoff = getJsonObject(campaign.creative_handoff) || {};
   const requestHandoff = sanitizeCreativeHandoff(req.body?.creative_handoff || req.body) || {};
+  const campaignCallbackUrl = `${getApiBaseUrl()}/api/v1/campaigns/${campaign.id}/creative-callback`;
+  const adFactoryConfig = resolveAdFactoryConfig({
+    campaign,
+    business,
+    strategy,
+    creativeHandoff: { ...existingHandoff, ...requestHandoff },
+  });
+
+  if (adFactoryConfig) {
+    if (!ANTHROPIC_API_KEY) {
+      return res.status(500).json({
+        error: {
+          code: 'config_error',
+          message: 'Anthropic API key required for Ad Factory script generation.',
+        },
+      });
+    }
+    if (!adFactoryConfig.callbackBaseUrl) {
+      return res.status(400).json({
+        error: {
+          code: 'ad_factory_callback_base_missing',
+          message: 'Provide `creative_handoff.callback_url` or configure `ad_factory_callback_base_url` on the business for Ad Factory dispatch.',
+        },
+      });
+    }
+
+    const creativeHandoff = {
+      ...existingHandoff,
+      ...requestHandoff,
+      webhook_url: adFactoryConfig.webhookUrl,
+      callback_url: adFactoryConfig.callbackBaseUrl,
+      font_preset: adFactoryConfig.fontPreset,
+      market: adFactoryConfig.market,
+      product_focus: adFactoryConfig.productFocus,
+    };
+    const requestedAt = new Date().toISOString();
+    let payload: AdFactoryPayload;
+    try {
+      payload = await buildAdFactoryPayload({
+        business,
+        strategy,
+        config: adFactoryConfig,
+      });
+    } catch (error: any) {
+      return res.status(502).json({
+        error: {
+          code: 'ad_factory_script_generation_failed',
+          message: error?.message || 'Failed to generate Ad Factory scripts.',
+        },
+      });
+    }
+
+    let upstreamResponse: any = null;
+    try {
+      const response = await fetch(adFactoryConfig.webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      upstreamResponse = await response.text().catch(() => null);
+      if (!response.ok) {
+        return res.status(502).json({
+          error: {
+            code: 'creative_webhook_failed',
+            message: `Creative webhook returned ${response.status}.`,
+            upstream_response: upstreamResponse,
+          },
+        });
+      }
+    } catch (error: any) {
+      return res.status(502).json({
+        error: {
+          code: 'creative_webhook_failed',
+          message: error?.message || 'Creative webhook request failed.',
+        },
+      });
+    }
+
+    const workflowState = mergeWorkflowState(campaign.workflow_state, {
+      latest_creative_request: {
+        requested_at: requestedAt,
+        dispatched: true,
+        adapter: 'ad_factory',
+        callback_url: campaignCallbackUrl,
+        webhook_url: adFactoryConfig.webhookUrl,
+        run_id: payload.runId,
+        ads_count: payload.ads.length,
+      },
+      ad_factory_run_id: payload.runId,
+      ad_factory_dispatched_at: requestedAt,
+      ad_factory_status: 'dispatched',
+      pending_creatives: 0,
+    });
+
+    await supabaseAdmin
+      .from('api_campaigns')
+      .update({
+        creative_handoff: creativeHandoff,
+        creative_status: 'requested',
+        workflow_state: workflowState,
+      })
+      .eq('id', campaign.id)
+      .eq('api_key_id', auth.keyRecord.id)
+      .then(() => {});
+
+    sendSlackAdFactoryDispatched({
+      campaignName: campaign.business_name || business.name || 'Campaign',
+      runId: payload.runId,
+      variantCount: payload.ads.length,
+    }).catch(() => {});
+
+    return res.status(200).json({
+      campaign_id: campaign.id,
+      adapter: 'ad_factory',
+      dispatched: true,
+      run_id: payload.runId,
+      callback_url: campaignCallbackUrl,
+      creative_request: payload,
+      upstream_response: upstreamResponse,
+      updated_at: requestedAt,
+    });
+  }
+
   const creativeHandoff = { ...existingHandoff, ...requestHandoff };
   const webhookUrl = normalizeString(creativeHandoff.webhook_url);
-  const callbackUrl = normalizeString(creativeHandoff.callback_url) || `${getApiBaseUrl()}/api/v1/campaigns/${campaign.id}/creative-callback`;
-
+  const callbackUrl = normalizeString(creativeHandoff.callback_url) || campaignCallbackUrl;
   const payload = {
     campaign_id: campaign.id,
     callback_url: callbackUrl,
-    market: strategy.audience_tiers[0]?.geo?.[0] || business.markets?.[0] || business.country || 'US',
+    market: normalizeMarketCode(strategy.audience_tiers[0]?.geo?.[0]) || normalizeMarketCode(business.markets?.[0]) || normalizeMarketCode(business.country) || 'US',
     product_focus: normalizeString(creativeHandoff.product_focus) || business.trade || campaign.business_type || business.name,
     font_preset: normalizeString(creativeHandoff.font_preset) || null,
     angles: strategy.creative_angles.map((angle) => ({
@@ -6848,6 +7552,10 @@ async function handleCampaignRequestCreative(req: VercelRequest, res: VercelResp
 
 async function handleCampaignUploadCreative(req: VercelRequest, res: VercelResponse, campaignId: string, source: 'upload' | 'callback') {
   if (req.method !== 'POST') return res.status(405).json({ error: { code: 'method_not_allowed', message: 'POST required' } });
+
+  if (source === 'callback' && looksLikeAdFactoryCallbackPayload(req.body)) {
+    return handleAdFactoryCreativeCallback(req, res, campaignId);
+  }
 
   const auth = await authenticateRequest(req);
   if (auth.error) {

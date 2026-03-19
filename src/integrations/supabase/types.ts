@@ -178,7 +178,7 @@ export type Database = {
           meta_video_id: string | null
           metadata: Json
           status: string
-          tier_name: string
+          tier_name: string | null
           updated_at: string
           user_id: string
           variant_index: number
@@ -203,7 +203,7 @@ export type Database = {
           meta_video_id?: string | null
           metadata?: Json
           status?: string
-          tier_name: string
+          tier_name?: string | null
           updated_at?: string
           user_id: string
           variant_index?: number
@@ -228,7 +228,7 @@ export type Database = {
           meta_video_id?: string | null
           metadata?: Json
           status?: string
-          tier_name?: string
+          tier_name?: string | null
           updated_at?: string
           user_id?: string
           variant_index?: number
@@ -839,6 +839,10 @@ export type Database = {
       }
       businesses: {
         Row: {
+          ad_factory_callback_base_url: string | null
+          ad_factory_default_market: string | null
+          ad_factory_font_preset: string | null
+          ad_factory_webhook_url: string | null
           competitor_names: string[] | null
           country: string | null
           created_at: string
@@ -873,6 +877,10 @@ export type Database = {
           website_url: string | null
         }
         Insert: {
+          ad_factory_callback_base_url?: string | null
+          ad_factory_default_market?: string | null
+          ad_factory_font_preset?: string | null
+          ad_factory_webhook_url?: string | null
           competitor_names?: string[] | null
           country?: string | null
           created_at?: string
@@ -907,6 +915,10 @@ export type Database = {
           website_url?: string | null
         }
         Update: {
+          ad_factory_callback_base_url?: string | null
+          ad_factory_default_market?: string | null
+          ad_factory_font_preset?: string | null
+          ad_factory_webhook_url?: string | null
           competitor_names?: string[] | null
           country?: string | null
           created_at?: string

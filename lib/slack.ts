@@ -76,6 +76,18 @@ interface CampaignAssetsReadyArgs {
   tierName?: string | null;
 }
 
+interface AdFactoryDispatchArgs {
+  campaignName: string;
+  runId: string;
+  variantCount: number;
+}
+
+interface AdFactoryCompleteArgs {
+  campaignName: string;
+  runId: string;
+  creativeCount: number;
+}
+
 function moneyFromCents(cents?: number | null): string {
   if (typeof cents !== "number" || Number.isNaN(cents)) return "n/a";
   return `$${(cents / 100).toFixed(2)}`;
@@ -306,6 +318,36 @@ export async function sendSlackCampaignAssetsReady(args: CampaignAssetsReadyArgs
         text: {
           type: "mrkdwn",
           text: `*Campaign Creatives Ready*\n*Campaign:* ${args.campaignName}${tierText}\n*Creatives Uploaded:* ${args.creativeCount}\nReady to activate.`,
+        },
+      },
+    ],
+  });
+}
+
+export async function sendSlackAdFactoryDispatched(args: AdFactoryDispatchArgs): Promise<boolean> {
+  return postSlackMessage({
+    text: `ZuckerBot Ad Factory job dispatched: ${args.campaignName}`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Ad Factory Job Dispatched*\n*Campaign:* ${args.campaignName}\n*Run ID:* \`${args.runId}\`\n*Variants Queued:* ${args.variantCount}`,
+        },
+      },
+    ],
+  });
+}
+
+export async function sendSlackAdFactoryComplete(args: AdFactoryCompleteArgs): Promise<boolean> {
+  return postSlackMessage({
+    text: `ZuckerBot Ad Factory complete: ${args.campaignName}`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Ad Factory Complete*\n*Campaign:* ${args.campaignName}\n*Run ID:* \`${args.runId}\`\n*Pending Review Creatives:* ${args.creativeCount}`,
         },
       },
     ],

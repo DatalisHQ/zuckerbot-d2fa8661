@@ -82,6 +82,7 @@ const creativeHandoffSchema = z
     callback_url: z.string().optional(),
     product_focus: z.string().optional(),
     font_preset: z.string().optional(),
+    market: z.string().optional(),
     notes: z.string().optional(),
     reference_urls: z.array(z.string()).optional(),
   })
@@ -291,7 +292,7 @@ export function registerTools(server: McpServer, client: ZuckerBotClient): void 
 
   server.tool(
     "zuckerbot_request_creative",
-    "Create or dispatch a creative handoff package for an approved intelligence campaign. Supports webhook-based external production teams.",
+    "Create or dispatch a creative handoff package for an approved intelligence campaign. When an Ad Factory webhook is configured, ZuckerBot generates full scripts via Claude and dispatches the Ad Factory payload.",
     {
       campaign_id: z.string().describe("Intelligence campaign ID"),
       creative_handoff: creativeHandoffSchema.describe("Optional creative handoff configuration"),

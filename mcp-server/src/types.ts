@@ -58,6 +58,7 @@ export interface CreativeHandoffInput {
   callback_url?: string;
   product_focus?: string;
   font_preset?: string;
+  market?: string;
   notes?: string;
   reference_urls?: string[];
   [key: string]: unknown;
@@ -185,10 +186,19 @@ export interface CampaignCreativeInput {
   variant_index?: number;
 }
 
-export interface ApiCampaignCreative extends CampaignCreativeInput {
+export interface ApiCampaignCreative {
   id: string;
+  tier_name?: string | null;
+  asset_url: string;
+  asset_type?: "image" | "video" | string;
+  headline?: string | null;
+  body?: string | null;
+  cta?: string | null;
+  link_url?: string | null;
+  angle_name?: string | null;
+  variant_index?: number;
   api_campaign_id: string;
-  business_id: string;
+  business_id: string | null;
   user_id: string;
   meta_campaign_id?: string | null;
   meta_adset_id?: string | null;
