@@ -5,9 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
-import { Navbar } from "@/components/Navbar";
 import StrategyBrief from "@/components/StrategyBrief";
 import { trackPageView } from "@/utils/analytics";
+import { GlassCard } from "@/components/ui/GlassCard";
+import { GradientButton } from "@/components/ui/GradientButton";
+import { MetricCard } from "@/components/ui/MetricCard";
+import { NavBar } from "@/components/ui/NavBar";
+import { SidebarShell } from "@/components/ui/SidebarShell";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { CodeBlock } from "@/components/ui/CodeBlock";
 import {
   Table,
   TableBody,
@@ -54,6 +60,13 @@ import {
   Zap,
   CreditCard,
   ExternalLink,
+  Bot,
+  BrainCircuit,
+  ChevronLeft,
+  ChevronRight,
+  LayoutDashboard,
+  Palette,
+  SlidersHorizontal,
 } from "lucide-react";
 
 // ─── Local Interfaces ──────────────────────────────────────────────────────
@@ -334,6 +347,42 @@ const CAMPAIGN_STATUS_BADGE: Record<string, { label: string; className: string }
   },
 };
 
+const DASHBOARD_NAV_ITEMS = [
+  { id: "overview", label: "Overview", href: "#overview", icon: LayoutDashboard },
+  { id: "analytics", label: "Analytics", href: "#performance", icon: BarChart3 },
+  { id: "ad-sets", label: "Ad Sets", href: "#campaigns", icon: Megaphone },
+  { id: "creatives", label: "Creatives", href: "#workspace", icon: Palette },
+  { id: "ai-insights", label: "AI Insights", href: "#agents", icon: BrainCircuit },
+];
+
+function parseMultiplier(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const match = value.match(/([\d.]+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function normalizeCampaignStatus(status: string): "active" | "paused" | "completed" {
+  if (status === "active") return "active";
+  if (status === "paused") return "paused";
+  return "completed";
+}
+
+function displayCampaignStatus(status: string): string {
+  if (status === "active") return "Active";
+  if (status === "paused") return "Paused";
+  return "Completed";
+}
+
+function getCompletedAgentSteps(run: any): number {
+  return [
+    !!run?.brand_data,
+    !!run?.competitor_data,
+    !!run?.creative_data,
+    !!run?.campaign_plan,
+    !!run?.analytics_projections,
+  ].filter(Boolean).length;
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 const Dashboard = () => {
@@ -347,6 +396,10 @@ const Dashboard = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [campaignView, setCampaignView] = useState<"active" | "archived">("active");
+  const [showSpendOnly, setShowSpendOnly] = useState(false);
+  const [campaignPage, setCampaignPage] = useState(1);
+  const [activeNavItem, setActiveNavItem] = useState("overview");
   
   // ─── Agent Runs State ────────────────────────────────────────────────────
   const [agentRuns, setAgentRuns] = useState<any[]>([]);
@@ -678,6 +731,10 @@ const Dashboard = () => {
     loadDashboard();
   }, [navigate]);
 
+  useEffect(() => {
+    setCampaignPage(1);
+  }, [campaignView, showSpendOnly]);
+
   // ─── Refresh Stats Handler ────────────────────────────────────────────────
 
   const handleRefreshStats = async () => {
@@ -885,14 +942,88 @@ const Dashboard = () => {
   const totalSpend = campaigns.reduce((sum, c) => sum + (c.spend_cents || 0), 0);
   const avgCostPerLead =
     totalLeads > 0 ? Math.round(totalSpend / totalLeads) : null;
+  const latestRun = agentRuns[0] ?? null;
+  const projectedRoiValues = agentRuns
+    .map((run) => parseMultiplier(run?.analytics_projections?.estimated_roi))
+    .filter((value): value is number => value !== null);
+  const averageProjectedRoas = projectedRoiValues.length
+    ? `${(projectedRoiValues.reduce((sum, value) => sum + value, 0) / projectedRoiValues.length).toFixed(1)}x`
+    : "—";
+  const latestProjectedRoas = latestRun?.analytics_projections?.estimated_roi || averageProjectedRoas;
+  const dailyBurnRate = campaigns
+    .filter((campaign) => campaign.status === "active")
+    .reduce((sum, campaign) => sum + (campaign.daily_budget_cents || 0), 0);
+  const aiEfficiency = agentRuns.length
+    ? Math.round(
+        (agentRuns.reduce((sum, run) => sum + getCompletedAgentSteps(run), 0) /
+          (agentRuns.length * 5)) *
+          100
+      )
+    : 0;
+
+  const performanceSeries = campaigns.slice(0, 6).reverse();
+  const maxSeriesSpend = Math.max(
+    1,
+    ...performanceSeries.map((campaign) => Math.max(1, campaign.spend_cents / 100))
+  );
+  const maxSeriesLeads = Math.max(1, ...performanceSeries.map((campaign) => campaign.leads_count || 0));
+
+  const campaignSummaries = campaigns.filter((campaign) =>
+    campaignView === "active" ? campaign.status !== "ended" : campaign.status === "ended"
+  );
+  const filteredCampaigns = campaignSummaries.filter((campaign) =>
+    showSpendOnly ? campaign.spend_cents > 0 : true
+  );
+  const campaignsPerPage = 4;
+  const totalCampaignPages = Math.max(1, Math.ceil(filteredCampaigns.length / campaignsPerPage));
+  const safeCampaignPage = Math.min(campaignPage, totalCampaignPages);
+  const paginatedCampaigns = filteredCampaigns.slice(
+    (safeCampaignPage - 1) * campaignsPerPage,
+    safeCampaignPage * campaignsPerPage
+  );
+
+  const aiAgents = [
+    {
+      name: "Brand Analyst",
+      status: latestRun ? (latestRun.brand_data ? "completed" : "active") : "paused",
+      detail:
+        latestRun?.brand_data?.brand_name ||
+        latestRun?.brand_data?.business_type ||
+        "Waiting for intake data",
+    },
+    {
+      name: "Competitor Watch",
+      status: latestRun ? (latestRun.competitor_data ? "completed" : "active") : "paused",
+      detail: latestRun?.competitor_data ? "Market scan completed" : "No competitor sweep yet",
+    },
+    {
+      name: "Creative Engine",
+      status: latestRun ? (latestRun.creative_data ? "completed" : "active") : "paused",
+      detail: latestRun?.creative_data ? "Creative recommendations ready" : "Creative generation idle",
+    },
+    {
+      name: "Campaign Planner",
+      status: latestRun ? (latestRun.campaign_plan ? "completed" : "active") : "paused",
+      detail: latestRun?.campaign_plan?.objective || "Awaiting launch plan",
+    },
+  ] as const;
 
   // ─── Loading ────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <Navbar isAdmin={isAdmin} />
-        <div className="flex items-center justify-center py-24">
+      <div className="min-h-screen bg-surface text-on-surface">
+        <NavBar
+          links={[
+            { label: "Landing", href: "/" },
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "Campaigns", href: "#campaigns" },
+            { label: "Automation", href: "#agents" },
+          ]}
+          secondaryAction={{ label: "Docs", href: "/docs", variant: "tertiary" }}
+          primaryAction={{ label: "New Campaign", href: "/campaign/new" }}
+        />
+        <div className="flex items-center justify-center py-40">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </div>
@@ -902,570 +1033,630 @@ const Dashboard = () => {
   // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar isAdmin={isAdmin} />
-      <main className="container mx-auto px-4 py-8 max-w-5xl">
-        <div className="space-y-8">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold">Dashboard</h1>
-              <p className="text-muted-foreground mt-1">
-                {business
-                  ? `${business.name}${business.suburb ? ` — ${business.suburb}` : ''}`
-                  : "Welcome back!"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={handleRefreshStats}
-                disabled={isSyncing}
-              >
-                {isSyncing ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                )}
-                Refresh Stats
-              </Button>
-              <Button onClick={() => navigate("/campaign/new")}>
-                <Plus className="h-4 w-4 mr-2" />
-                New Campaign
-              </Button>
-            </div>
-          </div>
+    <div className="min-h-screen bg-surface text-on-surface">
+      <NavBar
+        links={[
+          { label: "Landing", href: "/" },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Campaigns", href: "#campaigns" },
+          { label: "Automation", href: "#agents" },
+        ]}
+        secondaryAction={{ label: "Docs", href: "/docs", variant: "tertiary" }}
+        primaryAction={{ label: "New Campaign", href: "/campaign/new" }}
+      />
 
-          {/* Stats Row */}
-          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              icon={Megaphone}
-              label="Active Campaigns"
-              value={String(activeCampaigns)}
-            />
-            <StatCard
-              icon={Users}
-              label="Total Leads"
-              value={String(totalLeads)}
-            />
-            <StatCard
-              icon={DollarSign}
-              label="Total Spend"
-              value={totalSpend > 0 ? formatCurrency(totalSpend) : "$0.00"}
-            />
-            <StatCard
-              icon={TrendingUp}
-              label="Avg Cost / Lead"
-              value={avgCostPerLead !== null ? formatCurrency(avgCostPerLead) : "—"}
-            />
-          </div>
+      <div className="pt-16">
+        <div className="fixed left-0 top-16 hidden h-[calc(100vh-4rem)] w-[18rem] lg:block">
+          <SidebarShell
+            items={DASHBOARD_NAV_ITEMS}
+            activeItem={activeNavItem}
+            onItemClick={(item) => setActiveNavItem(item.id)}
+            ctaHref="/campaign/new"
+            ctaLabel="Create Campaign"
+            className="h-full"
+          />
+        </div>
 
-          {/* Strategy Brief */}
-          {business && (
-            <StrategyBrief
-              businessId={business.id}
-              businessName={business.name}
-            />
-          )}
-
-          {/* ─── Campaign Workspace Section ─────────────────────────────── */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold flex items-center gap-2">
-                <Zap className="h-5 w-5 text-primary" />
-                Campaign Workspace
-              </h2>
-              <Link
-                to="/workspace"
-                className="text-sm text-primary hover:underline flex items-center gap-1"
-              >
-                Open Workspace
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            {isLoadingAgentRuns ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : agentRuns.length === 0 ? (
-              <Card className="text-center py-12">
-                <CardContent className="space-y-4">
-                  <Zap className="h-10 w-10 text-muted-foreground mx-auto" />
+        <main className="px-6 py-8 lg:ml-[18rem] lg:px-10">
+          <div className="mx-auto max-w-7xl space-y-8">
+            <section id="overview" className="space-y-8">
+              <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+                <div className="space-y-3">
+                  <StatusBadge status="ai">Performance Dashboard</StatusBadge>
                   <div>
-                    <h3 className="font-semibold">No AI agent runs yet</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Let our AI agents analyze your competitors, generate ad creatives, and plan your campaigns.
+                    <h1 className="font-headline text-4xl font-black tracking-tight text-on-surface lg:text-5xl">
+                      Overview Metrics
+                    </h1>
+                    <p className="mt-3 max-w-2xl text-base leading-7 text-on-surface-variant">
+                      {business
+                        ? `${business.name}${business.suburb ? ` — ${business.suburb}` : ""} is running inside the Synthetix Indigo shell. Metrics and campaign controls below keep the existing live data and handlers intact.`
+                        : "Live campaign performance, AI execution status, and campaign controls in one surface."}
                     </p>
                   </div>
-                  <Button onClick={() => navigate("/workspace")}>
-                    <Zap className="h-4 w-4 mr-2" />
-                    Start New Campaign
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4">
-                {agentRuns.map((run: any) => {
-                  const brandData = run.brand_data || {};
-                  const competitorData = run.competitor_data || {};
-                  const creativeData = run.creative_data || {};
-                  const campaignPlan = run.campaign_plan || {};
-                  const projections = run.analytics_projections || {};
-                  const isExpanded = expandedRunId === run.id;
+                </div>
 
-                  const competitorAdCount = Array.isArray(competitorData.ads)
-                    ? competitorData.ads.length
-                    : Array.isArray(competitorData.competitors)
-                    ? competitorData.competitors.reduce(
-                        (sum: number, c: any) => sum + (c.ads?.length || 0),
-                        0
-                      )
-                    : 0;
+                <div className="flex flex-wrap items-center gap-3">
+                  <GradientButton
+                    size="md"
+                    variant="secondary"
+                    onClick={handleRefreshStats}
+                    disabled={isSyncing}
+                  >
+                    {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    Refresh Stats
+                  </GradientButton>
+                  <GradientButton size="md" onClick={() => navigate("/campaign/new")}>
+                    <Plus className="h-4 w-4" />
+                    New Campaign
+                  </GradientButton>
+                </div>
+              </div>
 
-                  const creativeCount = Array.isArray(creativeData.creatives)
-                    ? creativeData.creatives.length
-                    : Array.isArray(creativeData.ads)
-                    ? creativeData.ads.length
-                    : 0;
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard
+                  label="Total Spend"
+                  value={totalSpend > 0 ? formatCurrency(totalSpend) : "$0.00"}
+                  trend={campaigns.length ? `${campaigns.length} tracked campaigns` : "No spend yet"}
+                  tone="primary"
+                  icon={<DollarSign className="h-4 w-4" />}
+                />
+                <MetricCard
+                  label="Conversions"
+                  value={String(totalLeads)}
+                  trend={totalLeads > 0 ? "Lead events captured" : "Awaiting conversion data"}
+                  tone="tertiary"
+                  icon={<Users className="h-4 w-4" />}
+                />
+                <MetricCard
+                  label="ROAS"
+                  value={latestProjectedRoas}
+                  trend={projectedRoiValues.length ? "Projected from AI runs" : "No ROI projection yet"}
+                  tone="tertiary"
+                  icon={<TrendingUp className="h-4 w-4" />}
+                />
+                <MetricCard
+                  label="Active Campaigns"
+                  value={String(activeCampaigns)}
+                  trend={campaigns.length ? `${campaigns.length} total campaigns` : "Create your first campaign"}
+                  tone="primary"
+                  icon={<Megaphone className="h-4 w-4" />}
+                />
+              </div>
 
-                  const agentSteps = [
-                    { label: "Brand", done: !!run.brand_data },
-                    { label: "Competitors", done: !!run.competitor_data },
-                    { label: "Creatives", done: !!run.creative_data },
-                    { label: "Campaign", done: !!run.campaign_plan },
-                    { label: "Projections", done: !!run.analytics_projections },
-                  ];
+              <div id="performance" className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+                <GlassCard className="p-8">
+                  <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="font-headline text-2xl font-bold text-on-surface">Campaign Performance</h2>
+                      <p className="mt-2 text-sm text-on-surface-variant">
+                        Spend and lead volume across your latest campaign set.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2 text-xs text-outline">
+                        <span className="h-3 w-3 rounded-full bg-primary" />
+                        Spend
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-outline">
+                        <span className="h-3 w-3 rounded-full bg-tertiary" />
+                        Leads
+                      </div>
+                    </div>
+                  </div>
 
-                  return (
-                    <Card key={run.id}>
-                      <CardHeader className="pb-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <CardTitle className="text-base truncate">
-                              {run.url || "Agent Run"}
-                            </CardTitle>
-                            <CardDescription>
-                              {run.created_at ? relativeTime(run.created_at) : "—"}
-                              {brandData.business_type && (
-                                <span className="ml-2">
-                                  · {brandData.business_type}
-                                </span>
-                              )}
-                            </CardDescription>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                            {agentSteps.map((step) => (
-                              <Badge
-                                key={step.label}
-                                variant="outline"
-                                className={`text-xs ${
-                                  step.done
-                                    ? "bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800"
-                                    : "bg-gray-500/10 text-gray-500 border-gray-200 dark:text-gray-400 dark:border-gray-700"
-                                }`}
-                              >
-                                {step.label}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {/* Summary stats */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                          {competitorAdCount > 0 && (
-                            <span className="text-muted-foreground">
-                              <strong className="text-foreground">{competitorAdCount}</strong> competitor ads
-                            </span>
-                          )}
-                          {creativeCount > 0 && (
-                            <span className="text-muted-foreground">
-                              <strong className="text-foreground">{creativeCount}</strong> ad creatives
-                            </span>
-                          )}
-                          {campaignPlan.daily_budget && (
-                            <span className="text-muted-foreground flex items-center gap-1">
-                              <DollarSign className="h-3.5 w-3.5" />
-                              <strong className="text-foreground">
-                                ${campaignPlan.daily_budget}
-                              </strong>
-                              /day
-                            </span>
-                          )}
-                          {campaignPlan.platforms && Array.isArray(campaignPlan.platforms) && (
-                            <span className="text-muted-foreground">
-                              {campaignPlan.platforms.join(", ")}
-                            </span>
-                          )}
-                        </div>
+                  {performanceSeries.length === 0 ? (
+                    <div className="flex h-[18rem] items-center justify-center rounded-[1.5rem] bg-surface-container-low text-sm text-on-surface-variant">
+                      Launch a campaign to populate the performance chart.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-6 gap-3 rounded-[1.5rem] bg-surface-container-low p-6">
+                      {performanceSeries.map((campaign) => {
+                        const spendHeight = `${Math.max(12, ((campaign.spend_cents / 100) / maxSeriesSpend) * 100)}%`;
+                        const leadsHeight = `${Math.max(8, ((campaign.leads_count || 0) / maxSeriesLeads) * 100)}%`;
 
-                        {/* ROI Projections summary */}
-                        {projections.estimated_roi && (
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                            <span className="text-muted-foreground flex items-center gap-1">
-                              <TrendingUp className="h-3.5 w-3.5" />
-                              Est. ROI: <strong className="text-foreground">{projections.estimated_roi}</strong>
-                            </span>
-                            {projections.estimated_leads_per_month && (
-                              <span className="text-muted-foreground">
-                                <strong className="text-foreground">{projections.estimated_leads_per_month}</strong> leads/mo
-                              </span>
-                            )}
-                            {projections.estimated_cpl && (
-                              <span className="text-muted-foreground">
-                                <strong className="text-foreground">${projections.estimated_cpl}</strong>/lead
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Expanded details */}
-                        {isExpanded && (
-                          <div className="border-t pt-3 space-y-2 text-sm">
-                            {brandData.brand_name && (
-                              <p><span className="text-muted-foreground">Brand:</span> {brandData.brand_name}</p>
-                            )}
-                            {brandData.target_audience && (
-                              <p><span className="text-muted-foreground">Audience:</span> {brandData.target_audience}</p>
-                            )}
-                            {campaignPlan.objective && (
-                              <p><span className="text-muted-foreground">Objective:</span> {campaignPlan.objective}</p>
-                            )}
-                            {campaignPlan.duration && (
-                              <p><span className="text-muted-foreground">Duration:</span> {campaignPlan.duration}</p>
-                            )}
-                            <div className="pt-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => navigate(`/workspace`)}
-                              >
-                                <Zap className="h-3.5 w-3.5 mr-1.5" />
-                                Open in Workspace
-                              </Button>
+                        return (
+                          <div key={campaign.id} className="flex min-w-0 flex-col items-center gap-3">
+                            <div className="flex h-64 w-full items-end justify-center gap-2 rounded-2xl bg-surface p-4">
+                              <div className="w-3 rounded-full bg-primary/75" style={{ height: spendHeight }} />
+                              <div className="w-3 rounded-full bg-tertiary/75" style={{ height: leadsHeight }} />
+                            </div>
+                            <div className="text-center">
+                              <p className="truncate font-label text-[10px] uppercase tracking-[0.18em] text-outline">
+                                {truncateText(campaign.name, 12)}
+                              </p>
+                              <p className="mt-1 text-xs text-on-surface-variant">
+                                {formatCurrency(campaign.spend_cents)}
+                              </p>
                             </div>
                           </div>
-                        )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </GlassCard>
 
-                        {/* Toggle details */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-xs"
-                          onClick={() =>
-                            setExpandedRunId(isExpanded ? null : run.id)
-                          }
-                        >
-                          {isExpanded ? "Hide Details" : "View Details"}
-                          <ArrowRight
-                            className={`h-3 w-3 ml-1 transition-transform ${
-                              isExpanded ? "rotate-90" : ""
-                            }`}
-                          />
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* Active Campaigns */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Campaigns</h2>
-              <Badge variant="outline">{campaigns.length} total</Badge>
-            </div>
-
-            {campaigns.length === 0 ? (
-              <Card className="text-center py-12">
-                <CardContent className="space-y-4">
-                  <Megaphone className="h-10 w-10 text-muted-foreground mx-auto" />
-                  <div>
-                    <h3 className="font-semibold">No campaigns yet</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Create your first campaign to start getting leads.
+                <GlassCard id="agents" className="p-8">
+                  <div className="mb-6">
+                    <h2 className="font-headline text-2xl font-bold text-on-surface">Active AI Agents</h2>
+                    <p className="mt-2 text-sm text-on-surface-variant">
+                      Status signals pulled from your most recent agent runs.
                     </p>
                   </div>
-                  <Button onClick={() => navigate("/campaign/new")}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Campaign
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {campaigns.map((campaign) => {
-                  const badge = STATUS_BADGE[campaign.status] || STATUS_BADGE.draft;
-                  const perfBadge =
-                    PERFORMANCE_BADGE[campaign.performance_status] ||
-                    PERFORMANCE_BADGE.learning;
-                  const isDeleting = deletingId === campaign.id;
-                  const isToggling = togglingId === campaign.id;
-                  const canToggle = campaign.meta_campaign_id && (campaign.status === "active" || campaign.status === "paused");
 
-                  return (
-                    <Card
-                      key={campaign.id}
-                      className="cursor-pointer hover:shadow-md transition-shadow"
-                      onClick={() =>
-                        toast({
-                          title: "Campaign detail coming soon",
-                          description: "We're building this page next!",
-                        })
-                      }
-                    >
-                      <CardHeader className="pb-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <CardTitle className="text-base">
-                            {campaign.name}
-                          </CardTitle>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <Badge
-                              variant="outline"
-                              className={`text-xs ${perfBadge.className}`}
-                            >
-                              {perfBadge.label}
-                            </Badge>
-                            <Badge variant={badge.variant}>{badge.label}</Badge>
+                  <div className="space-y-4">
+                    {aiAgents.map((agent) => (
+                      <div key={agent.name} className="rounded-[1.25rem] bg-surface-container p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-body text-sm font-semibold text-on-surface">{agent.name}</p>
+                            <p className="mt-1 text-xs text-on-surface-variant">{agent.detail}</p>
                           </div>
+                          <StatusBadge status={agent.status}>{displayCampaignStatus(agent.status)}</StatusBadge>
                         </div>
-                        <CardDescription>
-                          {campaign.launched_at
-                            ? `Launched ${relativeTime(campaign.launched_at)}`
-                            : `Created ${relativeTime(campaign.created_at)}`}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {/* Ad headline + copy snippet */}
-                        {(campaign.ad_headline || campaign.ad_copy) && (
-                          <div className="space-y-1 border-l-2 border-primary/20 pl-3">
-                            {campaign.ad_headline && (
-                              <p className="text-sm font-medium flex items-center gap-1.5">
-                                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                {campaign.ad_headline}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                    <MetricCard
+                      label="AI Efficiency"
+                      value={`${aiEfficiency}%`}
+                      trend={agentRuns.length ? "Completion rate across recent runs" : "No automation history yet"}
+                      tone="tertiary"
+                      icon={<Bot className="h-4 w-4" />}
+                      className="bg-surface-container-low"
+                    />
+                    <MetricCard
+                      label="Avg Cost / Lead"
+                      value={avgCostPerLead !== null ? formatCurrency(avgCostPerLead) : "—"}
+                      trend={avgCostPerLead !== null ? "Current blended CPL" : "Waiting for lead data"}
+                      tone="primary"
+                      icon={<Target className="h-4 w-4" />}
+                      className="bg-surface-container-low"
+                    />
+                  </div>
+
+                  <CodeBlock title="latest_agent_target" className="mt-6">
+                    {latestRun?.url || "No recent agent target recorded."}
+                  </CodeBlock>
+                </GlassCard>
+              </div>
+            </section>
+
+            {business && (
+              <section id="workspace" className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="font-headline text-2xl font-bold text-on-surface">Creative Workspace</h2>
+                    <p className="mt-2 text-sm text-on-surface-variant">
+                      Existing planning and creative logic, reskinned into the new dashboard shell.
+                    </p>
+                  </div>
+                  <GradientButton asChild size="md" variant="secondary">
+                    <Link to="/workspace">Open Workspace</Link>
+                  </GradientButton>
+                </div>
+                <StrategyBrief businessId={business.id} businessName={business.name} />
+              </section>
+            )}
+
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-headline text-2xl font-bold text-on-surface">Recent AI Runs</h2>
+                  <p className="mt-2 text-sm text-on-surface-variant">
+                    Detailed execution history from the current automation pipeline.
+                  </p>
+                </div>
+                <StatusBadge status="live">{agentRuns.length} tracked</StatusBadge>
+              </div>
+
+              {isLoadingAgentRuns ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : agentRuns.length === 0 ? (
+                <GlassCard className="p-10 text-center">
+                  <Zap className="mx-auto h-10 w-10 text-outline" />
+                  <h3 className="mt-4 font-headline text-xl font-semibold text-on-surface">No AI agent runs yet</h3>
+                  <p className="mt-2 text-sm text-on-surface-variant">
+                    Start a workspace run to populate this panel with brand, competitor, creative, and projection data.
+                  </p>
+                </GlassCard>
+              ) : (
+                <div className="grid gap-4">
+                  {agentRuns.map((run: any) => {
+                    const brandData = run.brand_data || {};
+                    const competitorData = run.competitor_data || {};
+                    const creativeData = run.creative_data || {};
+                    const campaignPlan = run.campaign_plan || {};
+                    const projections = run.analytics_projections || {};
+                    const isExpanded = expandedRunId === run.id;
+                    const agentSteps = [
+                      { label: "Brand", done: !!run.brand_data },
+                      { label: "Competitors", done: !!run.competitor_data },
+                      { label: "Creatives", done: !!run.creative_data },
+                      { label: "Campaign", done: !!run.campaign_plan },
+                      { label: "Projections", done: !!run.analytics_projections },
+                    ];
+
+                    return (
+                      <GlassCard key={run.id} className="p-6">
+                        <div className="flex flex-col gap-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                              <h3 className="font-body text-base font-semibold text-on-surface">{run.url || "Agent Run"}</h3>
+                              <p className="mt-1 text-sm text-on-surface-variant">
+                                {run.created_at ? relativeTime(run.created_at) : "—"}
+                                {brandData.business_type ? ` · ${brandData.business_type}` : ""}
                               </p>
-                            )}
-                            {campaign.ad_copy && (
-                              <p className="text-xs text-muted-foreground leading-relaxed">
-                                {truncateText(campaign.ad_copy, 80)}
-                              </p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Stats row */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                          <span className="text-muted-foreground">
-                            <strong className="text-foreground">
-                              ${(campaign.daily_budget_cents / 100).toFixed(0)}
-                            </strong>
-                            /day
-                          </span>
-                          {campaign.radius_km > 0 && (
-                            <span className="text-muted-foreground flex items-center gap-1">
-                              <Target className="h-3.5 w-3.5" />
-                              <strong className="text-foreground">
-                                {campaign.radius_km}
-                              </strong>
-                              km
-                            </span>
-                          )}
-                          <span className="text-muted-foreground">
-                            <strong className="text-foreground">
-                              {campaign.leads_count}
-                            </strong>{" "}
-                            leads
-                          </span>
-                          <span className="text-muted-foreground flex items-center gap-1">
-                            <Eye className="h-3.5 w-3.5" />
-                            <strong className="text-foreground">
-                              {campaign.impressions?.toLocaleString() || 0}
-                            </strong>
-                          </span>
-                          <span className="text-muted-foreground flex items-center gap-1">
-                            <MousePointerClick className="h-3.5 w-3.5" />
-                            <strong className="text-foreground">
-                              {campaign.clicks || 0}
-                            </strong>
-                          </span>
-                          {campaign.cpl_cents != null && (
-                            <span className="text-muted-foreground">
-                              <strong className="text-foreground">
-                                {formatCurrency(campaign.cpl_cents)}
-                              </strong>
-                              /lead
-                            </span>
-                          )}
-                        </div>
-
-                        {campaign.last_synced_at && (
-                          <p className="text-xs text-muted-foreground">
-                            Last synced {relativeTime(campaign.last_synced_at)}
-                          </p>
-                        )}
-
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-2 pt-1">
-                          {/* Pause/Resume button */}
-                          {canToggle && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={isToggling}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleCampaignStatus(campaign);
-                              }}
-                            >
-                              {isToggling ? (
-                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                              ) : campaign.status === "active" ? (
-                                <Pause className="h-3.5 w-3.5 mr-1.5" />
-                              ) : (
-                                <Play className="h-3.5 w-3.5 mr-1.5" />
-                              )}
-                              {campaign.status === "active" ? "Pause" : "Resume"}
-                            </Button>
-                          )}
-
-                          {/* Delete button with confirmation */}
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                disabled={isDeleting}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {isDeleting ? (
-                                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                                )}
-                                Delete
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete "{campaign.name}"?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will delete the campaign from Facebook and remove all data.
-                                  This cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel onClick={(e) => e.stopPropagation()}>
-                                  Cancel
-                                </AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteCampaign(campaign.id);
-                                  }}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {agentSteps.map((step) => (
+                                <StatusBadge
+                                  key={step.label}
+                                  status={step.done ? "completed" : "paused"}
+                                  className="text-[9px]"
                                 >
-                                  Delete Campaign
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                                  {step.label}
+                                </StatusBadge>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-on-surface-variant">
+                            {Array.isArray(competitorData.ads) && competitorData.ads.length > 0 ? (
+                              <span>
+                                <strong className="text-on-surface">{competitorData.ads.length}</strong> competitor ads
+                              </span>
+                            ) : null}
+                            {Array.isArray(creativeData.creatives) && creativeData.creatives.length > 0 ? (
+                              <span>
+                                <strong className="text-on-surface">{creativeData.creatives.length}</strong> ad creatives
+                              </span>
+                            ) : null}
+                            {campaignPlan.daily_budget ? (
+                              <span>
+                                <strong className="text-on-surface">${campaignPlan.daily_budget}</strong>/day
+                              </span>
+                            ) : null}
+                            {projections.estimated_roi ? (
+                              <span>
+                                Projected ROI <strong className="text-tertiary">{projections.estimated_roi}</strong>
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {isExpanded ? (
+                            <div className="rounded-[1.25rem] bg-surface-container-low p-4 text-sm text-on-surface-variant">
+                              {brandData.brand_name ? <p><span className="text-outline">Brand:</span> {brandData.brand_name}</p> : null}
+                              {brandData.target_audience ? (
+                                <p className="mt-2"><span className="text-outline">Audience:</span> {brandData.target_audience}</p>
+                              ) : null}
+                              {campaignPlan.objective ? (
+                                <p className="mt-2"><span className="text-outline">Objective:</span> {campaignPlan.objective}</p>
+                              ) : null}
+                              {campaignPlan.duration ? (
+                                <p className="mt-2"><span className="text-outline">Duration:</span> {campaignPlan.duration}</p>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          <div className="flex flex-wrap gap-3">
+                            <GradientButton
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setExpandedRunId(isExpanded ? null : run.id)}
+                            >
+                              {isExpanded ? "Hide Details" : "View Details"}
+                            </GradientButton>
+                            <GradientButton asChild size="sm" variant="tertiary">
+                              <Link to="/workspace">Open in Workspace</Link>
+                            </GradientButton>
+                          </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                      </GlassCard>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section id="campaigns" className="space-y-6">
+              <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+                <div>
+                  <h2 className="font-headline text-4xl font-bold tracking-tight text-on-surface">Campaign Management</h2>
+                  <p className="mt-3 max-w-2xl text-sm leading-7 text-on-surface-variant">
+                    Oversee and optimize your automated Meta marketing flows. AI-driven budget reallocation is
+                    currently <span className="font-semibold text-tertiary">active</span> across your live ad sets.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="inline-flex rounded-[1rem] bg-surface-container-low p-1">
+                    <button
+                      type="button"
+                      onClick={() => setCampaignView("active")}
+                      className={`rounded-[0.85rem] px-4 py-2 font-label text-sm ${
+                        campaignView === "active"
+                          ? "bg-surface-container text-on-surface"
+                          : "text-on-surface-variant"
+                      }`}
+                    >
+                      Active
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCampaignView("archived")}
+                      className={`rounded-[0.85rem] px-4 py-2 font-label text-sm ${
+                        campaignView === "archived"
+                          ? "bg-surface-container text-on-surface"
+                          : "text-on-surface-variant"
+                      }`}
+                    >
+                      Archived
+                    </button>
+                  </div>
+
+                  <GradientButton
+                    size="md"
+                    variant={showSpendOnly ? "primary" : "secondary"}
+                    onClick={() => setShowSpendOnly((value) => !value)}
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Filter
+                  </GradientButton>
+                </div>
               </div>
-            )}
-          </section>
 
-          {/* Recent Leads */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Recent Leads</h2>
-              <Link
-                to="/leads"
-                className="text-sm text-primary hover:underline flex items-center gap-1"
-              >
-                View all leads
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard
+                  label="Live Campaigns"
+                  value={String(activeCampaigns)}
+                  trend={campaignView === "active" ? `${filteredCampaigns.length} visible` : "Archive view"}
+                  tone="primary"
+                  icon={<Megaphone className="h-4 w-4" />}
+                />
+                <MetricCard
+                  label="Avg ROAS"
+                  value={averageProjectedRoas}
+                  trend={projectedRoiValues.length ? "Projected across AI runs" : "Awaiting ROI estimates"}
+                  tone="tertiary"
+                  icon={<TrendingUp className="h-4 w-4" />}
+                />
+                <MetricCard
+                  label="Daily Burn Rate"
+                  value={dailyBurnRate > 0 ? formatCurrency(dailyBurnRate) : "$0.00"}
+                  trend={showSpendOnly ? "Spend-only filter enabled" : "Sum of active daily budgets"}
+                  tone="neutral"
+                  icon={<DollarSign className="h-4 w-4" />}
+                />
+                <MetricCard
+                  label="AI Efficiency"
+                  value={`${aiEfficiency}%`}
+                  trend={agentRuns.length ? "Automation completion rate" : "No runs yet"}
+                  tone="tertiary"
+                  icon={<Bot className="h-4 w-4" />}
+                  className="bg-tertiary-container/20"
+                />
+              </div>
 
-            {leads.length === 0 ? (
-              <Card className="text-center py-12">
-                <CardContent className="space-y-4">
-                  <Inbox className="h-10 w-10 text-muted-foreground mx-auto" />
-                  <div>
-                    <h3 className="font-semibold">No leads yet</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Launch a campaign to start getting customers!
+              <GlassCard className="overflow-hidden p-0">
+                {filteredCampaigns.length === 0 ? (
+                  <div className="p-10 text-center">
+                    <Megaphone className="mx-auto h-10 w-10 text-outline" />
+                    <h3 className="mt-4 font-headline text-xl font-semibold text-on-surface">No campaigns in this view</h3>
+                    <p className="mt-2 text-sm text-on-surface-variant">
+                      Adjust the active/archive toggle or filter to view more campaign rows.
                     </p>
                   </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {leads.map((lead) => (
-                  <Card key={lead.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">
-                              {lead.name || "Unknown"}
-                            </span>
-                            <Badge
-                              variant="outline"
-                              className={`text-xs ${LEAD_STATUS_COLORS[lead.status] || ""}`}
-                            >
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full border-collapse text-left">
+                        <thead>
+                          <tr className="bg-surface-container-high/60">
+                            <th className="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em] text-outline">Campaign Name</th>
+                            <th className="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em] text-outline">Status</th>
+                            <th className="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em] text-outline">Current ROAS</th>
+                            <th className="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em] text-outline">Daily Budget</th>
+                            <th className="px-6 py-5 text-right font-label text-[10px] uppercase tracking-[0.2em] text-outline">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedCampaigns.map((campaign) => {
+                            const isDeleting = deletingId === campaign.id;
+                            const isToggling = togglingId === campaign.id;
+                            const canToggle =
+                              !!campaign.meta_campaign_id &&
+                              (campaign.status === "active" || campaign.status === "paused");
+                            const roasDisplay =
+                              campaign.cpl_cents != null && avgCostPerLead
+                                ? `${Math.max(0.4, avgCostPerLead / Math.max(campaign.cpl_cents, 1)).toFixed(1)}x`
+                                : latestProjectedRoas;
+
+                            return (
+                              <tr key={campaign.id} className="border-t border-outline-variant/10 transition-colors hover:bg-surface-container-low/60">
+                                <td className="px-6 py-6">
+                                  <div className="flex items-start gap-4">
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-container-highest text-primary">
+                                      <Megaphone className="h-4 w-4" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="font-body text-sm font-semibold text-on-surface">{campaign.name}</div>
+                                      <div className="text-xs text-on-surface-variant">
+                                        {campaign.meta_campaign_id ? "AI-Smart scaling enabled" : "Manual management"}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-6">
+                                  <StatusBadge status={normalizeCampaignStatus(campaign.status)}>
+                                    {displayCampaignStatus(campaign.status)}
+                                  </StatusBadge>
+                                </td>
+                                <td className="px-6 py-6">
+                                  <div className="space-y-2">
+                                    <div className="font-headline text-lg font-bold text-tertiary">{roasDisplay}</div>
+                                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-container-highest">
+                                      <div
+                                        className="h-full rounded-full bg-tertiary"
+                                        style={{
+                                          width: `${Math.min(100, Math.max(18, (parseMultiplier(roasDisplay) || 1) * 18))}%`,
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-6">
+                                  <div className="font-body text-sm font-semibold text-on-surface">
+                                    {formatCurrency(campaign.daily_budget_cents)}
+                                  </div>
+                                  <div className="mt-1 text-[10px] font-label uppercase tracking-[0.16em] text-on-surface-variant">
+                                    {campaign.status === "active" ? "Live budget" : "Campaign inactive"}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-6">
+                                  <div className="flex items-center justify-end gap-2">
+                                    {canToggle ? (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={isToggling}
+                                        onClick={() => handleToggleCampaignStatus(campaign)}
+                                      >
+                                        {isToggling ? (
+                                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                        ) : campaign.status === "active" ? (
+                                          <Pause className="mr-1.5 h-3.5 w-3.5" />
+                                        ) : (
+                                          <Play className="mr-1.5 h-3.5 w-3.5" />
+                                        )}
+                                        {campaign.status === "active" ? "Pause" : "Resume"}
+                                      </Button>
+                                    ) : null}
+
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                          disabled={isDeleting}
+                                        >
+                                          {isDeleting ? (
+                                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                          ) : (
+                                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                          )}
+                                          Delete
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Delete "{campaign.name}"?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            This will delete the campaign from Facebook and remove all associated data.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                            onClick={() => handleDeleteCampaign(campaign.id)}
+                                          >
+                                            Delete Campaign
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-col gap-4 border-t border-outline-variant/10 bg-surface-container-high/30 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="font-label text-[10px] uppercase tracking-[0.18em] text-on-surface-variant">
+                        Showing {paginatedCampaigns.length} of {filteredCampaigns.length} campaigns
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          disabled={safeCampaignPage === 1}
+                          onClick={() => setCampaignPage((page) => Math.max(1, page - 1))}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <div className="flex h-9 min-w-9 items-center justify-center rounded-xl bg-primary-container px-3 font-label text-xs font-bold text-on-primary-container">
+                          {safeCampaignPage}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          disabled={safeCampaignPage >= totalCampaignPages}
+                          onClick={() => setCampaignPage((page) => Math.min(totalCampaignPages, page + 1))}
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </GlassCard>
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-headline text-2xl font-bold text-on-surface">Recent Leads</h2>
+                  <p className="mt-2 text-sm text-on-surface-variant">The latest captured contacts from your live campaigns.</p>
+                </div>
+                <GradientButton asChild size="sm" variant="tertiary">
+                  <Link to="/leads">View all leads</Link>
+                </GradientButton>
+              </div>
+
+              {leads.length === 0 ? (
+                <GlassCard className="p-10 text-center">
+                  <Inbox className="mx-auto h-10 w-10 text-outline" />
+                  <h3 className="mt-4 font-headline text-xl font-semibold text-on-surface">No leads yet</h3>
+                  <p className="mt-2 text-sm text-on-surface-variant">
+                    Launch a campaign to start populating your lead inbox.
+                  </p>
+                </GlassCard>
+              ) : (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {leads.map((lead) => (
+                    <GlassCard key={lead.id} className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-body text-sm font-semibold text-on-surface">{lead.name || "Unknown"}</p>
+                            <StatusBadge status={lead.status === "won" ? "completed" : lead.status === "new" ? "active" : "paused"}>
                               {lead.status}
-                            </Badge>
-                            {lead.sms_sent && (
-                              <Badge variant="outline" className="text-xs gap-1">
-                                <MessageSquare className="h-3 w-3" />
-                                SMS
-                              </Badge>
-                            )}
+                            </StatusBadge>
+                            {lead.sms_sent ? <StatusBadge status="live">SMS</StatusBadge> : null}
                           </div>
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                            {lead.phone && (
-                              <a
-                                href={`tel:${lead.phone}`}
-                                className="flex items-center gap-1 hover:text-primary"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Phone className="h-3 w-3" />
-                                {lead.phone}
-                              </a>
-                            )}
-                            {lead.email && (
-                              <span className="flex items-center gap-1">
-                                <Mail className="h-3 w-3" />
-                                {lead.email}
-                              </span>
-                            )}
-                            {lead.suburb && (
-                              <span className="flex items-center gap-1">
-                                <MapPin className="h-3 w-3" />
-                                {lead.suburb}
-                              </span>
-                            )}
+                          <div className="space-y-1 text-xs text-on-surface-variant">
+                            {lead.phone ? <p className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" />{lead.phone}</p> : null}
+                            {lead.email ? <p className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" />{lead.email}</p> : null}
+                            {lead.suburb ? <p className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5" />{lead.suburb}</p> : null}
                           </div>
                         </div>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        <span className="font-label text-[10px] uppercase tracking-[0.18em] text-outline">
                           {relativeTime(lead.created_at)}
                         </span>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </section>
+                    </GlassCard>
+                  ))}
+                </div>
+              )}
+            </section>
 
           {/* ─── Admin Section ───────────────────────────────────────────── */}
           {isAdmin && (
@@ -2098,6 +2289,7 @@ const Dashboard = () => {
         </div>
       </main>
     </div>
+  </div>
   );
 };
 

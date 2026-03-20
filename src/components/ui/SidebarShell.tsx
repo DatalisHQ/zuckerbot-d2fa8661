@@ -1,15 +1,17 @@
 import type { LucideIcon } from "lucide-react";
 import { HelpCircle, LogOut } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
 import { GradientButton } from "@/components/ui/GradientButton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
 type SidebarItem = {
+  id: string;
   label: string;
   href: string;
   icon: LucideIcon;
+  external?: boolean;
 };
 
 type SidebarFooterItem = {
@@ -25,29 +27,58 @@ export interface SidebarShellProps {
   ctaHref?: string;
   ctaLabel?: string;
   className?: string;
+  activeItem?: string;
+  onItemClick?: (item: SidebarItem) => void;
 }
 
-function SidebarShellLink({ item }: { item: SidebarItem }) {
+function SidebarShellLink({
+  item,
+  isActive,
+  onItemClick,
+}: {
+  item: SidebarItem;
+  isActive: boolean;
+  onItemClick?: (item: SidebarItem) => void;
+}) {
   const Icon = item.icon;
+  const className = cn(
+    "relative flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface",
+    isActive && "bg-surface-container-high text-on-surface"
+  );
+  const content = (
+    <>
+      {isActive ? <span className="absolute inset-y-3 left-0 w-0.5 rounded-full bg-primary" /> : null}
+      <Icon className={cn("h-4 w-4", isActive ? "text-primary" : "text-outline")} />
+      <span className="font-body font-medium">{item.label}</span>
+    </>
+  );
+
+  if (item.external) {
+    return (
+      <a
+        href={item.href}
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+        onClick={() => onItemClick?.(item)}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  if (item.href.startsWith("#")) {
+    return (
+      <a href={item.href} className={className} onClick={() => onItemClick?.(item)}>
+        {content}
+      </a>
+    );
+  }
 
   return (
-    <NavLink
-      to={item.href}
-      className={({ isActive }) =>
-        cn(
-          "relative flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface",
-          isActive && "bg-surface-container-high text-on-surface"
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          {isActive ? <span className="absolute inset-y-3 left-0 w-0.5 rounded-full bg-primary" /> : null}
-          <Icon className={cn("h-4 w-4", isActive ? "text-primary" : "text-outline")} />
-          <span className="font-body font-medium">{item.label}</span>
-        </>
-      )}
-    </NavLink>
+    <Link to={item.href} className={className} onClick={() => onItemClick?.(item)}>
+      {content}
+    </Link>
   );
 }
 
@@ -91,6 +122,8 @@ function SidebarShell({
   ctaHref = "/campaign/new",
   ctaLabel = "Create Campaign",
   className,
+  activeItem,
+  onItemClick,
 }: SidebarShellProps) {
   return (
     <aside
@@ -108,7 +141,12 @@ function SidebarShell({
 
       <nav className="mt-8 flex-1 space-y-2">
         {items.map((item) => (
-          <SidebarShellLink key={`${item.label}-${item.href}`} item={item} />
+          <SidebarShellLink
+            key={item.id}
+            item={item}
+            isActive={item.id === activeItem}
+            onItemClick={onItemClick}
+          />
         ))}
       </nav>
 
