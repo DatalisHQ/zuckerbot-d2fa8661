@@ -4,179 +4,206 @@
 
 @layer base {
   :root {
-    /* Modern Facebook-inspired palette - Light Mode */
-    --background: 210 40% 98%;           /* Very light blue-grey */
-    --foreground: 210 40% 8%;            /* Dark blue-grey */
-    
-    --card: 0 0% 100%;                   /* Pure white cards */
-    --card-foreground: 210 40% 8%;
-    
-    --popover: 0 0% 100%;
-    --popover-foreground: 210 40% 8%;
-    
-    --primary: 214 89% 52%;              /* Facebook blue */
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 220 13% 91%;            /* Light grey */
-    --secondary-foreground: 210 40% 8%;
-    
-    --muted: 220 13% 95%;                /* Subtle background */
-    --muted-foreground: 215 16% 47%;     /* Medium grey text */
-    
-    --accent: 214 89% 52%;               /* Facebook blue accent */
-    --accent-foreground: 0 0% 100%;
-    
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    
-    --border: 220 13% 91%;               /* Subtle borders */
-    --input: 220 13% 91%;
-    --ring: 214 89% 52%;                 /* Focus rings */
-    
-    /* Status colors */
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
-    
-    --radius: 0.75rem;                   /* Slightly smaller radius for modern look */
-    
-    /* Modern gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(214 89% 52%) 0%, hsl(220 100% 60%) 100%);
-    --gradient-secondary: linear-gradient(135deg, hsl(220 13% 95%) 0%, hsl(0 0% 100%) 100%);
-    --gradient-accent: linear-gradient(135deg, hsl(214 89% 52% / 0.05) 0%, hsl(220 100% 60% / 0.02) 100%);
-    
-    /* Subtle shadows */
-    --glow-primary: 0 0 32px hsl(214 89% 52% / 0.15);
-    --glow-secondary: 0 0 16px hsl(214 89% 52% / 0.08);
-    
-    /* Clean shadows */
-    --shadow-elevation-low: 0 1px 3px hsl(210 40% 8% / 0.04), 0 1px 2px hsl(210 40% 8% / 0.06);
-    --shadow-elevation-medium: 0 4px 6px -1px hsl(210 40% 8% / 0.06), 0 2px 4px -1px hsl(210 40% 8% / 0.04);
-    --shadow-elevation-high: 0 10px 15px -3px hsl(210 40% 8% / 0.08), 0 4px 6px -2px hsl(210 40% 8% / 0.04);
+    --background: 230 14% 8%;
+    --foreground: 255 15% 90%;
+
+    --card: 231 10% 13%;
+    --card-foreground: 255 15% 90%;
+
+    --popover: 231 10% 13%;
+    --popover-foreground: 255 15% 90%;
+
+    --primary: 228 100% 86%;
+    --primary-foreground: 224 100% 16%;
+
+    --secondary: 231 12% 12%;
+    --secondary-foreground: 255 15% 90%;
+
+    --muted: 231 12% 12%;
+    --muted-foreground: 235 22% 81%;
+
+    --accent: 186 100% 48%;
+    --accent-foreground: 187 100% 12%;
+
+    --destructive: 6 100% 84%;
+    --destructive-foreground: 357 100% 21%;
+
+    --border: 231 12% 30%;
+    --input: 240 5% 22%;
+    --ring: 228 100% 86%;
+
+    --success: 186 100% 48%;
+    --success-foreground: 187 100% 12%;
+    --warning: 228 100% 86%;
+    --warning-foreground: 224 100% 16%;
+
+    --radius: 1rem;
+
+    --surface: 230 14% 8%;
+    --surface-container-lowest: 230 19% 6%;
+    --surface-container-low: 231 12% 12%;
+    --surface-container: 231 10% 13%;
+    --surface-container-high: 230 7% 17%;
+    --surface-container-highest: 240 5% 22%;
+    --surface-bright: 231 6% 23%;
+    --on-surface: 255 15% 90%;
+    --on-surface-variant: 235 22% 81%;
+    --outline: 231 10% 59%;
+    --outline-variant: 231 12% 30%;
+    --primary-container: 222 91% 51%;
+    --on-primary: 222 100% 25%;
+    --on-primary-fixed: 224 100% 16%;
+    --on-primary-container: 233 100% 94%;
+    --tertiary: 186 100% 48%;
+    --tertiary-container: 186 100% 25%;
+    --on-tertiary: 187 100% 12%;
+    --on-tertiary-container: 190 100% 83%;
+    --error: 6 100% 84%;
+    --error-container: 356 100% 29%;
+    --on-error: 357 100% 21%;
+    --on-error-container: 6 100% 92%;
+
+    --gradient-primary: linear-gradient(135deg, #b6c4ff 0%, #1256f4 100%);
+    --gradient-secondary: linear-gradient(135deg, rgba(30, 31, 37, 0.9) 0%, rgba(52, 52, 58, 0.72) 100%);
+    --gradient-accent: radial-gradient(circle at top left, rgba(18, 86, 244, 0.35), transparent 48%);
+    --glass-surface: rgba(30, 31, 37, 0.7);
+
+    --glow-primary: 0 20px 48px rgba(18, 86, 244, 0.24);
+    --glow-secondary: 0 14px 34px rgba(0, 218, 243, 0.12);
+
+    --shadow-elevation-low: 0 4px 24px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(182, 196, 255, 0.04);
+    --shadow-elevation-medium: 0 12px 36px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(182, 196, 255, 0.05);
+    --shadow-elevation-high: 0 24px 60px rgba(0, 0, 0, 0.42), 0 1px 2px rgba(182, 196, 255, 0.08);
   }
 
   .dark {
-    --background: 210 40% 2%;            /* Very dark blue-grey */
-    --foreground: 210 40% 98%;           /* Light text */
-    
-    --card: 210 40% 4%;                  /* Dark cards */
-    --card-foreground: 210 40% 98%;
-    
-    --popover: 210 40% 4%;
-    --popover-foreground: 210 40% 98%;
-    
-    --primary: 214 89% 58%;              /* Brighter Facebook blue for dark mode */
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 210 40% 8%;             /* Dark grey */
-    --secondary-foreground: 210 40% 98%;
-    
-    --muted: 210 40% 6%;                 /* Subtle dark background */
-    --muted-foreground: 215 16% 65%;     /* Light grey text */
-    
-    --accent: 214 89% 58%;
-    --accent-foreground: 0 0% 100%;
-    
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    
-    --border: 210 40% 8%;                /* Dark borders */
-    --input: 210 40% 8%;
-    --ring: 214 89% 58%;
-    
-    /* Status colors for dark mode */
-    --success: 142 76% 45%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 55%;
-    --warning-foreground: 0 0% 100%;
-    
-    /* Dark mode gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(214 89% 58%) 0%, hsl(220 100% 65%) 100%);
-    --gradient-secondary: linear-gradient(135deg, hsl(210 40% 4%) 0%, hsl(210 40% 6%) 100%);
-    --gradient-accent: linear-gradient(135deg, hsl(214 89% 58% / 0.08) 0%, hsl(220 100% 65% / 0.04) 100%);
-    
-    /* Dark mode glows */
-    --glow-primary: 0 0 32px hsl(214 89% 58% / 0.25);
-    --glow-secondary: 0 0 16px hsl(214 89% 58% / 0.15);
-    
-    /* Dark mode shadows */
-    --shadow-elevation-low: 0 1px 3px hsl(210 40% 2% / 0.25), 0 1px 2px hsl(210 40% 2% / 0.15);
-    --shadow-elevation-medium: 0 4px 6px -1px hsl(210 40% 2% / 0.25), 0 2px 4px -1px hsl(210 40% 2% / 0.15);
-    --shadow-elevation-high: 0 10px 15px -3px hsl(210 40% 2% / 0.35), 0 4px 6px -2px hsl(210 40% 2% / 0.20);
+    --background: 230 14% 8%;
+    --foreground: 255 15% 90%;
+
+    --card: 231 10% 13%;
+    --card-foreground: 255 15% 90%;
+
+    --popover: 231 10% 13%;
+    --popover-foreground: 255 15% 90%;
+
+    --primary: 228 100% 86%;
+    --primary-foreground: 224 100% 16%;
+
+    --secondary: 231 12% 12%;
+    --secondary-foreground: 255 15% 90%;
+
+    --muted: 231 12% 12%;
+    --muted-foreground: 235 22% 81%;
+
+    --accent: 186 100% 48%;
+    --accent-foreground: 187 100% 12%;
+
+    --destructive: 6 100% 84%;
+    --destructive-foreground: 357 100% 21%;
+
+    --border: 231 12% 30%;
+    --input: 240 5% 22%;
+    --ring: 228 100% 86%;
+
+    --success: 186 100% 48%;
+    --success-foreground: 187 100% 12%;
+    --warning: 228 100% 86%;
+    --warning-foreground: 224 100% 16%;
   }
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   * {
     @apply border-border;
   }
-  
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
-    font-feature-settings: 'cv11', 'ss01';
-    font-variation-settings: 'opsz' 32;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: "opsz" 32;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     line-height: 1.5;
+    background-image:
+      radial-gradient(circle at top left, rgba(18, 86, 244, 0.18), transparent 32%),
+      radial-gradient(circle at bottom right, rgba(0, 218, 243, 0.12), transparent 28%);
+    background-attachment: fixed;
   }
-  
+
   h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
     letter-spacing: -0.025em;
     line-height: 1.25;
-  }
-  
-  .font-mono {
-    font-family: 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-family: "Space Grotesk", "Inter", sans-serif;
   }
 
-  /* ZuckerBot brand typography */
+  button,
+  label,
+  .font-label {
+    font-family: "Manrope", "Inter", sans-serif;
+  }
+
+  .font-mono {
+    font-family: "JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace;
+  }
+
   .zuckerbot-brand {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: "Space Grotesk", "Inter", sans-serif;
     font-weight: 700;
-    letter-spacing: -0.025em;
+    letter-spacing: -0.04em;
+  }
+
+  ::selection {
+    background: rgba(18, 86, 244, 0.38);
+    color: #e3e1e9;
   }
 }
 
 @layer components {
-  /* Modern gradient backgrounds */
   .bg-gradient-primary {
     background: var(--gradient-primary);
   }
-  
+
   .bg-gradient-secondary {
     background: var(--gradient-secondary);
   }
-  
+
   .bg-gradient-accent {
     background: var(--gradient-accent);
   }
-  
-  /* Subtle glow effects */
+
   .glow-primary {
     box-shadow: var(--glow-primary);
   }
-  
+
   .glow-secondary {
     box-shadow: var(--glow-secondary);
   }
-  
-  /* Clean glass morphism effect */
+
   .glass {
-    backdrop-filter: blur(20px) saturate(180%);
-    background: hsl(var(--background) / 0.85);
-    border: 1px solid hsl(var(--border) / 0.2);
+    backdrop-filter: blur(20px);
+    background: rgba(26, 27, 33, 0.74);
+    border: 1px solid rgba(67, 70, 86, 0.15);
   }
-  
+
   .glass-card {
-    backdrop-filter: blur(16px) saturate(180%);
-    background: hsl(var(--card) / 0.9);
-    border: 1px solid hsl(var(--border) / 0.15);
+    backdrop-filter: blur(16px);
+    background: var(--glass-surface);
+    border: 1px solid rgba(67, 70, 86, 0.15);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(182, 196, 255, 0.05);
   }
-  
-  /* Animated gradient text */
+
   .gradient-text {
     background: var(--gradient-primary);
     -webkit-background-clip: text;
@@ -184,57 +211,74 @@
     background-clip: text;
     color: transparent;
   }
-  
-  /* Gentle floating animation */
+
   .float {
     animation: float 8s ease-in-out infinite;
   }
-  
+
   @keyframes float {
     0%, 100% { transform: translateY(0px); }
     50% { transform: translateY(-8px); }
   }
-  
-  /* Subtle pulse glow animation */
+
   .pulse-glow {
     animation: pulse-glow 3s ease-in-out infinite alternate;
   }
-  
+
   @keyframes pulse-glow {
     from { box-shadow: var(--glow-secondary); }
     to { box-shadow: var(--glow-primary); }
   }
-  
-  /* Modern card styling with clean shadows */
+
   .modern-card {
     @apply glass-card rounded-xl p-6 transition-all duration-300;
     box-shadow: var(--shadow-elevation-medium);
   }
-  
+
   .modern-card:hover {
     box-shadow: var(--shadow-elevation-high);
     transform: translateY(-1px);
   }
-  
-  /* Enhanced button styling */
+
   .btn-primary {
     @apply bg-gradient-primary text-primary-foreground font-semibold rounded-lg px-6 py-3;
     box-shadow: var(--shadow-elevation-low);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    border: 1px solid hsl(var(--primary) / 0.2);
+    border: 1px solid rgba(67, 70, 86, 0.15);
   }
-  
+
   .btn-primary:hover {
     box-shadow: var(--shadow-elevation-medium), var(--glow-secondary);
     transform: translateY(-1px);
   }
-  
+
   .btn-primary:active {
     transform: translateY(0);
     box-shadow: var(--shadow-elevation-low);
   }
-  
-  /* Professional typography scale */
+
+  .surface-panel {
+    @apply rounded-[1.5rem] bg-surface-container shadow-elevation-low;
+  }
+
+  .ghost-border {
+    outline: 1px solid rgba(67, 70, 86, 0.15);
+  }
+
+  .indigo-grid {
+    background-image:
+      linear-gradient(rgba(67, 70, 86, 0.22) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(67, 70, 86, 0.22) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), transparent 90%);
+  }
+
+  .hero-aura {
+    background:
+      radial-gradient(circle at 12% 18%, rgba(18, 86, 244, 0.36), transparent 32%),
+      radial-gradient(circle at 88% 78%, rgba(0, 218, 243, 0.14), transparent 26%);
+  }
+
   .text-display {
     font-size: 3.75rem;
     line-height: 1.1;
