@@ -125,6 +125,12 @@ function SidebarShell({
   activeItem,
   onItemClick,
 }: SidebarShellProps) {
+  const cta = ctaHref.startsWith("#") ? (
+    <a href={ctaHref}>{ctaLabel}</a>
+  ) : (
+    <Link to={ctaHref}>{ctaLabel}</Link>
+  );
+
   return (
     <aside
       className={cn(
@@ -152,7 +158,7 @@ function SidebarShell({
 
       <div className="space-y-3 pt-6">
         <GradientButton asChild className="w-full justify-center" size="md">
-          <Link to={ctaHref}>{ctaLabel}</Link>
+          {cta}
         </GradientButton>
 
         <div className="space-y-1">

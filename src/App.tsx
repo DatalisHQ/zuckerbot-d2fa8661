@@ -20,6 +20,7 @@ import AdAudit from "./pages/AdAudit";
 import Docs from "./pages/Docs";
 import Dashboard from "./pages/Dashboard";
 import Developer from "./pages/Developer";
+import ExecutionLog from "./pages/ExecutionLog";
 import Onboarding from "./pages/Onboarding";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
@@ -162,6 +163,8 @@ function App() {
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" />} />
               <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth?returnTo=/dashboard" />} />
+              <Route path="/automation" element={user ? <ExecutionLog /> : <Navigate to="/auth?returnTo=/automation" />} />
+              <Route path="/execution-log" element={user ? <ExecutionLog /> : <Navigate to="/auth?returnTo=/execution-log" />} />
               <Route path="/campaign/new" element={<Navigate to="/developer" />} />
               <Route path="/leads" element={<Navigate to="/developer" />} />
               <Route path="/profile" element={user ? <Profile /> : <Navigate to="/auth" />} />

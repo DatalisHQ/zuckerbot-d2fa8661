@@ -1,7 +1,22 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Link, useLocation } from "react-router-dom";
+import {
+  ArrowRight,
+  BookOpenText,
+  Bot,
+  Code2,
+  Lock,
+  TerminalSquare,
+  TriangleAlert,
+  Wrench,
+} from "lucide-react";
+
+import { NavBar } from "@/components/ui/NavBar";
+import { SidebarShell } from "@/components/ui/SidebarShell";
+import { GlassCard } from "@/components/ui/GlassCard";
+import { GradientButton } from "@/components/ui/GradientButton";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { CodeBlock as SharedCodeBlock } from "@/components/ui/CodeBlock";
 
 // ── Sidebar sections ───────────────────────────────────────────────────────
 
@@ -47,6 +62,22 @@ const sections = [
   { id: "pricing", label: "Pricing" },
 ];
 
+const docsSidebarItems = [
+  { id: "getting-started", label: "Getting Started", href: "#getting-started", icon: BookOpenText },
+  { id: "api-reference", label: "API Reference", href: "#endpoints", icon: Code2 },
+  { id: "mcp-integration", label: "MCP Integration", href: "#mcp-server", icon: TerminalSquare },
+  { id: "authentication", label: "Authentication", href: "#authentication", icon: Lock },
+  { id: "troubleshooting", label: "Troubleshooting", href: "#errors", icon: Wrench },
+];
+
+function resolveSidebarItem(sectionId: string) {
+  if (sectionId === "getting-started") return "getting-started";
+  if (sectionId === "authentication") return "authentication";
+  if (sectionId === "mcp-server") return "mcp-integration";
+  if (sectionId === "errors" || sectionId === "rate-limits") return "troubleshooting";
+  return "api-reference";
+}
+
 // ── Code block component ───────────────────────────────────────────────────
 
 function CodeBlock({ title, lang, children }: { title?: string; lang?: string; children: string }) {
@@ -59,31 +90,16 @@ function CodeBlock({ title, lang, children }: { title?: string; lang?: string; c
   };
 
   return (
-    <div className="rounded-lg border border-white/10 bg-[#0f0f13] overflow-hidden my-4">
-      {title && (
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 bg-white/[0.02]">
-          <span className="text-xs text-gray-400 font-mono">{title}</span>
-          <button
-            onClick={handleCopy}
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors font-mono"
-          >
-            {copied ? "copied!" : "copy"}
-          </button>
-        </div>
-      )}
-      {!title && (
-        <div className="flex justify-end px-4 py-2 border-b border-white/5 bg-white/[0.02]">
-          <button
-            onClick={handleCopy}
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors font-mono"
-          >
-            {copied ? "copied!" : "copy"}
-          </button>
-        </div>
-      )}
-      <pre className="p-4 text-sm font-mono overflow-x-auto leading-relaxed">
-        <code className="text-gray-300">{children}</code>
-      </pre>
+    <div className="relative my-4">
+      <button
+        onClick={handleCopy}
+        className="absolute right-4 top-3 z-10 font-label text-[10px] font-semibold uppercase tracking-[0.18em] text-outline transition-colors hover:text-on-surface"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <SharedCodeBlock title={title} bodyClassName="text-primary-fixed-dim">
+        {children}
+      </SharedCodeBlock>
     </div>
   );
 }
@@ -92,13 +108,13 @@ function CodeBlock({ title, lang, children }: { title?: string; lang?: string; c
 
 function MethodBadge({ method }: { method: string }) {
   const color = method === "GET"
-    ? "bg-green-500/10 text-green-400 border-green-500/20"
+    ? "border border-tertiary/20 bg-tertiary-container/20 text-tertiary"
     : method === "POST"
-    ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-    : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20";
+    ? "border border-primary/20 bg-primary/10 text-primary"
+    : "border border-outline-variant/20 bg-surface-container-high text-on-surface-variant";
 
   return (
-    <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded border ${color}`}>
+    <span className={`rounded-full px-3 py-1 font-label text-[10px] font-bold uppercase tracking-[0.2em] ${color}`}>
       {method}
     </span>
   );
@@ -126,39 +142,37 @@ function EndpointSection({
   notes?: string;
 }) {
   return (
-    <div id={id} className="scroll-mt-24 pt-8 pb-6 border-b border-white/5 last:border-0">
-      <div className="flex items-center gap-3 mb-3">
+    <GlassCard id={id} className="scroll-mt-24 p-6 sm:p-8">
+      <div className="mb-3 flex items-center gap-3">
         <MethodBadge method={method} />
-        <code className="text-lg font-mono text-white font-semibold">{path}</code>
+        <code className="text-lg font-mono font-semibold text-on-surface">{path}</code>
       </div>
-      <p className="text-gray-400 mb-4 leading-relaxed">{description}</p>
+      <p className="mb-4 leading-relaxed text-on-surface-variant">{description}</p>
       {notes && (
-        <p className="text-sm text-gray-500 mb-4 leading-relaxed">{notes}</p>
+        <p className="mb-4 text-sm leading-relaxed text-outline">{notes}</p>
       )}
 
       {requestBody && (
         <>
-          <h4 className="text-sm font-semibold text-gray-300 mb-2">Request Body</h4>
+          <h4 className="mb-2 text-sm font-semibold text-on-surface">Request Body</h4>
           <CodeBlock lang="json" title="JSON">{requestBody}</CodeBlock>
         </>
       )}
 
-      <h4 className="text-sm font-semibold text-gray-300 mb-2 mt-4">Response</h4>
+      <h4 className="mb-2 mt-4 text-sm font-semibold text-on-surface">Response</h4>
       <CodeBlock lang="json" title="200 OK">{responseBody}</CodeBlock>
 
-      <h4 className="text-sm font-semibold text-gray-300 mb-2 mt-4">Example</h4>
+      <h4 className="mb-2 mt-4 text-sm font-semibold text-on-surface">Example</h4>
       <CodeBlock lang="bash" title="curl">{curlExample}</CodeBlock>
-    </div>
+    </GlassCard>
   );
 }
 
 // ── Main Docs component ────────────────────────────────────────────────────
 
 const Docs = () => {
-  const navigate = useNavigate();
   const location = useLocation();
   const [activeSection, setActiveSection] = useState("getting-started");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Track scroll position for active section highlighting
   useEffect(() => {
@@ -191,163 +205,105 @@ const Docs = () => {
     }
   }, [location.hash]);
 
-  const scrollTo = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth" });
-      setSidebarOpen(false);
-    }
-  };
+  const activeSidebarItem = resolveSidebarItem(activeSection);
 
   return (
-    <div className="dark bg-[#09090b] text-gray-100 min-h-screen font-sans antialiased">
-      {/* ── Nav ──────────────────────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#09090b]/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            {/* Mobile sidebar toggle */}
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="lg:hidden text-gray-400 hover:text-white transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <a href="/" className="flex items-center gap-2">
-              <span className="text-xl font-bold tracking-tight text-white">
-                Zucker<span className="text-blue-500">Bot</span>
-              </span>
-              <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] font-medium">
-                Docs
-              </Badge>
-            </a>
-          </div>
-          <div className="flex items-center gap-6">
-            <a href="/" className="text-sm text-gray-400 hover:text-white transition-colors hidden sm:block">
-              Home
-            </a>
-            <a href="/#pricing" className="text-sm text-gray-400 hover:text-white transition-colors hidden sm:block">
-              Pricing
-            </a>
-            <Button
-              size="sm"
-              onClick={() => navigate("/auth")}
-              className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-none"
-            >
-              Get API Key
-            </Button>
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-surface text-on-surface">
+      <NavBar
+        links={[
+          { label: "Getting Started", href: "#getting-started" },
+          { label: "API Reference", href: "#endpoints" },
+          { label: "MCP Integration", href: "#mcp-server" },
+          { label: "Authentication", href: "#authentication" },
+        ]}
+        secondaryAction={{ label: "Execution Log", href: "/execution-log", variant: "tertiary" }}
+        primaryAction={{ label: "Get API Key", href: "/auth?returnTo=/developer" }}
+      />
 
-      <div className="pt-16 flex max-w-7xl mx-auto">
-        {/* ── Sidebar ──────────────────────────────────────────────────── */}
-
-        {/* Mobile overlay */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
+      <div className="pt-16">
+        <div className="fixed left-0 top-16 hidden h-[calc(100vh-4rem)] w-[18rem] lg:block">
+          <SidebarShell
+            items={docsSidebarItems}
+            activeItem={activeSidebarItem}
+            ctaHref="#mcp-server"
+            ctaLabel="View MCP Config"
+            footerItems={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "Developer", href: "/developer" },
+            ]}
+            className="h-full"
           />
-        )}
+        </div>
 
-        <aside
-          className={`fixed lg:sticky top-16 left-0 z-40 h-[calc(100vh-4rem)] w-64 border-r border-white/5 bg-[#09090b] overflow-y-auto transition-transform lg:transition-none lg:translate-x-0 ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          <nav className="py-6 px-4">
-            <ul className="space-y-0.5">
-              {sections.map((s) => (
-                <li key={s.id}>
-                  <button
-                    onClick={() => scrollTo(s.id)}
-                    className={`w-full text-left py-1.5 text-sm rounded-md transition-colors ${
-                      s.indent ? "pl-6 pr-3" : "pl-3 pr-3 font-medium"
-                    } ${
-                      activeSection === s.id
-                        ? "text-blue-400 bg-blue-500/10"
-                        : s.indent
-                        ? "text-gray-500 hover:text-gray-300"
-                        : "text-gray-300 hover:text-white"
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </aside>
+        <main className="px-6 py-8 lg:ml-[18rem] lg:px-10">
+          <div className="mx-auto grid max-w-7xl gap-10 xl:grid-cols-[minmax(0,1fr)_18rem]">
+            <article className="min-w-0 max-w-4xl space-y-6">
 
-        {/* ── Main content ─────────────────────────────────────────────── */}
-        <main className="flex-1 min-w-0 px-6 sm:px-8 lg:px-12 py-10 max-w-4xl">
-
-          {/* Getting Started */}
-          <section id="getting-started" className="scroll-mt-24 mb-16">
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-4">
+              {/* Getting Started */}
+              <GlassCard id="getting-started" className="scroll-mt-24 p-8 sm:p-10">
+                <StatusBadge status="ai" className="mb-4">Documentation</StatusBadge>
+                <h1 className="font-headline text-4xl font-black tracking-tight text-on-surface sm:text-5xl mb-4">
               ZuckerBot API Documentation
-            </h1>
-            <p className="text-lg text-gray-400 mb-8 leading-relaxed">
+                </h1>
+                <p className="text-lg text-on-surface-variant mb-8 leading-relaxed">
               REST API and MCP server for AI agents to create, launch, and optimize
               Meta ad campaigns. Give your agent the ability to run Facebook ads.
-            </p>
+                </p>
 
-            <h2 className="text-xl font-bold text-white mb-4">Quick start</h2>
-            <ol className="space-y-4 text-gray-300 mb-6">
+                <h2 className="font-headline text-2xl font-bold text-on-surface mb-4">Quick start</h2>
+                <ol className="space-y-4 text-on-surface-variant mb-6">
               <li className="flex gap-3">
-                <span className="shrink-0 w-6 h-6 rounded-full bg-blue-600/20 text-blue-400 text-xs font-bold flex items-center justify-center">1</span>
+                <span className="shrink-0 w-6 h-6 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center">1</span>
                 <div>
-                  <strong className="text-white">Get an API key</strong>
-                  <span className="text-gray-400"> - Sign up at </span>
-                  <a href="/auth" className="text-blue-400 hover:text-blue-300 underline underline-offset-2">zuckerbot.ai</a>
-                  <span className="text-gray-400"> and create a key from the developer dashboard. Free tier included.</span>
+                  <strong className="text-on-surface">Get an API key</strong>
+                  <span className="text-on-surface-variant"> - Sign up at </span>
+                  <a href="/auth" className="text-primary hover:text-primary/80 underline underline-offset-2">zuckerbot.ai</a>
+                  <span className="text-on-surface-variant"> and create a key from the developer dashboard. Free tier included.</span>
                 </div>
               </li>
               <li className="flex gap-3">
-                <span className="shrink-0 w-6 h-6 rounded-full bg-blue-600/20 text-blue-400 text-xs font-bold flex items-center justify-center">2</span>
+                <span className="shrink-0 w-6 h-6 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center">2</span>
                 <div>
-                  <strong className="text-white">Make your first call</strong>
-                  <span className="text-gray-400"> - Generate an ad preview from any business URL:</span>
+                  <strong className="text-on-surface">Make your first call</strong>
+                  <span className="text-on-surface-variant"> - Generate an ad preview from any business URL:</span>
                 </div>
               </li>
-            </ol>
+                </ol>
 
-            <CodeBlock title="curl" lang="bash">{`curl -X POST https://zuckerbot.ai/api/v1/campaigns/preview \\
+                <CodeBlock title="curl" lang="bash">{`curl -X POST https://zuckerbot.ai/api/v1/campaigns/preview \\
   -H "Authorization: Bearer zb_live_your_key_here" \\
   -H "Content-Type: application/json" \\
   -d '{"url": "https://joes-pizza-austin.com"}'`}</CodeBlock>
 
-            <p className="text-gray-400 mt-4 leading-relaxed">
+                <p className="mt-4 leading-relaxed text-on-surface-variant">
               That's it. The API scrapes the website, generates ad copy and images with AI,
               and returns a complete campaign preview in seconds.
-            </p>
+                </p>
 
-            <div className="mt-6 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
-              <p className="text-sm text-blue-300">
+                <div className="mt-6 rounded-[1.25rem] border border-primary/15 bg-primary/10 p-4">
+                  <p className="text-sm text-primary">
                 <strong>Base URL:</strong>{" "}
-                <code className="text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded text-xs">
+                    <code className="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary-fixed-dim">
                   https://zuckerbot.ai/api/v1/
                 </code>
-              </p>
-              <p className="text-sm text-blue-300 mt-1">
+                  </p>
+                  <p className="mt-1 text-sm text-primary">
                 All endpoints are relative to this base URL.
-              </p>
-            </div>
-          </section>
+                  </p>
+                </div>
+              </GlassCard>
 
-          {/* Authentication */}
-          <section id="authentication" className="scroll-mt-24 mb-16">
-            <h2 className="text-2xl font-bold text-white mb-4">Authentication</h2>
-            <p className="text-gray-400 mb-4 leading-relaxed">
-              All requests require a Bearer token in the <code className="text-gray-300 bg-white/5 px-1.5 py-0.5 rounded text-sm">Authorization</code> header.
-            </p>
+              {/* Authentication */}
+              <GlassCard id="authentication" className="scroll-mt-24 p-8 sm:p-10">
+                <h2 className="font-headline text-2xl font-bold text-on-surface mb-4">Authentication</h2>
+                <p className="mb-4 leading-relaxed text-on-surface-variant">
+                  All requests require a Bearer token in the <code className="rounded bg-surface-container-high px-1.5 py-0.5 text-sm text-on-surface">Authorization</code> header.
+                </p>
 
-            <CodeBlock title="Header">{`Authorization: Bearer zb_live_abc123def456`}</CodeBlock>
+                <CodeBlock title="Header">{`Authorization: Bearer zb_live_abc123def456`}</CodeBlock>
 
-            <h3 className="text-lg font-semibold text-white mt-6 mb-3">API key format</h3>
-            <div className="space-y-2 text-gray-400">
+                <h3 className="mt-6 mb-3 text-lg font-semibold text-on-surface">API key format</h3>
+                <div className="space-y-2 text-on-surface-variant">
               <div className="flex items-start gap-3">
                 <code className="text-green-400 bg-green-500/10 px-2 py-0.5 rounded text-xs font-mono shrink-0">zb_live_*</code>
                 <span>Production keys. Calls hit real endpoints and count toward your quota.</span>
@@ -356,28 +312,28 @@ const Docs = () => {
                 <code className="text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded text-xs font-mono shrink-0">zb_test_*</code>
                 <span>Sandbox keys. Safe for development. Simulated responses, no real ad spend.</span>
               </div>
-            </div>
+                </div>
 
-            <p className="text-gray-400 mt-4 leading-relaxed">
+                <p className="mt-4 leading-relaxed text-on-surface-variant">
               API keys are scoped to your developer account. Create and manage keys from the
-              developer dashboard or via the <code className="text-gray-300 bg-white/5 px-1.5 py-0.5 rounded text-sm">/v1/keys/create</code> endpoint.
-            </p>
+                  developer dashboard or via the <code className="rounded bg-surface-container-high px-1.5 py-0.5 text-sm text-on-surface">/v1/keys/create</code> endpoint.
+                </p>
 
-            <div className="mt-4 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-4">
-              <p className="text-sm text-yellow-300">
+                <div className="mt-4 rounded-[1.25rem] border border-error/20 bg-error-container/20 p-4">
+                  <p className="text-sm text-on-error-container">
                 <strong>Keep keys secret.</strong> Never expose API keys in client-side code or public repositories.
                 Rotate keys immediately if compromised.
-              </p>
-            </div>
-          </section>
+                  </p>
+                </div>
+              </GlassCard>
 
-          {/* Endpoints */}
-          <section id="endpoints" className="scroll-mt-24 mb-8">
-            <h2 className="text-2xl font-bold text-white mb-2">Endpoints</h2>
-            <p className="text-gray-400 mb-6">
+              {/* Endpoints */}
+              <GlassCard id="endpoints" className="scroll-mt-24 p-8">
+                <h2 className="font-headline text-2xl font-bold text-on-surface mb-2">API Reference</h2>
+                <p className="mb-6 text-on-surface-variant">
               10 endpoints covering the full ad campaign lifecycle: research, create, launch, A/B test, monitor, and optimize.
-            </p>
-          </section>
+                </p>
+              </GlassCard>
 
           {/* POST /v1/campaigns/preview */}
           <EndpointSection
@@ -1525,19 +1481,22 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
   -d '{"pixel_id": "123456789012345"}'`}
           />
 
-          {/* MCP Server */}
-          <section id="mcp-server" className="scroll-mt-24 mb-16 pt-8">
-            <h2 className="text-2xl font-bold text-white mb-4">MCP Server</h2>
-            <p className="text-gray-400 mb-6 leading-relaxed">
+              {/* MCP Server */}
+              <GlassCard id="mcp-server" className="scroll-mt-24 p-8 sm:p-10">
+                <div className="mb-4 flex items-center gap-3">
+                  <StatusBadge status="ai">Advanced Integrations</StatusBadge>
+                </div>
+                <h2 className="font-headline text-3xl font-bold text-on-surface mb-4">MCP Server Integration</h2>
+                <p className="mb-6 leading-relaxed text-on-surface-variant">
               The ZuckerBot MCP server exposes the API as Model Context Protocol tools. Works with
               Claude Desktop, OpenClaw, Cursor, and any MCP-compatible agent.
-            </p>
+                </p>
 
-            <h3 className="text-lg font-semibold text-white mb-3">Install</h3>
-            <CodeBlock title="npx (recommended)" lang="bash">{`npx zuckerbot-mcp`}</CodeBlock>
+                <h3 className="mb-3 text-lg font-semibold text-on-surface">Install</h3>
+                <CodeBlock title="npx (recommended)" lang="bash">{`npx zuckerbot-mcp`}</CodeBlock>
 
-            <h3 className="text-lg font-semibold text-white mt-6 mb-3">Claude Desktop config</h3>
-            <CodeBlock title="claude_desktop_config.json" lang="json">{`{
+                <h3 className="mt-6 mb-3 text-lg font-semibold text-on-surface">Claude Desktop config</h3>
+                <CodeBlock title="claude_desktop_config.json" lang="json">{`{
   "mcpServers": {
     "zuckerbot": {
       "command": "npx",
@@ -1549,8 +1508,21 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
   }
 }`}</CodeBlock>
 
-            <h3 className="text-lg font-semibold text-white mt-6 mb-3">OpenClaw config</h3>
-            <CodeBlock title="skill config" lang="json">{`{
+                <div className="mb-8 rounded-r-[1.5rem] border-l-4 border-tertiary bg-tertiary/5 p-6">
+                  <div className="flex gap-4">
+                    <TerminalSquare className="mt-0.5 h-5 w-5 shrink-0 text-tertiary" />
+                    <div>
+                      <h4 className="mb-1 font-semibold text-tertiary">Architecture Note</h4>
+                      <p className="text-sm leading-6 text-on-surface-variant">
+                        ZuckerBot&apos;s MCP server uses a secure bridge to orchestrate local tools and private marketing systems.
+                        Ensure outbound access on port <code className="rounded bg-surface-container-high px-1.5 py-0.5 text-xs text-tertiary">443</code> is available for orchestration traffic.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <h3 className="mt-6 mb-3 text-lg font-semibold text-on-surface">OpenClaw config</h3>
+                <CodeBlock title="skill config" lang="json">{`{
   "skills": {
     "zuckerbot": {
       "command": "npx",
@@ -1562,8 +1534,21 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
   }
 }`}</CodeBlock>
 
-            <h3 className="text-lg font-semibold text-white mt-8 mb-4">Available tools</h3>
-            <div className="space-y-2">
+                <div className="mb-8 rounded-r-[1.5rem] border-l-4 border-error bg-error/5 p-6">
+                  <div className="flex gap-4">
+                    <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-error" />
+                    <div>
+                      <h4 className="mb-1 font-semibold text-error">Critical Security Step</h4>
+                      <p className="text-sm leading-6 text-on-surface-variant">
+                        Never commit <code className="rounded bg-surface-container-high px-1.5 py-0.5 text-xs text-error">ZUCKERBOT_API_KEY</code> to source control.
+                        Use environment variables in your runtime instead.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <h3 className="mt-8 mb-4 text-lg font-semibold text-on-surface">Available tools</h3>
+                <div className="space-y-2">
               {[
                 { name: "zuckerbot_preview_campaign", desc: "Generate ad previews from a URL" },
                 { name: "zuckerbot_create_campaign", desc: "Create a legacy or intelligence campaign draft" },
@@ -1609,21 +1594,21 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
               ].map((tool) => (
                 <div
                   key={tool.name}
-                  className="flex items-start gap-3 py-2.5 px-4 rounded-lg border border-white/5 bg-white/[0.02]"
+                  className="flex items-start gap-3 rounded-[1rem] border border-outline-variant/15 bg-surface-container-low px-4 py-3"
                 >
-                  <code className="text-sm font-mono text-blue-400 shrink-0">{tool.name}</code>
-                  <span className="text-sm text-gray-500">{tool.desc}</span>
+                  <code className="shrink-0 text-sm font-mono text-primary">{tool.name}</code>
+                  <span className="text-sm text-on-surface-variant">{tool.desc}</span>
                 </div>
               ))}
-            </div>
-          </section>
+                </div>
+              </GlassCard>
 
-          {/* Rate Limits */}
-          <section id="rate-limits" className="scroll-mt-24 mb-16">
-            <h2 className="text-2xl font-bold text-white mb-4">Rate Limits</h2>
-            <p className="text-gray-400 mb-6 leading-relaxed">
+              {/* Rate Limits */}
+              <GlassCard id="rate-limits" className="scroll-mt-24 p-8">
+                <h2 className="font-headline text-2xl font-bold text-on-surface mb-4">Rate Limits</h2>
+                <p className="mb-6 leading-relaxed text-on-surface-variant">
               Rate limits are enforced per API key. Headers are included on every response.
-            </p>
+                </p>
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1658,25 +1643,25 @@ curl -X POST https://zuckerbot.ai/api/v1/campaigns/camp_xyz789/launch \\
               </table>
             </div>
 
-            <h3 className="text-lg font-semibold text-white mt-6 mb-3">Response headers</h3>
-            <CodeBlock title="Rate limit headers">{`X-RateLimit-Limit: 60
+                <h3 className="mt-6 mb-3 text-lg font-semibold text-on-surface">Response headers</h3>
+                <CodeBlock title="Rate limit headers">{`X-RateLimit-Limit: 60
 X-RateLimit-Remaining: 58
 X-RateLimit-Reset: 1708646400`}</CodeBlock>
 
-            <p className="text-gray-400 mt-4 text-sm">
+                <p className="mt-4 text-sm text-on-surface-variant">
               When you exceed the limit, the API returns <code className="text-gray-300 bg-white/5 px-1.5 py-0.5 rounded text-xs">429 Too Many Requests</code> with
               a <code className="text-gray-300 bg-white/5 px-1.5 py-0.5 rounded text-xs">retry_after</code> field in the error body.
-            </p>
-          </section>
+                </p>
+              </GlassCard>
 
-          {/* Errors */}
-          <section id="errors" className="scroll-mt-24 mb-16">
-            <h2 className="text-2xl font-bold text-white mb-4">Errors</h2>
-            <p className="text-gray-400 mb-4 leading-relaxed">
+              {/* Errors */}
+              <GlassCard id="errors" className="scroll-mt-24 p-8">
+                <h2 className="font-headline text-2xl font-bold text-on-surface mb-4">Troubleshooting</h2>
+                <p className="mb-4 leading-relaxed text-on-surface-variant">
               All errors follow a standard JSON format with a machine-readable code and human-readable message.
-            </p>
+                </p>
 
-            <CodeBlock title="Error response format" lang="json">{`{
+                <CodeBlock title="Error response format" lang="json">{`{
   "error": {
     "code": "rate_limit_exceeded",
     "message": "Too many requests. Retry after 32 seconds.",
@@ -1684,7 +1669,7 @@ X-RateLimit-Reset: 1708646400`}</CodeBlock>
   }
 }`}</CodeBlock>
 
-            <h3 className="text-lg font-semibold text-white mt-6 mb-3">Common error codes</h3>
+                <h3 className="mt-6 mb-3 text-lg font-semibold text-on-surface">Common error codes</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -1723,14 +1708,14 @@ X-RateLimit-Reset: 1708646400`}</CodeBlock>
                 </tbody>
               </table>
             </div>
-          </section>
+              </GlassCard>
 
-          {/* Pricing */}
-          <section id="pricing" className="scroll-mt-24 mb-16">
-            <h2 className="text-2xl font-bold text-white mb-4">Pricing</h2>
-            <p className="text-gray-400 mb-8 leading-relaxed">
+              {/* Pricing */}
+              <GlassCard id="pricing" className="scroll-mt-24 p-8">
+                <h2 className="font-headline text-2xl font-bold text-on-surface mb-4">Pricing</h2>
+                <p className="mb-8 leading-relaxed text-on-surface-variant">
               Start free, upgrade when your agents need more capacity.
-            </p>
+                </p>
 
             <div className="grid gap-6 sm:grid-cols-3">
               {[
@@ -1817,10 +1802,61 @@ X-RateLimit-Reset: 1708646400`}</CodeBlock>
                 </div>
               ))}
             </div>
-          </section>
+              </GlassCard>
 
-          {/* Footer spacer */}
-          <div className="h-12" />
+              {/* Footer spacer */}
+              <div className="h-12" />
+            </article>
+
+            <aside className="hidden xl:block">
+              <div className="sticky top-24 space-y-6">
+                <div>
+                  <h4 className="mb-5 font-label text-[10px] font-bold uppercase tracking-[0.2em] text-outline">
+                    On This Page
+                  </h4>
+                  <nav className="space-y-3">
+                    {[
+                      { id: "getting-started", label: "Quick Start" },
+                      { id: "authentication", label: "Authentication" },
+                      { id: "mcp-server", label: "MCP Integration" },
+                      { id: "rate-limits", label: "Rate Limits" },
+                      { id: "errors", label: "Troubleshooting" },
+                    ].map((item) => {
+                      const isActive = resolveSidebarItem(activeSection) === resolveSidebarItem(item.id) || activeSection === item.id;
+
+                      return (
+                        <a
+                          key={item.id}
+                          href={`#${item.id}`}
+                          className={`block border-l-2 pl-4 text-sm transition-colors ${
+                            isActive
+                              ? "border-primary text-primary"
+                              : "border-transparent text-on-surface-variant hover:border-outline-variant hover:text-on-surface"
+                          }`}
+                        >
+                          {item.label}
+                        </a>
+                      );
+                    })}
+                  </nav>
+                </div>
+
+                <GlassCard className="p-5">
+                  <Bot className="mb-3 h-5 w-5 text-tertiary" />
+                  <h5 className="mb-2 text-sm font-semibold text-on-surface">Need help?</h5>
+                  <p className="mb-4 text-sm leading-6 text-on-surface-variant">
+                    Our AI assistant can help debug MCP setup, auth headers, and endpoint payloads.
+                  </p>
+                  <GradientButton asChild size="sm" variant="tertiary" className="w-full justify-center">
+                    <Link to="/developer">
+                      Ask AI Assistant
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </GradientButton>
+                </GlassCard>
+              </div>
+            </aside>
+          </div>
         </main>
       </div>
     </div>

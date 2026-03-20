@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { Activity, Clock3, Copy, KeyRound, Plus, ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Session } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
+import { GlassCard } from "@/components/ui/GlassCard";
+import { GradientButton } from "@/components/ui/GradientButton";
+import { MetricCard } from "@/components/ui/MetricCard";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { CodeBlock as SharedCodeBlock } from "@/components/ui/CodeBlock";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -71,21 +77,16 @@ function CodeBlock({ title, children }: { title?: string; children: string }) {
   };
 
   return (
-    <div className="rounded-lg border border-white/10 bg-[#0f0f13] overflow-hidden">
-      {title && (
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 bg-white/[0.02]">
-          <span className="text-xs text-gray-400 font-mono">{title}</span>
-          <button
-            onClick={handleCopy}
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors font-mono"
-          >
-            {copied ? "copied!" : "copy"}
-          </button>
-        </div>
-      )}
-      <pre className="p-4 text-sm font-mono overflow-x-auto leading-relaxed">
-        <code className="text-gray-300">{children}</code>
-      </pre>
+    <div className="relative">
+      <button
+        onClick={handleCopy}
+        className="absolute right-4 top-3 z-10 font-label text-[10px] font-semibold uppercase tracking-[0.18em] text-outline transition-colors hover:text-on-surface"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <SharedCodeBlock title={title} bodyClassName="text-primary-fixed-dim">
+        {children}
+      </SharedCodeBlock>
     </div>
   );
 }
@@ -125,6 +126,7 @@ const Developer = () => {
   const [generating, setGenerating] = useState(false);
   const [newKey, setNewKey] = useState<NewKeyResponse | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState("keys");
   const [demoStatus, setDemoStatus] = useState<"idle" | "running" | "success" | "error">("idle");
   const [demoResult, setDemoResult] = useState<{ creatives: CreativeDemoItem[]; raw?: any } | null>(null);
   const [demoModel, setDemoModel] = useState<"auto" | "seedream" | "imagen" | "kling">("auto");
@@ -540,6 +542,8 @@ const Developer = () => {
     });
   };
 
+  const maskApiKey = (key: ApiKey) => `zb_live_${"•".repeat(12)}${key.id.slice(-4)}`;
+
   const currentTier = keys.length > 0 ? keys[0].tier : "free";
   const limits = TIER_LIMITS[currentTier] || TIER_LIMITS.free;
 
@@ -598,11 +602,12 @@ const Developer = () => {
       {/* ── Main content ─────────────────────────────────────────────── */}
       <main className="pt-24 pb-16 px-6 max-w-6xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2">
-            Developer Dashboard
+          <StatusBadge status="ai" className="mb-4">Developer Portal</StatusBadge>
+          <h1 className="font-headline text-4xl font-black tracking-tight text-white mb-2">
+            API Key Management
           </h1>
-          <p className="text-gray-400">
-            Manage your API keys, track usage, and get started with the ZuckerBot API.
+          <p className="max-w-2xl text-on-surface-variant">
+            Generate and manage secure keys for MCP server integration, inspect usage, and keep your ZuckerBot credentials organized without changing the underlying handlers.
           </p>
         </div>
 
@@ -1077,41 +1082,67 @@ const Developer = () => {
           )
         )}
 
-        <Tabs defaultValue="keys" className="w-full">
-          <TabsList className="bg-white/5 border border-white/10">
-            <TabsTrigger value="keys" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="border border-outline-variant/15 bg-surface-container-low">
+            <TabsTrigger value="keys" className="data-[state=active]:bg-surface-container data-[state=active]:text-white text-gray-400">
               API Keys
             </TabsTrigger>
-            <TabsTrigger value="usage" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400">
+            <TabsTrigger value="usage" className="data-[state=active]:bg-surface-container data-[state=active]:text-white text-gray-400">
               Usage
             </TabsTrigger>
-            <TabsTrigger value="quickstart" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400">
+            <TabsTrigger value="quickstart" className="data-[state=active]:bg-surface-container data-[state=active]:text-white text-gray-400">
               Quick Start
             </TabsTrigger>
-            <TabsTrigger value="plan" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400">
+            <TabsTrigger value="plan" className="data-[state=active]:bg-surface-container data-[state=active]:text-white text-gray-400">
               Plan
             </TabsTrigger>
           </TabsList>
 
           {/* ── API Keys Tab ───────────────────────────────────────────── */}
           <TabsContent value="keys" className="mt-6 space-y-6">
-            {/* Generate Key Card */}
-            <Card className="bg-white/[0.02] border-white/10">
-              <CardHeader>
-                <CardTitle className="text-white text-lg">Generate API Key</CardTitle>
-                <CardDescription className="text-gray-400">
-                  Create a new API key to authenticate requests. Each key is shown only once.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  onClick={handleGenerateKey}
-                  disabled={generating}
-                  className="bg-blue-600 hover:bg-blue-500 text-white border-0 shadow-lg shadow-blue-600/20"
-                >
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard
+                label="Active Keys"
+                value={keysLoading ? "—" : String(keys.length)}
+                trend="Accessible in this workspace"
+                tone="primary"
+                icon={<KeyRound className="h-4 w-4" />}
+              />
+              <MetricCard
+                label="Current Tier"
+                value={currentTier.toUpperCase()}
+                trend={`${limits.reqPerMin}/min · ${limits.reqPerDay}/day`}
+                tone="tertiary"
+                icon={<ShieldCheck className="h-4 w-4" />}
+              />
+              <MetricCard
+                label="Total Calls"
+                value={usageLoading ? "—" : usage.totalCalls.toLocaleString()}
+                trend="Across all tracked keys"
+                tone="neutral"
+                icon={<Activity className="h-4 w-4" />}
+              />
+              <MetricCard
+                label="Calls Today"
+                value={usageLoading ? "—" : usage.callsToday.toLocaleString()}
+                trend="Latest 24-hour activity"
+                tone="neutral"
+                icon={<Clock3 className="h-4 w-4" />}
+              />
+            </div>
+
+            <GlassCard className="p-8">
+              <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+                <div>
+                  <h2 className="font-headline text-3xl font-bold tracking-tight text-white">Generate New Key</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant">
+                    Create a new API key to authenticate requests. Each key is shown only once, so copy it into your environment manager immediately after generation.
+                  </p>
+                </div>
+                <GradientButton onClick={handleGenerateKey} disabled={generating} size="md">
                   {generating ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
@@ -1119,126 +1150,105 @@ const Developer = () => {
                     </>
                   ) : (
                     <>
-                      <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                      </svg>
+                      <Plus className="h-4 w-4" />
                       Generate New Key
                     </>
                   )}
-                </Button>
+                </GradientButton>
+              </div>
 
-                {/* New key display */}
-                {newKey && (
-                  <div className="mt-6 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-5">
-                    <div className="flex items-start gap-2 mb-3">
-                      <svg className="w-5 h-5 text-yellow-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                      </svg>
-                      <p className="text-sm text-yellow-300 font-medium">
-                        Save this key now. You will not see it again.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <code className="flex-1 bg-black/30 rounded-lg px-4 py-3 font-mono text-sm text-green-400 break-all">
-                        {newKey.key}
-                      </code>
-                      <Button
-                        size="sm"
-                        onClick={handleCopyKey}
-                        className={
-                          keyCopied
-                            ? "bg-green-600 hover:bg-green-500 text-white border-0 shrink-0"
-                            : "bg-white/10 hover:bg-white/20 text-white border-0 shrink-0"
-                        }
-                      >
-                        {keyCopied ? (
-                          <>
-                            <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                            Copy
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                    <div className="mt-3 flex items-center gap-2">
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">
-                        {newKey.tier}
-                      </Badge>
-                      <span className="text-xs text-gray-500">ID: {newKey.id}</span>
-                    </div>
+              {newKey && (
+                <div className="mt-6 rounded-[1.5rem] border border-primary/15 bg-primary/10 p-5">
+                  <div className="mb-3 flex items-center gap-3">
+                    <StatusBadge status="ai">Key Created</StatusBadge>
+                    <p className="text-sm text-primary-fixed-dim">Save this key now. You will not see it again.</p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  <CodeBlock title="Generated API Key">{newKey.key}</CodeBlock>
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <Button
+                      size="sm"
+                      onClick={handleCopyKey}
+                      className={keyCopied ? "bg-green-600 hover:bg-green-500 text-white border-0" : "bg-white/10 hover:bg-white/20 text-white border-0"}
+                    >
+                      <Copy className="mr-1.5 h-4 w-4" />
+                      {keyCopied ? "Copied" : "Copy Key"}
+                    </Button>
+                    <StatusBadge status="active">{newKey.tier}</StatusBadge>
+                    <span className="text-xs text-on-surface-variant">ID: {newKey.id}</span>
+                  </div>
+                </div>
+              )}
+            </GlassCard>
 
-            {/* Existing Keys Table */}
-            <Card className="bg-white/[0.02] border-white/10">
-              <CardHeader>
-                <CardTitle className="text-white text-lg">Your API Keys</CardTitle>
-                <CardDescription className="text-gray-400">
-                  Active keys linked to your account. Key values are hashed and cannot be displayed.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {keysLoading ? (
-                  <div className="space-y-3">
-                    <Skeleton className="h-10 w-full bg-white/5" />
-                    <Skeleton className="h-10 w-full bg-white/5" />
-                    <Skeleton className="h-10 w-full bg-white/5" />
-                  </div>
-                ) : keys.length === 0 ? (
-                  <div className="text-center py-10 text-gray-500">
-                    <svg className="w-12 h-12 mx-auto mb-3 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-                    </svg>
-                    <p className="text-sm">No API keys yet. Generate your first key above.</p>
-                  </div>
-                ) : (
+            <GlassCard className="overflow-hidden">
+              <div className="flex items-center justify-between border-b border-outline-variant/15 px-6 py-5">
+                <div>
+                  <h3 className="font-headline text-2xl font-bold text-white">Active Access Tokens</h3>
+                  <p className="mt-2 text-sm text-on-surface-variant">
+                    API keys linked to your account. Stored values are hashed, so only masked representations are shown here.
+                  </p>
+                </div>
+                <StatusBadge status="live">{keys.length} active</StatusBadge>
+              </div>
+
+              {keysLoading ? (
+                <div className="space-y-3 p-6">
+                  <Skeleton className="h-10 w-full bg-white/5" />
+                  <Skeleton className="h-10 w-full bg-white/5" />
+                  <Skeleton className="h-10 w-full bg-white/5" />
+                </div>
+              ) : keys.length === 0 ? (
+                <div className="py-12 text-center text-on-surface-variant">
+                  <KeyRound className="mx-auto mb-3 h-12 w-12 text-outline" />
+                  <p className="text-sm">No API keys yet. Generate your first key above.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="border-white/5 hover:bg-transparent">
-                        <TableHead className="text-gray-400">Key ID</TableHead>
-                        <TableHead className="text-gray-400">Tier</TableHead>
-                        <TableHead className="text-gray-400">Created</TableHead>
-                        <TableHead className="text-gray-400">Last Used</TableHead>
+                      <TableRow className="border-outline-variant/10 hover:bg-transparent">
+                        <TableHead className="text-outline">Name</TableHead>
+                        <TableHead className="text-outline">API Key</TableHead>
+                        <TableHead className="text-center text-outline">Date Created</TableHead>
+                        <TableHead className="text-center text-outline">Last Used</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {keys.map((key) => (
-                        <TableRow key={key.id} className="border-white/5 hover:bg-white/[0.02]">
-                          <TableCell className="font-mono text-sm text-gray-300">
-                            {key.id.substring(0, 12)}...
+                      {keys.map((key, index) => (
+                        <TableRow key={key.id} className="border-outline-variant/10 hover:bg-surface-container-high/10">
+                          <TableCell className="py-5">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-sm font-semibold text-white">
+                                {index === 0 ? "Primary Production" : `Workspace Key ${index + 1}`}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-[0.18em] text-tertiary">
+                                {key.last_used_at ? "Live key" : "Standby"}
+                              </span>
+                            </div>
                           </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={
-                                key.tier === "pro"
-                                  ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
-                                  : key.tier === "enterprise"
-                                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                  : "bg-green-500/10 text-green-400 border-green-500/20"
-                              }
-                            >
-                              {key.tier}
-                            </Badge>
+                          <TableCell className="py-5">
+                            <code className="rounded-xl bg-surface-container-high px-3 py-2 font-mono text-xs text-primary-fixed-dim">
+                              {maskApiKey(key)}
+                            </code>
                           </TableCell>
-                          <TableCell className="text-gray-400 text-sm">{formatDate(key.created_at)}</TableCell>
-                          <TableCell className="text-gray-400 text-sm">{formatDate(key.last_used_at)}</TableCell>
+                          <TableCell className="py-5 text-center text-sm text-on-surface-variant">
+                            {formatDate(key.created_at)}
+                          </TableCell>
+                          <TableCell className="py-5 text-center">
+                            <div className="flex flex-col items-center gap-1 text-sm">
+                              <span className="text-on-surface">{formatDate(key.last_used_at)}</span>
+                              <span className="text-[10px] uppercase tracking-[0.16em] text-outline">
+                                {key.last_used_at ? "Recently active" : "Unused"}
+                              </span>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                )}
-              </CardContent>
-            </Card>
+                </div>
+              )}
+            </GlassCard>
           </TabsContent>
 
           {/* ── Usage Tab ──────────────────────────────────────────────── */}
